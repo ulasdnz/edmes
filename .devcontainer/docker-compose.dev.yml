@@ -1,0 +1,38 @@
+services:
+  # The 'workspace' service is the actual Dev Container where VS Code attaches
+  workspace:
+    # Use a modern, official Dev Container Node.js image
+    image: mcr.microsoft.com/devcontainers/typescript-node:1-20-bookworm
+    # Mount the /apps directory to /workspaces/apps
+    volumes:
+      - ..:/workspaces/apps:cached
+    # Keep the container running indefinitely
+    command: sleep infinity
+    # Connect to the same network as the databases
+    networks:
+      - mes_network
+    # Expose necessary ports for debugging
+    ports:
+      - "9229:9229"
+    # Ensure it only starts after databases are healthy
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # Override MongoDB to expose ports locally during development (optional but useful for Compass)
+  mongodb:
+    ports:
+      - "27017:27017"
+
+  # Override Redis to expose ports locally during development (optional but useful for RedisInsight)
+  redis:
+    ports:
+      - "6379:6379"
+
+  # We temporarily disable the 'users' container from starting automatically via docker-compose up,
+  # because you will run it MANUALLY inside the workspace using `npm run dev` with hot-reload.
+  users:
+    profiles:
+      - dont_start_in_devcontainer

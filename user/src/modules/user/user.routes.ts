@@ -1,0 +1,130 @@
+/**
+ * Protected user routes — authenticate + resolvePermissions applied at prefix level.
+ * No auth/permission imports needed here.
+ */
+
+import { Router } from 'express'
+import { requirePermission } from '@mes/auth'
+import { upload } from '../../core/middleware/upload.js'
+import { validateBody, validateParams, validateQuery } from '../../core/middleware/validate.js'
+import { paginationSchema } from '../../utils/pagination.js'
+import * as userController from './user.controller.js'
+import {
+  adminCreateUserSchema,
+  adminResetPasswordSchema,
+  adminUpdateUserSchema,
+  updateMeSchema,
+  userIdParamSchema,
+  userQuerySchema,
+} from './user.validators.js'
+
+const router = Router()
+
+// "me" endpoints — any authenticated user
+router.get('/users/me', userController.getUser)
+router.patch('/users/me', validateBody(updateMeSchema), userController.updateUser)
+router.patch('/users/me/avatar', upload.single('photo'), userController.updateAvatar)
+router.delete('/users/me', userController.deleteUser)
+
+// Admin endpoints — require specific permissions
+router.post(
+  '/users/paginate',
+  requirePermission('readUsers'),
+  validateBody(paginationSchema),
+  userController.paginateUsers,
+)
+
+router.post(
+  '/users',
+  requirePermission('createUsers'),
+  validateBody(adminCreateUserSchema),
+  userController.adminCreateUser,
+)
+router.patch(
+  '/users/:id',
+  requirePermission('writeUsers'),
+  validateParams(userIdParamSchema),
+  validateBody(adminUpdateUserSchema),
+  userController.adminUpdateUser,
+)
+router.delete(
+  '/users/:id',
+  requirePermission('deleteUsers'),
+  validateParams(userIdParamSchema),
+  userController.adminDeleteUser,
+)
+router.post(
+  '/users/:id/reset-password',
+  requirePermission('writeUsers'),
+  validateParams(userIdParamSchema),
+  validateBody(adminResetPasswordSchema),
+  userController.adminResetPassword,
+)
+
+// Custom param validation schemas for lookups
+import { z } from 'zod'
+
+const usernameParamSchema = z.object({ username: z.string() })
+const emailParamSchema = z.object({ email: z.email() })
+
+const checkDependencyQuerySchema = z.object({
+  fieldName: z.enum(['departmentId', 'stationIds']),
+  fieldValue: z.string(),
+})
+
+// ─── System Sync Routes ──────────────────────────────────────────────────────
+
+router.get(
+  '/users/check-dependencies',
+  requirePermission('readUsers'),
+  validateQuery(checkDependencyQuerySchema),
+  userController.checkUserDependencies,
+)
+
+router.get(
+  '/users',
+  requirePermission('readUsers'),
+  validateQuery(userQuerySchema),
+  userController.getUsers,
+)
+router.get(
+  '/user-by-username/:username',
+  requirePermission('readUsers'),
+  validateParams(usernameParamSchema),
+  userController.getUserByUsername,
+)
+router.get(
+  '/user-by-email/:email',
+  requirePermission('readUsers'),
+  validateParams(emailParamSchema),
+  userController.getUserByEmail,
+)
+router.get(
+  '/user-with-roles/:id',
+  requirePermission('readUsers'),
+  validateParams(userIdParamSchema),
+  userController.getUserByIdWithRoles,
+)
+router.get(
+  '/users/:id/roles-permissions',
+  requirePermission('readUsers'),
+  validateParams(userIdParamSchema),
+  userController.getUserRolesAndPermissions,
+)
+router.get(
+  '/users/:id/auth-status',
+  requirePermission('readUsers'),
+  validateParams(userIdParamSchema),
+  userController.getUserAuthStatus,
+)
+router.get('/users-languages', requirePermission('readUsers'), userController.getUsersLanguages)
+router.get('/users/props-keys', requirePermission('readUsers'), userController.getUsersPropsKeys)
+
+router.get(
+  '/users/:id',
+  requirePermission('readUsers'),
+  validateParams(userIdParamSchema),
+  userController.getUserById,
+)
+
+export default router

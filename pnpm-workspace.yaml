@@ -1,0 +1,14 @@
+packages:
+  - packages/*
+  - user
+
+ignoredBuiltDependencies:
+  - '@scarf/scarf'
+
+onlyBuiltDependencies:
+  - cpu-features
+  - esbuild
+  - mongodb-memory-server
+  - msgpackr-extract
+  - protobufjs
+  - ssh2

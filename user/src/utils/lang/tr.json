@@ -1,0 +1,80 @@
+﻿{
+    "greeting":  "Merhaba",
+    "welcome_message":  "HoÅŸgeldiniz",
+    "validation":  {
+                       "email_invalid":  "GeÃ§ersiz e-posta formatÄ±",
+                       "email_required":  "E-posta gereklidir",
+                       "name_min":  "Ä°sim en az 2 karakter olmalÄ±dÄ±r",
+                       "name_max":  "Ä°sim en fazla 24 karakter olmalÄ±dÄ±r",
+                       "name_required":  "Ä°sim gereklidir",
+                       "surname_required":  "Soyisim gereklidir",
+                       "password_policy_min":  "Åifre en az 8 karakter olmalÄ±dÄ±r",
+                       "password_policy_max":  "Åifre en fazla 20 karakter olmalÄ±dÄ±r",
+                       "password_required":  "Åifre gereklidir",
+                       "permissions_required":  "En az bir yetki secilmelidir",
+                       "role_name_min":  "Rol adi en az 2 karakter olmali",
+                       "speciality_name_required":  "Uzmanlik adi gereklidir",
+                       "invalid_permission_code":  "Gecersiz yetki kodu",
+                       "username_max":  "Kullanici adi en fazla 30 karakter olmali",
+                       "speciality_name_min":  "Uzmanlik adi en az 2 karakter olmali",
+                       "role_name_required":  "Rol adi gereklidir",
+                       "username_min":  "Kullanici adi en az 3 karakter olmali",
+                       "username_required":  "Kullanici adi gereklidir",
+                       "role_name_max":  "Rol adi en fazla 50 karakter olmali",
+                       "speciality_name_max":  "Uzmanlik adi en fazla 100 karakter olmali",
+                       "username_format":  "Kullanici adi sadece kucuk harf, rakam, nokta, alt cizgi ve tire icerebilir"
+                   },
+    "auth":  {
+                 "unauthenticated":  "Bu kaynaÄŸa eriÅŸmek iÃ§in lÃ¼tfen giriÅŸ yapÄ±n.",
+                 "missing_header":  "Yetkilendirme baÅŸlÄ±ÄŸÄ± eksik",
+                 "invalid_token":  "GeÃ§ersiz token",
+                 "token_expired":  "Token sÃ¼resi doldu",
+                 "token_expired_password_changed":  "Åifreniz deÄŸiÅŸtirildiÄŸi iÃ§in mevcut oturumunuz sonlandÄ±rÄ±ldÄ±. LÃ¼tfen tekrar giriÅŸ yapÄ±n.",
+                 "invalid_credentials":  "GeÃ§ersiz e-posta veya ÅŸifre",
+                 "forbidden":  "Bu iÅŸlem iÃ§in yetkiniz yok.",
+                 "insufficient_permissions":  "Bu kaynaÄŸa eriÅŸmek iÃ§in yetkiniz yetersiz.",
+                 "account_temporarily_locked":  "Hesap gecici olarak kilitlendi. {{remainingSeconds}} saniye sonra tekrar deneyin."
+             },
+    "user":  {
+                 "email_in_use":  "E-posta kullanÄ±mda",
+                 "not_found":  "KullanÄ±cÄ± bulunamadÄ±",
+                 "avatar_required":  "Avatar dosyasÄ± gereklidir",
+                 "invalid_email_format":  "Gecersiz e-posta formati",
+                 "password_required":  "Sifre gereklidir"
+             },
+    "upload":  {
+                   "only_images":  "Sadece resim yÃ¼kleyebilirsiniz!"
+               },
+    "success":  {
+                    "register":  "KullanÄ±cÄ± baÅŸarÄ±yla kaydedildi",
+                    "login":  "GiriÅŸ baÅŸarÄ±lÄ±",
+                    "login_restored":  "Tekrar hoÅŸgeldiniz! HesabÄ±nÄ±z geri yÃ¼klendi.",
+                    "delete":  "KullanÄ±cÄ± baÅŸarÄ±yla silindi",
+                    "update":  "KullanÄ±cÄ± baÅŸarÄ±yla gÃ¼ncellendi",
+                    "create":  "KullanÄ±cÄ± baÅŸarÄ±yla oluÅŸturuldu",
+                    "avatar_update":  "Avatar baÅŸarÄ±yla gÃ¼ncellendi",
+                    "password_reset":  "Åifre baÅŸarÄ±yla sÄ±fÄ±rlandÄ±",
+                    "verify":  "DoÄŸrulama baÅŸarÄ±lÄ±",
+                    "get":  "KullanÄ±cÄ± baÅŸarÄ±yla alÄ±ndÄ±",
+                    "get_all":  "KullanÄ±cÄ±lar baÅŸarÄ±yla alÄ±ndÄ±"
+                },
+    "error":  {
+                  "unexpected":  "Beklenmedik bir hata oluÅŸtu.",
+                  "validation_failed":  "DoÄŸrulama baÅŸarÄ±sÄ±z.",
+                  "duplicate_entry":  "Bu {{field}} zaten kullanÄ±mda.",
+                  "rate_limit_exceeded":  "Ã‡ok fazla istek gÃ¶nderildi. LÃ¼tfen daha sonra tekrar deneyin.",
+                  "invalid_id":  "Gecersiz kimlik degeri."
+              },
+    "role":  {
+                 "name_in_use":  "Rol adi zaten kullanimda",
+                 "not_found":  "Rol bulunamadi"
+             },
+    "speciality":  {
+                       "name_in_use":  "Uzmanlik adi zaten kullanimda",
+                       "not_found":  "Uzmanlik bulunamadi"
+                   },
+    "password_recovery":  {
+                              "max_attempts_reached":  "Maksimum sifre kurtarma deneme sayisina ulasildi. Lutfen daha sonra tekrar deneyin.",
+                              "invalid_or_expired_code":  "Dogrulama kodu gecersiz veya suresi dolmus."
+                          }
+}

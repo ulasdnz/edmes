@@ -1,0 +1,136 @@
+services:
+  traefik:
+    image: traefik:v2.11
+    container_name: api_gateway
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "80:80"
+      - "8080:8080"
+    command:
+      - "--api.dashboard=true"
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.endpoint=unix:///var/run/docker.sock"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=mes_network"
+      - "--entrypoints.web.address=:80"
+      - "--metrics.prometheus=true"
+      - "--metrics.prometheus.addEntryPointsLabels=true"
+      - "--metrics.prometheus.addRoutersLabels=true"
+      - "--metrics.prometheus.addServicesLabels=true"
+      - "--log.level=INFO"
+      - "--accesslog=true"
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+    networks:
+      - mes_network
+    labels:
+      - "traefik.enable=true"
+      # Genel güvenlik header'ları (HSTS yok, HTTPS yok)
+      - "traefik.http.middlewares.global-compress.compress=true"
+      - "traefik.http.middlewares.secure-headers.headers.browserXssFilter=true"
+      - "traefik.http.middlewares.secure-headers.headers.contentTypeNosniff=true"
+      # Rate limit - per IP, genel API
+      - "traefik.http.middlewares.rate-limit.ratelimit.average=200"
+      - "traefik.http.middlewares.rate-limit.ratelimit.burst=100"
+      - "traefik.http.middlewares.rate-limit.ratelimit.period=1s"
+      # Rate limit - per IP, auth flooding koruması
+      - "traefik.http.middlewares.auth-rate-limit.ratelimit.average=30"
+      - "traefik.http.middlewares.auth-rate-limit.ratelimit.burst=10"
+      - "traefik.http.middlewares.auth-rate-limit.ratelimit.period=1s"
+      # Request body limit - 25MB
+      - "traefik.http.middlewares.body-limit.buffering.maxRequestBodyBytes=26214400"
+
+  mongodb:
+    image: mongo:7
+    container_name: mongodb_dev
+    restart: unless-stopped
+    ports:
+      - '27017:27017'
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - mes_network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis_dev
+    restart: unless-stopped
+    command: redis-server --maxmemory 1gb --maxmemory-policy noeviction --appendonly yes
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+    networks:
+      - mes_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  user:
+    build:
+      context: .
+      dockerfile: user/Dockerfile
+    container_name: user_app
+    restart: unless-stopped
+    # Port dışarıya açılmıyor, sadece Traefik üzerinden erişilir
+    env_file:
+      - ./user/.env
+    environment:
+      - MONGO_URI=${MONGO_URI:-mongodb://mongodb:27017/mes?directConnection=true}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+      - JWT_SECRET=${JWT_SECRET:-supersecretkey}
+      - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-1d}
+      - INTERNAL_API_USER=${INTERNAL_API_USER:-http://user:3000}
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - mes_network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health/ready"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=mes_network"
+      # Catch-all router - /api/v1 ve /docs (düşük priority, yeni servisler üstüne biner)
+      # /internal/v1 intentionally excluded - gateway seviyesinde erişilemiyor
+      - "traefik.http.routers.user.rule=PathPrefix(`/api/v1`) || PathPrefix(`/docs`)"
+      - "traefik.http.routers.user.entrypoints=web"
+      - "traefik.http.routers.user.middlewares=global-compress@docker,secure-headers@docker,rate-limit@docker,body-limit@docker"
+      - "traefik.http.routers.user.priority=1"
+      - "traefik.http.services.user.loadbalancer.server.port=3000"
+      # Auth router - flooding koruması, önce eşleşsin diye priority yüksek
+      - "traefik.http.routers.user-auth.rule=PathPrefix(`/api/v1/auth`)"
+      - "traefik.http.routers.user-auth.entrypoints=web"
+      - "traefik.http.routers.user-auth.middlewares=global-compress@docker,secure-headers@docker,auth-rate-limit@docker,body-limit@docker"
+      - "traefik.http.routers.user-auth.priority=10"
+      - "traefik.http.routers.user-auth.service=user"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+networks:
+  mes_network:
+    driver: bridge
+
+volumes:
+  mongodb_data:
+  redis_data:

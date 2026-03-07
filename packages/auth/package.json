@@ -1,0 +1,32 @@
+{
+    "name": "@mes/auth",
+    "version": "1.0.0",
+    "private": true,
+    "type": "module",
+    "main": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": "./dist/index.js"
+        }
+    },
+    "scripts": {
+        "build": "tsc",
+        "typecheck": "tsc --noEmit"
+    },
+    "peerDependencies": {
+        "express": "^5.0.0",
+        "jsonwebtoken": "^9.0.2"
+    },
+    "dependencies": {
+        "@mes/cache": "workspace:*",
+        "@mes/core": "workspace:*"
+    },
+    "devDependencies": {
+        "@types/express": "^5.0.0",
+        "@types/jsonwebtoken": "^9.0.7",
+        "@types/node": "^20.0.0",
+        "typescript": "^5.5.0"
+    }
+}

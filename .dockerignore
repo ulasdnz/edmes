@@ -1,0 +1,10 @@
+node_modules
+**/node_modules
+.git
+.env
+dist
+**/dist
+.turbo
+Coverage
+.vscode
+.idea

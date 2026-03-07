@@ -1,0 +1,80 @@
+{
+  "greeting": "Hello",
+  "welcome_message": "Welcome",
+  "validation": {
+    "email_invalid": "Invalid email format",
+    "email_required": "Email is required",
+    "name_min": "Name must be at least 2 characters long",
+    "name_max": "Name must be at most 24 characters long",
+    "name_required": "Name is required",
+    "surname_required": "Surname is required",
+    "username_required": "Username is required",
+    "username_min": "Username must be at least 3 characters long",
+    "username_max": "Username must be at most 30 characters long",
+    "username_format": "Username can only contain lowercase letters, numbers, dot, underscore and hyphen",
+    "role_name_required": "Role name is required",
+    "role_name_min": "Role name must be at least 2 characters long",
+    "role_name_max": "Role name must be at most 50 characters long",
+    "permissions_required": "At least one permission must be selected",
+    "invalid_permission_code": "Invalid permission code",
+    "speciality_name_required": "Speciality name is required",
+    "speciality_name_min": "Speciality name must be at least 2 characters long",
+    "speciality_name_max": "Speciality name must be at most 100 characters long",
+    "password_policy_min": "Password must be at least 8 characters",
+    "password_policy_max": "Password must be at most 20 characters",
+    "password_required": "Password is required"
+  },
+  "auth": {
+    "unauthenticated": "Please log in to access this resource.",
+    "missing_header": "Authorization header is missing",
+    "invalid_token": "Invalid token",
+    "token_expired": "Token expired",
+    "token_expired_password_changed": "Token expired because your password was recently changed. Please log in again.",
+    "account_temporarily_locked": "Account is temporarily locked. Try again in {{remainingSeconds}} seconds.",
+    "invalid_credentials": "Invalid email or password",
+    "forbidden": "You do not have permission to perform this action.",
+    "insufficient_permissions": "You have insufficient permissions to access this resource."
+  },
+  "user": {
+    "email_in_use": "Email already in use",
+    "not_found": "User not found",
+    "avatar_required": "Avatar file is required",
+    "invalid_email_format": "Invalid email format",
+    "password_required": "Password is required"
+  },
+  "role": {
+    "name_in_use": "Role name already in use",
+    "not_found": "Role not found"
+  },
+  "speciality": {
+    "name_in_use": "Speciality name already in use",
+    "not_found": "Speciality not found"
+  },
+  "password_recovery": {
+    "max_attempts_reached": "Maximum password recovery attempts reached. Please try again later.",
+    "invalid_or_expired_code": "Invalid or expired verification code."
+  },
+  "upload": {
+    "only_images": "Only images are allowed!"
+  },
+  "success": {
+    "register": "User registered successfully",
+    "login": "Login successful",
+    "login_restored": "Welcome back! Your account has been restored.",
+    "delete": "User deleted successfully",
+    "update": "User updated successfully",
+    "create": "User created successfully",
+    "avatar_update": "Avatar updated successfully",
+    "password_reset": "Password reset successfully",
+    "verify": "Verification successful",
+    "get": "User profile retrieved successfully",
+    "get_all": "Users fetched successfully."
+  },
+  "error": {
+    "unexpected": "An unexpected error occurred.",
+    "validation_failed": "Validation failed.",
+    "duplicate_entry": "This {{field}} is already in use.",
+    "invalid_id": "Invalid identifier.",
+    "rate_limit_exceeded": "Too many requests. Please try again later."
+  }
+}

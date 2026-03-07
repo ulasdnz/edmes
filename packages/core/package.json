@@ -1,0 +1,36 @@
+{
+    "name":  "@mes/core",
+    "version":  "1.0.0",
+    "private":  true,
+    "type":  "module",
+    "main":  "dist/index.js",
+    "types":  "dist/index.d.ts",
+    "exports":  {
+                    ".":  {
+                              "types":  "./dist/index.d.ts",
+                              "import":  "./dist/index.js"
+                          }
+                },
+    "scripts":  {
+                    "build":  "tsc",
+                    "typecheck": "tsc --noEmit"
+                },
+    "peerDependencies":  {
+                             "express":  "^5.0.0",
+                             "zod":  "^4.0.0",
+                             "i18next":  "^25.0.0",
+                             "winston":  "^3.0.0"
+                         },
+    "dependencies": {
+        "uuid": "^13.0.0"
+    },
+    "devDependencies":  {
+                            "zod":  "^4.0.0",
+                            "winston":  "^3.0.0",
+                            "i18next":  "^25.0.0",
+                            "express":  "^5.0.0",
+                            "@types/express": "^5.0.6",
+                            "@types/node": "^25.3.5",
+                            "typescript": "^5.9.3"
+                        }
+}

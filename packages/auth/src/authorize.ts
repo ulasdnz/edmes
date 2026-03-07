@@ -1,0 +1,25 @@
+import type { Request, Response, NextFunction } from 'express'
+
+/**
+ * Ensures the authenticated user has the required permission.
+ * MUST be applied AFTER authenticate and resolvePermissions.
+ */
+export const requirePermission = (permission: string): any => {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    // SYSTEM_IDENTITY bypasses all permissions via '*'
+    if (req.user?.permissions?.includes('*')) {
+      return next()
+    }
+
+    if (!req.user || !req.user.permissions?.includes(permission)) {
+      res.status(403).json({
+        success: false,
+        message: 'auth.insufficient_permissions', // standard i18n key
+        data: null,
+      })
+      return
+    }
+
+    next()
+  }
+}

@@ -1,0 +1,67 @@
+{
+  "name": "Antigravity MES Workspace",
+  "dockerComposeFile": ["../docker-compose.yml", "docker-compose.dev.yml"],
+  "service": "workspace",
+  "workspaceFolder": "/workspaces/apps",
+
+  // Modern Dev Container Features (2026 Standards)
+  "features": {
+    // Docker-in-Docker provides a secure, fully isolated Docker daemon inside the workspace
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {
+      "version": "latest",
+      "moby": true
+    },
+    // Node.js Environment Tooling
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "20"
+    },
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+
+  // Lifecycle Commands
+  "postCreateCommand": "echo 'Antigravity MES Workspace Ready'",
+
+  // Environment variables passed to the dev container
+  "containerEnv": {
+    "NODE_ENV": "development",
+    "TZ": "Europe/Istanbul",
+    // These ensure microservices can talk to databases seamlessly without .env
+    "MONGO_URI": "mongodb://mongodb:27017/mes?directConnection=true",
+    "REDIS_URL": "redis://redis:6379"
+  },
+
+  // Tool-specific configurations (VS Code)
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "editor.codeActionsOnSave": {
+          "source.fixAll.eslint": "explicit"
+        },
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "files.eol": "\n" // Enforce LF for Docker compatibility
+      },
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "mongodb.mongodb-vscode",
+        "ms-azuretools.vscode-docker",
+        "yoavbls.pretty-ts-errors",
+        "eamodio.gitlens",
+        "github.copilot",
+        "github.copilot-chat"
+      ]
+    }
+  },
+
+  // Forward useful ports to your Windows host machine
+  "forwardPorts": [
+    3000, // users service
+    27017, // MongoDB compass testing
+    6379 // Redis insight testing
+  ],
+
+  // Run as active developer rather than root to prevent file permission issues
+  "remoteUser": "node"
+}
