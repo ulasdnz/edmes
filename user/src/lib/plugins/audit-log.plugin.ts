@@ -5,7 +5,7 @@
  * them to an append-only `audit_logs` collection.
  *
  * Identity (userId, ip, traceId) is read from AsyncLocalStorage — no need
- * to pass identity explicitly to Mongoose calls like the legacy system did.
+ * to pass identity explicitly to Mongoose calls.
  *
  * Usage:
  *   schema.plugin(auditLogPlugin);
@@ -77,7 +77,7 @@ const writeAuditLog = async (entry: {
 }
 
 // WeakMap to store pre-update snapshots, keyed by the query object.
-// This replaces the legacy system's global `updatePrePostTempObject` (memory leak risk).
+// Replaces the old global `updatePrePostTempObject` pattern (memory leak risk).
 const preUpdateSnapshots = new WeakMap<object, Record<string, unknown> | null>()
 
 const auditLogPlugin = (schema: Schema): void => {

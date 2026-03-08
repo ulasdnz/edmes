@@ -3,7 +3,7 @@ import {
   buildAuthContextCacheKey,
   buildAuthStatusCacheKey,
   type AuthCacheScope,
-} from '../../lib/auth-cache-keys.js'
+} from '@mes/auth'
 import { cacheDel } from '../../lib/cache.js'
 import { logger } from '../../lib/logger.js'
 

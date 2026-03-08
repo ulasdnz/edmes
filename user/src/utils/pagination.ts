@@ -1,7 +1,7 @@
 /**
  * Pagination Utility
  *
- * Modern TypeScript port of selected patterns from the legacy system's pagination-helper.js.
+ * Modern TypeScript port of legacy pagination-helper.js patterns.
  *
  * Supported features:
  *   - returnType: 'data' | 'meta' | 'full'

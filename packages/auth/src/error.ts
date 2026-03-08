@@ -1,11 +1,11 @@
-export class AuthError extends Error {
-  public statusCode: number
-  public isOperational: boolean
+import { CustomError } from '@mes/core'
+
+export class AuthError extends CustomError {
+  public readonly isOperational: boolean
 
   constructor(statusCode: number, message: string) {
-    super(message)
+    super(statusCode, message)
     this.name = 'AuthError'
-    this.statusCode = statusCode
     this.isOperational = true
     Object.setPrototypeOf(this, AuthError.prototype)
   }

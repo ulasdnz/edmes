@@ -4,6 +4,32 @@ import type { Logger } from 'winston'
 import { CustomError } from '../errors/index.js'
 import type { ErrorResponse, MongoError } from '../types/index.js'
 
+interface StatusCodeError extends Error {
+  statusCode: number
+  details?: Record<string, unknown>
+}
+
+const isStatusCodeError = (err: unknown): err is StatusCodeError => {
+  if (!err || typeof err !== 'object') return false
+  if (!('statusCode' in err)) return false
+  const { statusCode } = err as { statusCode?: unknown }
+  return typeof statusCode === 'number' && Number.isInteger(statusCode)
+}
+
+const normalizeStatusCode = (statusCode: number): number =>
+  statusCode >= 400 && statusCode <= 599 ? statusCode : 500
+
+const extractPasswordViolations = (
+  details?: Record<string, unknown>,
+): ErrorResponse['errors'] | undefined => {
+  const violations = details?.violations
+  if (!Array.isArray(violations)) return undefined
+  return (violations as string[]).map(v => ({
+    field: 'password',
+    message: v,
+  }))
+}
+
 export interface ErrorHandlerOptions {
   logger: Logger
   nodeEnv: string
@@ -42,13 +68,16 @@ export const createErrorHandler =
       })
     } else if (err instanceof CustomError) {
       isOperational = true
-      statusCode = err.statusCode
+      statusCode = normalizeStatusCode(err.statusCode)
       messageKey = err.message
-      if (err.details?.violations) {
-        errors = (err.details.violations as string[]).map(v => ({
-          field: 'password',
-          message: v,
-        }))
+      errors = extractPasswordViolations(err.details)
+    } else if (isStatusCodeError(err)) {
+      isOperational = true
+      statusCode = normalizeStatusCode(err.statusCode)
+      messageKey = err.message || messageKey
+      const extractedErrors = extractPasswordViolations(err.details)
+      if (extractedErrors) {
+        errors = extractedErrors
       }
     } else if (err && typeof err === 'object' && 'code' in err && err.code === 11000) {
       isOperational = true

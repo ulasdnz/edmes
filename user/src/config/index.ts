@@ -43,6 +43,7 @@ const envSchema = z
           message: 'REDIS_URL must be a valid redis URL like redis://host:port',
         },
       ),
+    MONGO_INDEX_STRATEGY: z.enum(['off', 'ensure']).optional(),
     USER_DELETION_RETENTION_DAYS: z.coerce.number().default(30),
     LOGIN_MAX_ATTEMPTS: z.coerce.number().default(5),
     LOGIN_BLOCKING_DURATION_MS: z.coerce.number().default(300_000), // 5 minutes
@@ -50,6 +51,8 @@ const envSchema = z
   })
   .transform(data => ({
     ...data,
+    MONGO_INDEX_STRATEGY:
+      data.MONGO_INDEX_STRATEGY ?? (data.NODE_ENV === 'production' ? 'ensure' : 'off'),
     USER_DELETION_RETENTION_MS: data.USER_DELETION_RETENTION_DAYS * 24 * 60 * 60 * 1000,
   }))
 

@@ -1,5 +1,5 @@
 import { Queue } from 'bullmq'
-import type { AuthCacheScope } from '../lib/auth-cache-keys.js'
+import type { AuthCacheScope } from '@mes/auth'
 import { getBullConnectionOpts } from '../lib/redis.js'
 
 // ── Queues this service CONSUMES from ───────────────────────────────────────
