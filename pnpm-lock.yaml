@@ -231,9 +231,6 @@ importers:
       bcryptjs:
         specifier: ^3.0.3
         version: 3.0.3
-      bullmq:
-        specifier: ^5.0.0
-        version: 5.70.4
       compression:
         specifier: ^1.8.1
         version: 1.8.1

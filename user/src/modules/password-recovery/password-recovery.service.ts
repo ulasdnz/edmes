@@ -1,7 +1,7 @@
 import bcrypt from 'bcryptjs'
 import { randomInt } from 'crypto'
 import CustomError from '../../core/errors/index.js'
-import { emitAuthCacheInvalidation } from '../../jobs/auth-cache.events.js'
+import { invalidateAuthCache } from '../../jobs/auth-cache.events.js'
 import { logger } from '../../lib/logger.js'
 import User from '../user/user.model.js'
 import PasswordRecovery from './password-recovery.model.js'
@@ -120,7 +120,7 @@ export const verificationAndUpdate = async (data: VerificationAndUpdateInput) =>
   recovery.isUsed = true
   await recovery.save()
 
-  await emitAuthCacheInvalidation(String(user._id), 'status')
+  await invalidateAuthCache(String(user._id), 'status')
 
   return { success: true }
 }

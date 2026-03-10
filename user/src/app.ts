@@ -1,9 +1,9 @@
 import { config } from './config/index.js'
 import { initLoaders } from './core/loaders/index.js'
+import { shutdownSubscribers } from './jobs/subscribers.js'
 import { logger } from './lib/logger.js'
 import { closeRedis } from './lib/redis.js'
 import { isShuttingDown, setShuttingDown } from './lib/shutdown.js'
-import { shutdownWorkers } from './jobs/workers.js'
 import { disconnectDB } from './utils/db.js'
 
 const SHUTDOWN_TIMEOUT_MS = 8000
@@ -33,7 +33,7 @@ const startServer = async (): Promise<void> => {
         logger.info('HTTP server closed — no longer accepting connections')
 
         try {
-          await Promise.all([disconnectDB(), closeRedis(), shutdownWorkers()])
+          await Promise.all([disconnectDB(), closeRedis(), shutdownSubscribers()])
           logger.info('Data connections (Mongo & Redis) closed')
           process.exit(0)
         } catch (err) {

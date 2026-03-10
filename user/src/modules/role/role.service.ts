@@ -1,7 +1,7 @@
 import CustomError from '../../core/errors/index.js'
-import { emitAuthCacheInvalidationMany } from '../../jobs/auth-cache.events.js'
-import Role from './role.model.js'
+import { invalidateAuthCacheMany } from '../../jobs/auth-cache.events.js'
 import User from '../user/user.model.js'
+import Role from './role.model.js'
 import type { CreateRoleInput, UpdateRoleInput } from './role.validators.js'
 
 export const createRole = async (data: CreateRoleInput) => {
@@ -39,7 +39,10 @@ export const updateRole = async (id: string, data: UpdateRoleInput) => {
 
   if (data.permissions !== undefined) {
     const affectedUsers = await User.find({ roles: id }).select('_id').lean()
-    await emitAuthCacheInvalidationMany(affectedUsers.map(user => String(user._id)), 'context')
+    await invalidateAuthCacheMany(
+      affectedUsers.map(user => String(user._id)),
+      'context',
+    )
   }
 
   return role
@@ -50,13 +53,16 @@ export const deleteRole = async (id: string) => {
   if (!role) {
     throw new CustomError(404, 'role.not_found')
   }
-  
+
   // Cascade deletion: remove this role from all users who have it
   const affectedUsers = await User.find({ roles: id }).select('_id').lean()
 
   if (affectedUsers.length > 0) {
     await User.updateMany({ roles: id }, { $pull: { roles: id } })
 
-    await emitAuthCacheInvalidationMany(affectedUsers.map(user => String(user._id)), 'context')
+    await invalidateAuthCacheMany(
+      affectedUsers.map(user => String(user._id)),
+      'context',
+    )
   }
 }

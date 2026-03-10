@@ -8,22 +8,28 @@ vi.mock('../../../core/loaders/mongoose', () => ({
   initMongoose: vi.fn(),
 }))
 
-vi.mock('../../../jobs/queues', () => ({
-  purgeQueue: {
-    add: vi.fn(),
-  },
+vi.mock('../../../jobs/subscribers', () => ({
+  initSubscribers: vi.fn(),
+  shutdownSubscribers: vi.fn(),
 }))
 
 vi.mock('../../../lib/redis', () => ({
   initRedis: vi.fn(),
   closeRedis: vi.fn(),
-  getBullConnectionOpts: vi.fn().mockReturnValue({}),
   redisClient: {
     connect: vi.fn(),
     ping: vi.fn().mockResolvedValue('PONG'),
     get: vi.fn(),
     set: vi.fn(),
     del: vi.fn(),
+    quit: vi.fn(),
+  },
+  subscriberClient: {
+    connect: vi.fn(),
+    ping: vi.fn().mockResolvedValue('PONG'),
+    subscribe: vi.fn(),
+    unsubscribe: vi.fn(),
+    on: vi.fn(),
     quit: vi.fn(),
   },
 }))

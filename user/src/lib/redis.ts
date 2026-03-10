@@ -48,12 +48,27 @@ redisClient.on('connect', () => logger.info('Redis: Connection established'))
 redisClient.on('ready', () => logger.info('Redis: Ready to receive commands'))
 redisClient.on('reconnecting', () => logger.warn('Redis: Reconnecting...'))
 
+// ── Subscriber client for Redis Pub/Sub ─────────────────────────────────────
+// A client in subscribe mode cannot run other commands,
+// so we use a dedicated connection.
+export const subscriberClient = new Redis(REDIS_URL, {
+  ...redisOptions,
+  keyPrefix: undefined, // Pub/Sub channels don't use key prefixes
+})
+
+subscriberClient.on('error', err => {
+  logger.error('Redis Subscriber Error:', { error: err.message })
+})
+
 export const initRedis = async () => {
   try {
     await redisClient.connect()
-    // Verify connection with a ping
     await redisClient.ping()
     logger.info('Redis: Initial connection verified')
+
+    await subscriberClient.connect()
+    await subscriberClient.ping()
+    logger.info('Redis Subscriber: Connection verified')
   } catch (error) {
     logger.error('Redis: Initial connection failed')
     throw error // Fail fast in loader
@@ -63,25 +78,3 @@ export const initRedis = async () => {
 export const closeRedis = async () => {
   await redisClient.quit()
 }
-
-// â”€â”€ BullMQ connection factory â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// BullMQ creates its own ioredis instance internally.
-// We return a plain connection config object to avoid duplicate ioredis
-// type conflicts between hoisted and nested ioredis packages.
-
-import type { ConnectionOptions } from 'bullmq'
-
-/**
- * Returns BullMQ-compatible connection options.
- * No keyPrefix â€” BullMQ manages its own key namespace (`bull:<queue>:<id>`).
- */
-export const getBullConnectionOpts = (): ConnectionOptions => ({
-  host: new URL(REDIS_URL).hostname,
-  port: Number(new URL(REDIS_URL).port) || 6379,
-  maxRetriesPerRequest: null,
-  enableReadyCheck: false,
-  lazyConnect: true,
-  connectTimeout: 10000,
-  keepAlive: 10000,
-})
-

@@ -1,10 +1,10 @@
+import type { AuthCacheScope } from '@mes/auth'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import { config } from '../../config/index.js'
 import { SYSTEM_IDENTITY } from '../../constants/identity.js'
 import CustomError from '../../core/errors/index.js'
-import type { AuthCacheScope } from '@mes/auth'
-import { emitAuthCacheInvalidation } from '../../jobs/auth-cache.events.js'
+import { invalidateAuthCache } from '../../jobs/auth-cache.events.js'
 import { logger } from '../../lib/logger.js'
 import { type PaginationInput, type PaginationResult, paginate } from '../../utils/pagination.js'
 import User, { type IUser } from './user.model.js'
@@ -18,12 +18,10 @@ import type {
   UserQueryInput,
 } from './user.validators.js'
 
-const getCacheInvalidationScope = (
-  flags: {
-    status: boolean
-    context: boolean
-  },
-): AuthCacheScope | null => {
+const getCacheInvalidationScope = (flags: {
+  status: boolean
+  context: boolean
+}): AuthCacheScope | null => {
   if (flags.status && flags.context) return 'all'
   if (flags.status) return 'status'
   if (flags.context) return 'context'
@@ -158,7 +156,7 @@ export const deleteUser = async (userId: string): Promise<void> => {
     throw new CustomError(404, 'user.not_found')
   }
 
-  await emitAuthCacheInvalidation(userId, 'all')
+  await invalidateAuthCache(userId, 'all')
 }
 
 export const updateUser = async (userId: string, data: Partial<IUser>): Promise<UserResponse> => {
@@ -183,7 +181,7 @@ export const updateUser = async (userId: string, data: Partial<IUser>): Promise<
   })
 
   if (cacheScope) {
-    await emitAuthCacheInvalidation(userId, cacheScope)
+    await invalidateAuthCache(userId, cacheScope)
   }
 
   return user
@@ -290,9 +288,7 @@ export const getUserRolesAndPermissions = async (
     return { roles: [], permissions: ['*'] }
   }
 
-  const user = await User.findById(userId)
-    .populate('roleNames', 'permissions')
-    .lean()
+  const user = await User.findById(userId).populate('roleNames', 'permissions').lean()
 
   if (!user) {
     throw new CustomError(404, 'user.not_found')
@@ -397,7 +393,7 @@ export const adminUpdateUser = async (
   })
 
   if (cacheScope) {
-    await emitAuthCacheInvalidation(userId, cacheScope)
+    await invalidateAuthCache(userId, cacheScope)
   }
 
   return user
@@ -423,5 +419,5 @@ export const adminResetPassword = async (
 
   await user.save()
 
-  await emitAuthCacheInvalidation(userId, 'status')
+  await invalidateAuthCache(userId, 'status')
 }

@@ -1,6 +1,6 @@
+import { initSubscribers } from '../../jobs/subscribers.js'
 import { logger } from '../../lib/logger.js'
 import { initRedis } from '../../lib/redis.js'
-import { initWorkers } from '../../jobs/workers.js'
 import { initExpress } from './express.js'
 import { initMongoose } from './mongoose.js'
 
@@ -10,7 +10,7 @@ export const initLoaders = async () => {
 
     await initMongoose()
     await initRedis()
-    initWorkers()
+    await initSubscribers()
 
     const app = await initExpress()
 
