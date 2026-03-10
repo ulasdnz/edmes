@@ -1,25 +1,30 @@
 {
-    "name":  "@mes/openapi",
-    "version":  "1.0.0",
-    "private":  true,
-    "type":  "module",
-    "main":  "dist/index.js",
-    "types":  "dist/index.d.ts",
-    "exports":  {
-                    ".":  {
-                              "types":  "./dist/index.d.ts",
-                              "import":  "./dist/index.js"
-                          }
-                },
-    "scripts":  {
-                    "build":  "tsc",
-                    "typecheck": "tsc --noEmit"
-                },
-    "peerDependencies":  {
-                             "zod-openapi":  "^5.0.0"
-                         },
-    "devDependencies":  {
-                            "zod-openapi":  "^5.0.0",
-                            "typescript": "^5.9.3"
-                        }
+  "name": "@mes/openapi",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "clean": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\""
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "peerDependencies": {
+    "zod-openapi": "^5.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.5.0",
+    "zod-openapi": "^5.0.0"
+  }
 }

@@ -1,28 +1,37 @@
 {
-    "name":  "factory-mes-monorepo",
-    "version":  "1.0.0",
-    "private":  true,
-    "scripts":  {
-                    "prepare":  "husky",
-                    "lint":  "biome lint .",
-                    "lint:fix":  "biome check --write .",
-                    "format":  "biome format --write .",
-                    "build":  "pnpm -r run build",
-                    "typecheck": "pnpm -r --if-present run typecheck",
-                    "test": "pnpm -r --if-present run test",
-                    "test:contract": "pnpm --filter user-service run test:contract"
-                },
-    "lint-staged":  {
-                        "*.{ts,mts,js,mjs,json,css,md}":  [
-                                                              "biome check --write --no-errors-on-unmatched --files-ignore-unknown=true"
-                                                          ]
-                    },
-    "devDependencies":  {
-                            "@biomejs/biome":  "2.4.6",
-                            "@commitlint/cli":  "^20.4.3",
-                            "@commitlint/config-conventional":  "^20.4.3",
-                            "husky":  "^9.1.7",
-                            "lint-staged":  "^16.3.2"
-                        },
-    "type":  "module"
+  "name": "factory-mes-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "scripts": {
+    "prepare": "husky",
+    "build": "tsc -b",
+    "build:watch": "tsc -b --watch",
+    "build:clean": "tsc -b --clean && tsc -b",
+    "dev": "pnpm --filter user-service run dev",
+    "typecheck": "tsc -b --noEmit",
+    "clean": "turbo clean",
+    "lint": "biome lint .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "test": "turbo test",
+    "test:contract": "pnpm --filter user-service run test:contract"
+  },
+  "lint-staged": {
+    "*.{ts,mts,js,mjs,json,css,md}": [
+      "biome check --write --no-errors-on-unmatched --files-ignore-unknown=true"
+    ]
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.4.6",
+    "@commitlint/cli": "^20.4.3",
+    "@commitlint/config-conventional": "^20.4.3",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.3.2",
+    "turbo": "^2.5.4"
+  }
 }

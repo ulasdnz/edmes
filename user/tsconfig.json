@@ -1,16 +1,21 @@
 {
+  "extends": "../tsconfig.base.json",
   "compilerOptions": {
-    "target": "ES2022",
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
-    "rootDir": "./src",
-    "outDir": "./dist",
-    "strict": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
     "verbatimModuleSyntax": true,
-    "resolveJsonModule": true
+    "resolveJsonModule": true,
+    "outDir": "./dist",
+    "rootDir": "./src"
   },
   "include": ["src"],
-  "exclude": ["**/*.test.ts", "**/*.spec.ts"]
+  "exclude": ["**/*.test.ts", "**/*.spec.ts"],
+  "references": [
+    { "path": "../packages/cache" },
+    { "path": "../packages/core" },
+    { "path": "../packages/openapi" },
+    { "path": "../packages/auth" },
+    { "path": "../packages/logger" }
+  ]
 }

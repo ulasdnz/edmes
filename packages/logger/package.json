@@ -1,33 +1,39 @@
 {
-    "name":  "@mes/logger",
-    "version":  "1.0.0",
-    "private":  true,
-    "type":  "module",
-    "main":  "dist/index.js",
-    "types":  "dist/index.d.ts",
-    "exports":  {
-                    ".":  {
-                              "types":  "./dist/index.d.ts",
-                              "import":  "./dist/index.js"
-                          }
-                },
-    "scripts":  {
-                    "build":  "tsc",
-                    "typecheck": "tsc --noEmit"
-                },
-    "peerDependencies":  {
-                             "express":  "^5.0.0",
-                             "winston":  "^3.0.0",
-                             "morgan":  "^1.0.0",
-                             "@mes/core":  "workspace:*"
-                         },
-    "devDependencies":  {
-                            "winston":  "^3.0.0",
-                            "express":  "^5.0.0",
-                            "morgan":  "^1.0.0",
-                            "@mes/core":  "workspace:*",
-                            "@types/express": "^5.0.6",
-                            "@types/morgan": "^1.9.10",
-                            "typescript": "^5.9.3"
-                        }
+  "name": "@mes/logger",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "clean": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\""
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "@mes/core": "workspace:*"
+  },
+  "peerDependencies": {
+    "express": "^5.0.0",
+    "morgan": "^1.0.0",
+    "winston": "^3.0.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/morgan": "^1.9.10",
+    "@types/node": "^20.0.0",
+    "express": "^5.0.0",
+    "morgan": "^1.0.0",
+    "typescript": "^5.5.0",
+    "winston": "^3.0.0"
+  }
 }

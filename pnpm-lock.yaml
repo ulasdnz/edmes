@@ -23,6 +23,9 @@ importers:
       lint-staged:
         specifier: ^16.3.2
         version: 16.3.3
+      turbo:
+        specifier: ^2.5.4
+        version: 2.8.15
 
   packages/auth:
     dependencies:
@@ -32,12 +35,6 @@ importers:
       '@mes/core':
         specifier: workspace:*
         version: link:../core
-      express:
-        specifier: ^5.0.0
-        version: 5.2.1
-      jsonwebtoken:
-        specifier: ^9.0.2
-        version: 9.0.3
     devDependencies:
       '@types/express':
         specifier: ^5.0.0
@@ -48,17 +45,26 @@ importers:
       '@types/node':
         specifier: ^20.0.0
         version: 20.19.37
+      express:
+        specifier: ^5.0.0
+        version: 5.2.1
+      jsonwebtoken:
+        specifier: ^9.0.2
+        version: 9.0.3
       typescript:
         specifier: ^5.5.0
         version: 5.9.3
 
   packages/cache:
     devDependencies:
+      '@types/node':
+        specifier: ^20.0.0
+        version: 20.19.37
       ioredis:
         specifier: ^5.0.0
         version: 5.10.0
       typescript:
-        specifier: ^5.9.3
+        specifier: ^5.5.0
         version: 5.9.3
       winston:
         specifier: ^3.0.0
@@ -71,11 +77,11 @@ importers:
         version: 13.0.0
     devDependencies:
       '@types/express':
-        specifier: ^5.0.6
+        specifier: ^5.0.0
         version: 5.0.6
       '@types/node':
-        specifier: ^25.3.5
-        version: 25.4.0
+        specifier: ^20.0.0
+        version: 20.19.37
       express:
         specifier: ^5.0.0
         version: 5.2.1
@@ -83,7 +89,7 @@ importers:
         specifier: ^25.0.0
         version: 25.8.17(typescript@5.9.3)
       typescript:
-        specifier: ^5.9.3
+        specifier: ^5.5.0
         version: 5.9.3
       winston:
         specifier: ^3.0.0
@@ -93,16 +99,20 @@ importers:
         version: 4.3.6
 
   packages/logger:
-    devDependencies:
+    dependencies:
       '@mes/core':
         specifier: workspace:*
         version: link:../core
+    devDependencies:
       '@types/express':
-        specifier: ^5.0.6
+        specifier: ^5.0.0
         version: 5.0.6
       '@types/morgan':
         specifier: ^1.9.10
         version: 1.9.10
+      '@types/node':
+        specifier: ^20.0.0
+        version: 20.19.37
       express:
         specifier: ^5.0.0
         version: 5.2.1
@@ -110,7 +120,7 @@ importers:
         specifier: ^1.0.0
         version: 1.10.1
       typescript:
-        specifier: ^5.9.3
+        specifier: ^5.5.0
         version: 5.9.3
       winston:
         specifier: ^3.0.0
@@ -118,8 +128,11 @@ importers:
 
   packages/openapi:
     devDependencies:
+      '@types/node':
+        specifier: ^20.0.0
+        version: 20.19.37
       typescript:
-        specifier: ^5.9.3
+        specifier: ^5.5.0
         version: 5.9.3
       zod-openapi:
         specifier: ^5.0.0
@@ -2605,6 +2618,40 @@ packages:
     engines: {node: '>=18.0.0'}
     hasBin: true
 
+  turbo-darwin-64@2.8.15:
+    resolution: {integrity: sha512-EElCh+Ltxex9lXYrouV3hHjKP3HFP31G91KMghpNHR/V99CkFudRcHcnWaorPbzAZizH1m8o2JkLL8rptgb8WQ==}
+    cpu: [x64]
+    os: [darwin]
+
+  turbo-darwin-arm64@2.8.15:
+    resolution: {integrity: sha512-ORmvtqHiHwvNynSWvLIleyU8dKtwQ4ILk39VsEwfKSEzSHWYWYxZhBmD9GAGRPlNl7l7S1irrziBlDEGVpq+vQ==}
+    cpu: [arm64]
+    os: [darwin]
+
+  turbo-linux-64@2.8.15:
+    resolution: {integrity: sha512-Bk1E61a+PCWUTfhqfXFlhEJMLp6nak0J0Qt14IZX1og1zyaiBLkM6M1GQFbPpiWfbUcdLwRaYQhO0ySB07AJ8w==}
+    cpu: [x64]
+    os: [linux]
+
+  turbo-linux-arm64@2.8.15:
+    resolution: {integrity: sha512-3BX0Vk+XkP0uiZc8pkjQGNsAWjk5ojC53bQEMp6iuhSdWpEScEFmcT6p7DL7bcJmhP2mZ1HlAu0A48wrTGCtvg==}
+    cpu: [arm64]
+    os: [linux]
+
+  turbo-windows-64@2.8.15:
+    resolution: {integrity: sha512-m14ogunMF+grHZ1jzxSCO6q0gEfF1tmr+0LU+j1QNd/M1X33tfKnQqmpkeUR/REsGjfUlkQlh6PAzqlT3cA3Pg==}
+    cpu: [x64]
+    os: [win32]
+
+  turbo-windows-arm64@2.8.15:
+    resolution: {integrity: sha512-HWh6dnzhl7nu5gRwXeqP61xbyDBNmQ4UCeWNa+si4/6RAtHlKEcZTNs7jf4U+oqBnbtv4uxbKZZPf/kN0EK4+A==}
+    cpu: [arm64]
+    os: [win32]
+
+  turbo@2.8.15:
+    resolution: {integrity: sha512-ERZf7pKOR155NKs/PZt1+83NrSEJfUL7+p9/TGZg/8xzDVMntXEFQlX4CsNJQTyu4h3j+dZYiQWOOlv5pssuHQ==}
+    hasBin: true
+
   tweetnacl@0.14.5:
     resolution: {integrity: sha512-KXXFFdAbFXY4geFIwoyNK+f5Z1b7swfXABfL7HXCmoIWMKU3dmS26672A4EeQtDzLKy7SXmfBu51JolvEKwtGA==}
 
@@ -3276,7 +3323,7 @@ snapshots:
   '@types/body-parser@1.19.6':
     dependencies:
       '@types/connect': 3.4.38
-      '@types/node': 20.19.37
+      '@types/node': 25.4.0
 
   '@types/chai@5.2.3':
     dependencies:
@@ -3290,7 +3337,7 @@ snapshots:
 
   '@types/connect@3.4.38':
     dependencies:
-      '@types/node': 20.19.37
+      '@types/node': 25.4.0
 
   '@types/cookiejar@2.1.5': {}
 
@@ -3315,7 +3362,7 @@ snapshots:
 
   '@types/express-serve-static-core@5.1.1':
     dependencies:
-      '@types/node': 20.19.37
+      '@types/node': 25.4.0
       '@types/qs': 6.15.0
       '@types/range-parser': 1.2.7
       '@types/send': 1.2.1
@@ -3363,12 +3410,12 @@ snapshots:
 
   '@types/send@1.2.1':
     dependencies:
-      '@types/node': 20.19.37
+      '@types/node': 25.4.0
 
   '@types/serve-static@2.2.0':
     dependencies:
       '@types/http-errors': 2.0.5
-      '@types/node': 20.19.37
+      '@types/node': 25.4.0
 
   '@types/ssh2-streams@0.1.13':
     dependencies:
@@ -5196,6 +5243,33 @@ snapshots:
       get-tsconfig: 4.13.6
     optionalDependencies:
       fsevents: 2.3.3
+
+  turbo-darwin-64@2.8.15:
+    optional: true
+
+  turbo-darwin-arm64@2.8.15:
+    optional: true
+
+  turbo-linux-64@2.8.15:
+    optional: true
+
+  turbo-linux-arm64@2.8.15:
+    optional: true
+
+  turbo-windows-64@2.8.15:
+    optional: true
+
+  turbo-windows-arm64@2.8.15:
+    optional: true
+
+  turbo@2.8.15:
+    optionalDependencies:
+      turbo-darwin-64: 2.8.15
+      turbo-darwin-arm64: 2.8.15
+      turbo-linux-64: 2.8.15
+      turbo-linux-arm64: 2.8.15
+      turbo-windows-64: 2.8.15
+      turbo-windows-arm64: 2.8.15
 
   tweetnacl@0.14.5: {}
 
