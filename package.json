@@ -10,9 +10,10 @@
   },
   "scripts": {
     "prepare": "husky",
-    "build": "tsc -b",
+    "build": "tsc -b && pnpm --filter user-service run build",
+    "build:packages": "tsc -b",
     "build:watch": "tsc -b --watch",
-    "build:clean": "tsc -b --clean && tsc -b",
+    "build:clean": "tsc -b --clean && tsc -b && pnpm --filter user-service run build",
     "dev": "pnpm --filter user-service run dev",
     "typecheck": "tsc -b",
     "clean": "turbo clean",
@@ -33,6 +34,7 @@
     "@commitlint/config-conventional": "^20.4.3",
     "husky": "^9.1.7",
     "lint-staged": "^16.3.2",
-    "turbo": "^2.5.4"
+    "turbo": "^2.5.4",
+    "typescript": "^5.5.0"
   }
 }

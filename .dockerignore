@@ -4,6 +4,8 @@ node_modules
 .env
 dist
 **/dist
+*.tsbuildinfo
+**/*.tsbuildinfo
 .turbo
 Coverage
 .vscode

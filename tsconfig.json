@@ -5,7 +5,6 @@
     { "path": "packages/core" },
     { "path": "packages/openapi" },
     { "path": "packages/auth" },
-    { "path": "packages/logger" },
-    { "path": "user" }
+    { "path": "packages/logger" }
   ]
 }
