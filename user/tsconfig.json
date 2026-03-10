@@ -12,6 +12,7 @@
     { "path": "../packages/openapi" },
     { "path": "../packages/auth" },
     { "path": "../packages/logger" },
-    { "path": "../packages/health" }
+    { "path": "../packages/health" },
+    { "path": "../packages/events" }
   ]
 }

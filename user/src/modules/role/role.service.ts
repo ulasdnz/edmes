@@ -1,5 +1,6 @@
 import CustomError from '../../core/errors/index.js'
 import { invalidateAuthCacheMany } from '../../jobs/auth-cache.events.js'
+import { emitRoleCreated, emitRoleDeleted, emitRoleUpdated } from '../../jobs/events.js'
 import User from '../user/user.model.js'
 import Role from './role.model.js'
 import type { CreateRoleInput, UpdateRoleInput } from './role.validators.js'
@@ -10,7 +11,11 @@ export const createRole = async (data: CreateRoleInput) => {
     throw new CustomError(409, 'role.name_in_use')
   }
 
-  return Role.create(data)
+  const role = await Role.create(data)
+
+  await emitRoleCreated(role._id.toString())
+
+  return role
 }
 
 export const getRoles = async () => Role.find().lean()
@@ -45,6 +50,8 @@ export const updateRole = async (id: string, data: UpdateRoleInput) => {
     )
   }
 
+  await emitRoleUpdated(role._id.toString())
+
   return role
 }
 
@@ -65,4 +72,6 @@ export const deleteRole = async (id: string) => {
       'context',
     )
   }
+
+  await emitRoleDeleted(id)
 }

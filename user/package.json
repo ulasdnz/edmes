@@ -52,6 +52,7 @@
     "@mes/cache": "workspace:*",
     "@mes/core": "workspace:*",
     "@mes/logger": "workspace:*",
+    "@mes/events": "workspace:*",
     "@mes/health": "workspace:*",
     "@mes/openapi": "workspace:*",
     "bcryptjs": "^3.0.3",

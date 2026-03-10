@@ -8,8 +8,7 @@ if (!REDIS_URL) {
   throw new Error('REDIS_URL is not defined in environment variables')
 }
 
-const redisOptions: RedisOptions = {
-  keyPrefix: 'user:',
+const baseOptions: Omit<RedisOptions, 'keyPrefix'> = {
   maxRetriesPerRequest: null,
   enableReadyCheck: false,
   lazyConnect: true,
@@ -37,27 +36,24 @@ const redisOptions: RedisOptions = {
 }
 
 // Main client for general use (caching, rate limiting, JWT blacklist)
-export const redisClient = new Redis(REDIS_URL, redisOptions)
+export const redisClient = new Redis(REDIS_URL, {
+  ...baseOptions,
+  keyPrefix: 'user:',
+})
 
-// Attach error listener to prevent process crash
 redisClient.on('error', err => {
   logger.error('Redis Client Error:', { error: err.message })
 })
-
 redisClient.on('connect', () => logger.info('Redis: Connection established'))
 redisClient.on('ready', () => logger.info('Redis: Ready to receive commands'))
 redisClient.on('reconnecting', () => logger.warn('Redis: Reconnecting...'))
 
-// ── Subscriber client for Redis Pub/Sub ─────────────────────────────────────
-// A client in subscribe mode cannot run other commands,
-// so we use a dedicated connection.
-export const subscriberClient = new Redis(REDIS_URL, {
-  ...redisOptions,
-  keyPrefix: undefined, // Pub/Sub channels don't use key prefixes
-})
+// ── Stream client for Redis Streams (publishing + consuming) ────────────────
+// No keyPrefix — stream names must be consistent across all services.
+export const streamClient = new Redis(REDIS_URL, baseOptions)
 
-subscriberClient.on('error', err => {
-  logger.error('Redis Subscriber Error:', { error: err.message })
+streamClient.on('error', err => {
+  logger.error('Redis Stream Client Error:', { error: err.message })
 })
 
 export const initRedis = async () => {
@@ -66,15 +62,15 @@ export const initRedis = async () => {
     await redisClient.ping()
     logger.info('Redis: Initial connection verified')
 
-    await subscriberClient.connect()
-    await subscriberClient.ping()
-    logger.info('Redis Subscriber: Connection verified')
+    await streamClient.connect()
+    await streamClient.ping()
+    logger.info('Redis Stream Client: Connection verified')
   } catch (error) {
     logger.error('Redis: Initial connection failed')
-    throw error // Fail fast in loader
+    throw error
   }
 }
 
 export const closeRedis = async () => {
-  await redisClient.quit()
+  await Promise.all([redisClient.quit(), streamClient.quit()])
 }

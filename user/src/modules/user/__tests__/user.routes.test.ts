@@ -24,12 +24,13 @@ vi.mock('../../../lib/redis', () => ({
     del: vi.fn(),
     quit: vi.fn(),
   },
-  subscriberClient: {
+  streamClient: {
     connect: vi.fn(),
     ping: vi.fn().mockResolvedValue('PONG'),
-    subscribe: vi.fn(),
-    unsubscribe: vi.fn(),
-    on: vi.fn(),
+    xadd: vi.fn().mockResolvedValue('1-0'),
+    xreadgroup: vi.fn().mockResolvedValue(null),
+    xgroup: vi.fn(),
+    xack: vi.fn(),
     quit: vi.fn(),
   },
 }))

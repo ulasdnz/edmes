@@ -1,52 +1,40 @@
+import { createStreamConsumer } from '@mes/events'
 import { logger } from '../lib/logger.js'
-import { subscriberClient } from '../lib/redis.js'
+import { streamClient } from '../lib/redis.js'
 import departmentDeletedHandler from './handlers/department-deleted.handler.js'
 import stationDeletedHandler from './handlers/station-deleted.handler.js'
 
-/**
- * Cross-service event channels this service subscribes to.
- * Other services publish to these channels via Redis Pub/Sub.
- */
-const CHANNELS = {
-  'station.deleted': stationDeletedHandler,
-  'department.deleted': departmentDeletedHandler,
-} as const
+const SERVICE_GROUP = 'user-service'
+const CONSUMER_ID = `user-${process.pid}`
+
+const consumer = createStreamConsumer({
+  redis: streamClient,
+  group: SERVICE_GROUP,
+  consumer: CONSUMER_ID,
+  streams: {
+    'events.station': {
+      'station.deleted': stationDeletedHandler,
+      'department.deleted': departmentDeletedHandler,
+    },
+  },
+  logger,
+})
 
 /**
- * Initialize Redis Pub/Sub subscriptions.
- * Called once during server boot from the loaders.
+ * Start consuming cross-service events from Redis Streams.
+ * The consumer runs as a background loop — don't await the returned promise
+ * in the loader, it only resolves on shutdown.
  */
-export const initSubscribers = async () => {
-  const channels = Object.keys(CHANNELS)
-
-  await subscriberClient.subscribe(...channels)
-
-  subscriberClient.on('message', async (channel: string, message: string) => {
-    const handler = CHANNELS[channel as keyof typeof CHANNELS]
-    if (!handler) {
-      logger.warn(`Received message on unknown channel: ${channel}`)
-      return
-    }
-
-    try {
-      const data = JSON.parse(message)
-      await handler(data)
-    } catch (error) {
-      logger.error(`Failed to process event on channel ${channel}`, {
-        error: error instanceof Error ? error.message : error,
-      })
-    }
+export const initSubscribers = () => {
+  // Start the poll loop in the background. Errors are logged internally.
+  consumer.start().catch(err => {
+    logger.error('Stream consumer crashed', { error: err instanceof Error ? err.message : err })
   })
-
-  logger.info(`Subscribed to Redis channels: ${channels.join(', ')}`)
 }
 
 /**
- * Gracefully unsubscribe and disconnect the subscriber client.
- * Called during server shutdown.
+ * Stop the consumer gracefully.
  */
-export const shutdownSubscribers = async () => {
-  await subscriberClient.unsubscribe()
-  await subscriberClient.quit()
-  logger.info('Redis subscriber disconnected')
+export const shutdownSubscribers = () => {
+  consumer.stop()
 }

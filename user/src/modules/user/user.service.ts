@@ -5,6 +5,7 @@ import { config } from '../../config/index.js'
 import { SYSTEM_IDENTITY } from '../../constants/identity.js'
 import CustomError from '../../core/errors/index.js'
 import { invalidateAuthCache } from '../../jobs/auth-cache.events.js'
+import { emitUserCreated, emitUserDeleted, emitUserUpdated } from '../../jobs/events.js'
 import { logger } from '../../lib/logger.js'
 import { type PaginationInput, type PaginationResult, paginate } from '../../utils/pagination.js'
 import User, { type IUser } from './user.model.js'
@@ -43,6 +44,8 @@ export const registerUser = async (data: RegisterInput): Promise<UserResponse> =
     password: hashedPassword,
   })
   const { password: _password, ...response } = user.toObject()
+
+  await emitUserCreated(user._id.toString())
 
   return response
 }
@@ -157,6 +160,7 @@ export const deleteUser = async (userId: string): Promise<void> => {
   }
 
   await invalidateAuthCache(userId, 'all')
+  await emitUserDeleted(userId)
 }
 
 export const updateUser = async (userId: string, data: Partial<IUser>): Promise<UserResponse> => {
@@ -183,6 +187,8 @@ export const updateUser = async (userId: string, data: Partial<IUser>): Promise<
   if (cacheScope) {
     await invalidateAuthCache(userId, cacheScope)
   }
+
+  await emitUserUpdated(userId)
 
   return user
 }
@@ -365,6 +371,8 @@ export const adminCreateUser = async (data: AdminCreateUserInput): Promise<UserR
   })
   const { password: _password, ...response } = user.toObject()
 
+  await emitUserCreated(user._id.toString())
+
   return response
 }
 
@@ -395,6 +403,8 @@ export const adminUpdateUser = async (
   if (cacheScope) {
     await invalidateAuthCache(userId, cacheScope)
   }
+
+  await emitUserUpdated(userId)
 
   return user
 }

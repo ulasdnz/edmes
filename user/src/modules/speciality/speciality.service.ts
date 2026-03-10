@@ -1,4 +1,9 @@
 import CustomError from '../../core/errors/index.js'
+import {
+  emitSpecialityCreated,
+  emitSpecialityDeleted,
+  emitSpecialityUpdated,
+} from '../../jobs/events.js'
 import Speciality from './speciality.model.js'
 import type { CreateSpecialityInput, UpdateSpecialityInput } from './speciality.validators.js'
 
@@ -8,7 +13,11 @@ export const createSpeciality = async (data: CreateSpecialityInput) => {
     throw new CustomError(409, 'speciality.name_in_use')
   }
 
-  return Speciality.create(data)
+  const speciality = await Speciality.create(data)
+
+  await emitSpecialityCreated(speciality._id.toString())
+
+  return speciality
 }
 
 export const getSpecialities = async () => Speciality.find().lean()
@@ -39,6 +48,8 @@ export const updateSpeciality = async (id: string, data: UpdateSpecialityInput) 
     throw new CustomError(404, 'speciality.not_found')
   }
 
+  await emitSpecialityUpdated(id)
+
   return speciality
 }
 
@@ -47,4 +58,6 @@ export const deleteSpeciality = async (id: string) => {
   if (!speciality) {
     throw new CustomError(404, 'speciality.not_found')
   }
+
+  await emitSpecialityDeleted(id)
 }
