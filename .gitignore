@@ -7,6 +7,12 @@ node_modules/
 dist/
 build/
 
+# Turbo
+.turbo/
+
+# TypeScript build info
+*.tsbuildinfo
+
 # Environment Variables
 .env
 .env.local
