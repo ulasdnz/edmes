@@ -1,14 +1,17 @@
+import { authenticate, configureAuth, resolvePermissions } from '@mes/auth'
+import { createHealthRoutes, mongoProbe, redisProbe } from '@mes/health'
 import compression from 'compression'
 import cors from 'cors'
 import type { NextFunction, Request, Response } from 'express'
 import express, { json, Router, urlencoded } from 'express'
 import helmet from 'helmet'
-
+import mongoose from 'mongoose'
 import { config } from '../../config/index.js'
 import { SYSTEM_IDENTITY } from '../../constants/identity.js'
-import { morganMiddleware } from '../../lib/logger.js'
+import { cacheWrapDedup } from '../../lib/cache.js'
+import { logger, morganMiddleware } from '../../lib/logger.js'
 import { generateOpenApiDocument } from '../../lib/openapi/setup.js'
-import healthRoutes from '../../modules/health/health.routes.js'
+import { redisClient } from '../../lib/redis.js'
 import { passwordRecoveryPaths } from '../../modules/password-recovery/password-recovery.openapi.js'
 import passwordRecoveryRoutes from '../../modules/password-recovery/password-recovery.routes.js'
 import { rolePaths } from '../../modules/role/role.openapi.js'
@@ -18,11 +21,9 @@ import specialityRoutes from '../../modules/speciality/speciality.routes.js'
 import authRoutes from '../../modules/user/auth.routes.js'
 import { userPaths } from '../../modules/user/user.openapi.js'
 import userRoutes from '../../modules/user/user.routes.js'
-import { authenticate, resolvePermissions, configureAuth } from '@mes/auth'
 import { errorHandler } from '../middleware/error-handler.js'
 import { contextMiddleware, setUserId } from '../middleware/request-context.js'
 import { initI18n } from './i18n.js'
-import { cacheWrapDedup } from '../../lib/cache.js'
 
 /**
  * Shared route modules — mounted on BOTH /api/v1 and /internal/v1.
@@ -87,6 +88,10 @@ export const initExpress = async () => {
   }
 
   // ─── Health (no prefix, no auth) ────────────────────────────────────────────
+  const healthRoutes = createHealthRoutes({
+    probes: [mongoProbe(mongoose), redisProbe(redisClient)],
+    logger,
+  })
   app.use(healthRoutes)
 
   // ─── Public auth routes (no auth required) ──────────────────────────────────

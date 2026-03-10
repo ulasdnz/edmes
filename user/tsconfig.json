@@ -1,11 +1,6 @@
 {
-  "extends": "../tsconfig.base.json",
+  "extends": "../tsconfig.app.json",
   "compilerOptions": {
-    "composite": false,
-    "declaration": false,
-    "declarationMap": false,
-    "verbatimModuleSyntax": true,
-    "resolveJsonModule": true,
     "outDir": "./dist",
     "rootDir": "./src"
   },
@@ -16,6 +11,7 @@
     { "path": "../packages/core" },
     { "path": "../packages/openapi" },
     { "path": "../packages/auth" },
-    { "path": "../packages/logger" }
+    { "path": "../packages/logger" },
+    { "path": "../packages/health" }
   ]
 }

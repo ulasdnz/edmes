@@ -12,13 +12,15 @@ RUN corepack enable && corepack prepare pnpm@10.30.3 --activate
 WORKDIR /app
 
 # Copy lockfile and configs first for caching
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json tsconfig.json ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json tsconfig.app.json tsconfig.json ./
 # Copy workspace package.jsons + tsconfigs to leverage cached installs
 COPY packages/auth/package.json packages/auth/tsconfig.json ./packages/auth/
 COPY packages/core/package.json packages/core/tsconfig.json ./packages/core/
 COPY packages/logger/package.json packages/logger/tsconfig.json ./packages/logger/
 COPY packages/cache/package.json packages/cache/tsconfig.json ./packages/cache/
 COPY packages/openapi/package.json packages/openapi/tsconfig.json ./packages/openapi/
+COPY packages/health/package.json packages/health/tsconfig.json ./packages/health/
+COPY packages/testing/package.json packages/testing/tsconfig.json ./packages/testing/
 COPY user/package.json user/tsconfig.json ./user/
 
 # Fetch deps — node-linker=hoisted ensures @mes/* resolve from any directory
