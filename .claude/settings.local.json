@@ -3,7 +3,9 @@
     "allow": [
       "Bash(cd \"C:\\\\Users\\\\UlasIsik\\\\OneDrive - DefineX\\\\Masaüstü\\\\docker-node-project\\\\aimes\" && pnpm install 2>&1)",
       "Bash(cd \"C:\\\\Users\\\\UlasIsik\\\\OneDrive - DefineX\\\\Masaüstü\\\\docker-node-project\\\\aimes\" && pnpm build 2>&1)",
-      "Bash(cd \"C:\\\\Users\\\\UlasIsik\\\\OneDrive - DefineX\\\\Masaüstü\\\\docker-node-project\\\\aimes\" && pnpm typecheck 2>&1)"
+      "Bash(cd \"C:\\\\Users\\\\UlasIsik\\\\OneDrive - DefineX\\\\Masaüstü\\\\docker-node-project\\\\aimes\" && pnpm typecheck 2>&1)",
+      "Bash(cd \"C:\\\\Users\\\\UlasIsik\\\\OneDrive - DefineX\\\\Masaüstü\\\\docker-node-project\\\\aimes\" && pnpm --version 2>&1)",
+      "Bash(cd \"C:\\\\Users\\\\UlasIsik\\\\OneDrive - DefineX\\\\Masaüstü\\\\docker-node-project\\\\aimes\" && pnpm typecheck 2>&1 && pnpm test 2>&1)"
     ]
   }
 }

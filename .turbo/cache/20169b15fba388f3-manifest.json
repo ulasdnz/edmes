@@ -1,0 +1,188 @@
+{
+  "files": {
+    "packages/core/dist/types/index.d.ts": {
+      "size": 530,
+      "mtime_nanos": 1773145462612159200,
+      "mode": 420,
+      "is_dir": false
+    },
+    "packages/core/dist/middleware/validate.d.ts.map": {
+      "size": 514,
+      "mtime_nanos": 1773145462657490300,
+      "mode": 420,
+      "is_dir": false
+    },
+    "packages/core/dist/index.js": {
+      "size": 416,
+      "mtime_nanos": 1773145462671201000,
+      "mode": 420,
+      "is_dir": false
+    },
+    "packages/core/dist/shutdown.js": {
+      "size": 274,
+      "mtime_nanos": 1773145462663554200,
+      "mode": 420,
+      "is_dir": false
+    },
+    "packages/core/dist/types/index.d.ts.map": {
+      "size": 648,
+      "mtime_nanos": 1773145462611566700,
+      "mode": 420,
+      "is_dir": false
+    },
+    "packages/core/dist/middleware/validate.js": {
+      "size": 717,
+      "mtime_nanos": 1773145462651158400,
+      "mode": 420,
+      "is_dir": false
+    },
+    "packages/core/dist/middleware/validate.d.ts": {
+      "size": 516,
+      "mtime_nanos": 1773145462660163300,
+      "mode": 420,
+      "is_dir": false
+    },
+    "packages/core/dist/index.d.ts": {
+      "size": 744,
+      "mtime_nanos": 1773145462676826300,
+      "mode": 420,
+      "is_dir": false
+    },
+    "packages/core/dist/types": {
+      "size": 0,
+      "mtime_nanos": 0,
+      "mode": 0,
+      "is_dir": true
+    },
+    "packages/core/dist/middleware/error-handler.js": {
+      "size": 3535,
+      "mtime_nanos": 1773145462624079400,
+      "mode": 420,
+      "is_dir": false
+    },
+    "packages/core/dist/shutdown.d.ts": {
+      "size": 305,
+      "mtime_nanos": 1773145462668139200,
+      "mode": 420,
+      "is_dir": false
+    },
+    "packages/core/dist/types/index.js": {
+      "size": 11,
+      "mtime_nanos": 1773145462607982500,
+      "mode": 420,
+      "is_dir": false
+    },
+    "packages/core/dist/errors/index.js": {
+      "size": 401,
+      "mtime_nanos": 1773145462599714600,
+      "mode": 420,
+      "is_dir": false
+    },
+    "packages/core/dist/middleware/request-context.js": {
+      "size": 935,
+      "mtime_nanos": 1773145462641728700,
+      "mode": 420,
+      "is_dir": false
+    },
+    "packages/core/dist/errors": {
+      "size": 0,
+      "mtime_nanos": 0,
+      "mode": 0,
+      "is_dir": true
+    },
+    "packages/core/dist/middleware": {
+      "size": 0,
+      "mtime_nanos": 0,
+      "mode": 0,
+      "is_dir": true
+    },
+    "packages/core/dist/errors/index.d.ts": {
+      "size": 284,
+      "mtime_nanos": 1773145462604868400,
+      "mode": 420,
+      "is_dir": false
+    },
+    "packages/core/dist": {
+      "size": 0,
+      "mtime_nanos": 0,
+      "mode": 0,
+      "is_dir": true
+    },
+    "packages/core/dist/middleware/request-context.d.ts.map": {
+      "size": 582,
+      "mtime_nanos": 1773145462647543300,
+      "mode": 420,
+      "is_dir": false
+    },
+    "packages/core/dist/index.d.ts.map": {
+      "size": 617,
+      "mtime_nanos": 1773145462675807900,
+      "mode": 420,
+      "is_dir": false
+    },
+    "packages/core/dist/middleware/error-handler.d.ts.map": {
+      "size": 508,
+      "mtime_nanos": 1773145462629001000,
+      "mode": 420,
+      "is_dir": false
+    },
+    "packages/core/dist/shutdown.d.ts.map": {
+      "size": 186,
+      "mtime_nanos": 1773145462667113600,
+      "mode": 420,
+      "is_dir": false
+    },
+    "packages/core/.turbo/turbo-build.log": {
+      "size": 137,
+      "mtime_nanos": 1773146277858614800,
+      "mode": 420,
+      "is_dir": false
+    },
+    "packages/core/dist/errors/index.d.ts.map": {
+      "size": 351,
+      "mtime_nanos": 1773145462603846100,
+      "mode": 420,
+      "is_dir": false
+    },
+    "packages/core/dist/middleware/request-context.d.ts": {
+      "size": 730,
+      "mtime_nanos": 1773145462648584000,
+      "mode": 420,
+      "is_dir": false
+    },
+    "packages/core/dist/middleware/error-handler.d.ts": {
+      "size": 460,
+      "mtime_nanos": 1773145462638646600,
+      "mode": 420,
+      "is_dir": false
+    }
+  },
+  "order": [
+    "packages/core/.turbo/turbo-build.log",
+    "packages/core/dist",
+    "packages/core/dist/errors",
+    "packages/core/dist/errors/index.d.ts",
+    "packages/core/dist/errors/index.d.ts.map",
+    "packages/core/dist/errors/index.js",
+    "packages/core/dist/index.d.ts",
+    "packages/core/dist/index.d.ts.map",
+    "packages/core/dist/index.js",
+    "packages/core/dist/middleware",
+    "packages/core/dist/middleware/error-handler.d.ts",
+    "packages/core/dist/middleware/error-handler.d.ts.map",
+    "packages/core/dist/middleware/error-handler.js",
+    "packages/core/dist/middleware/request-context.d.ts",
+    "packages/core/dist/middleware/request-context.d.ts.map",
+    "packages/core/dist/middleware/request-context.js",
+    "packages/core/dist/middleware/validate.d.ts",
+    "packages/core/dist/middleware/validate.d.ts.map",
+    "packages/core/dist/middleware/validate.js",
+    "packages/core/dist/shutdown.d.ts",
+    "packages/core/dist/shutdown.d.ts.map",
+    "packages/core/dist/shutdown.js",
+    "packages/core/dist/types",
+    "packages/core/dist/types/index.d.ts",
+    "packages/core/dist/types/index.d.ts.map",
+    "packages/core/dist/types/index.js"
+  ]
+}
