@@ -11,7 +11,16 @@ type XReadGroupResult = [stream: string, messages: [id: string, fields: string[]
  * can be shared with publishEvent().
  */
 export function createStreamConsumer(config: StreamConsumerConfig) {
-  const { redis, group, consumer, streams, logger, pollIntervalMs = 2000, batchSize = 10 } = config
+  const {
+    redis,
+    group,
+    consumer,
+    streams,
+    logger,
+    runInContext,
+    pollIntervalMs = 2000,
+    batchSize = 10,
+  } = config
 
   let stopped = false
   const streamNames = Object.keys(streams)
@@ -47,17 +56,29 @@ export function createStreamConsumer(config: StreamConsumerConfig) {
       const handler = handlers[parsed.type]
 
       if (!handler) {
-        logger.warn(`No handler for event type "${parsed.type}" on stream "${stream}", skipping`)
+        logger.warn(`No handler for event type "${parsed.type}" on stream "${stream}", skipping`, {
+          event: 'events.handler.not_found',
+          eventType: parsed.type,
+          stream,
+        })
         await redis.xack(stream, group, id)
         continue
       }
 
       try {
         const data = JSON.parse(parsed.data ?? '{}')
-        await handler(data)
+        const traceId: string = data.traceId ?? id
+
+        const execute = () => handler(data)
+        await (runInContext ? runInContext(traceId, execute) : execute())
+
         await redis.xack(stream, group, id)
       } catch (err) {
         logger.error(`Failed to process event ${id} (${parsed.type}) on ${stream}`, {
+          event: 'events.handler.failed',
+          eventId: id,
+          eventType: parsed.type,
+          stream,
           error: err instanceof Error ? err.message : err,
         })
         // Don't ACK — message stays pending and can be retried.
@@ -82,7 +103,11 @@ export function createStreamConsumer(config: StreamConsumerConfig) {
 
     for (const [stream, messages] of results) {
       if (messages.length > 0) {
-        logger.info(`Reprocessing ${messages.length} pending events on ${stream}`)
+        logger.info(`Reprocessing ${messages.length} pending events on ${stream}`, {
+          event: 'events.pending.reprocessing',
+          count: messages.length,
+          stream,
+        })
         await processBatch(stream, messages)
       }
     }
@@ -116,6 +141,7 @@ export function createStreamConsumer(config: StreamConsumerConfig) {
       } catch (err) {
         if (stopped) break
         logger.error('Stream consumer poll error', {
+          event: 'events.consumer.poll_error',
           error: err instanceof Error ? err.message : err,
         })
         await new Promise(r => setTimeout(r, pollIntervalMs))
@@ -128,7 +154,11 @@ export function createStreamConsumer(config: StreamConsumerConfig) {
     async start(): Promise<void> {
       await ensureGroups()
       await processPending()
-      logger.info(`Stream consumer started [group=${group}] streams=[${streamNames.join(', ')}]`)
+      logger.info(`Stream consumer started [group=${group}] streams=[${streamNames.join(', ')}]`, {
+        event: 'events.consumer.started',
+        group,
+        streams: streamNames,
+      })
       await pollLoop()
     },
 

@@ -1,3 +1,4 @@
+import { getTraceId } from '@mes/core'
 import { publishEvent } from '@mes/events'
 import { logger } from '../lib/logger.js'
 import { streamClient } from '../lib/redis.js'
@@ -6,9 +7,11 @@ const STREAM = 'events.user'
 
 async function emit(type: string, data: Record<string, unknown>): Promise<void> {
   try {
-    await publishEvent(streamClient, STREAM, type, data)
+    await publishEvent(streamClient, STREAM, type, { ...data, traceId: getTraceId() })
   } catch (err) {
     logger.warn(`Failed to publish event ${type}`, {
+      event: 'events.publish.failed',
+      eventType: type,
       error: err instanceof Error ? err.message : err,
     })
   }

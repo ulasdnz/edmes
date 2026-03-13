@@ -13,31 +13,37 @@ const startServer = async (): Promise<void> => {
     const app = await initLoaders()
 
     const server = app.listen(config.PORT, () => {
-      logger.info(`Server running on port ${config.PORT}`)
+      logger.info('Server started', { event: 'server.start', port: config.PORT })
     })
 
     const shutdown = async (signal?: NodeJS.Signals): Promise<void> => {
       if (isShuttingDown) return // Prevent double shutdown
       setShuttingDown()
 
-      logger.info(`Received ${signal}. Gracefully shutting down...`)
+      logger.info('Gracefully shutting down', { event: 'server.shutdown.start', signal })
 
       // Safety net: force exit if cleanup takes too long
       const forceExitTimer = setTimeout(() => {
-        logger.error(`Shutdown timed out after ${SHUTDOWN_TIMEOUT_MS}ms, forcing exit`)
+        logger.error('Shutdown timed out, forcing exit', {
+          event: 'server.shutdown.timeout',
+          timeoutMs: SHUTDOWN_TIMEOUT_MS,
+        })
         process.exit(1)
       }, SHUTDOWN_TIMEOUT_MS)
       forceExitTimer.unref() // Don't keep process alive just for this timer
 
       server.close(async () => {
-        logger.info('HTTP server closed — no longer accepting connections')
+        logger.info('HTTP server closed', { event: 'server.http.closed' })
 
         try {
           await Promise.all([disconnectDB(), closeRedis(), shutdownSubscribers()])
-          logger.info('Data connections (Mongo & Redis) closed')
+          logger.info('Data connections closed', { event: 'server.shutdown.completed' })
           process.exit(0)
         } catch (err) {
-          logger.error('Error during shutdown cleanup', err)
+          logger.error('Error during shutdown cleanup', {
+            event: 'server.shutdown.failed',
+            error: err instanceof Error ? err.message : err,
+          })
           process.exit(1)
         }
       })
@@ -46,22 +52,31 @@ const startServer = async (): Promise<void> => {
     process.on('SIGINT', () => shutdown('SIGINT'))
     process.on('SIGTERM', () => shutdown('SIGTERM'))
   } catch (error) {
-    logger.error('Failed to start server', error)
+    logger.error('Failed to start server', {
+      event: 'server.start.failed',
+      error: error instanceof Error ? error.message : error,
+    })
     process.exit(1)
   }
 }
 
 process.on('unhandledRejection', (reason: unknown) => {
-  if (reason instanceof Error) {
-    logger.error('Unhandled Promise Rejection:', reason.message, reason.stack)
-  } else {
-    logger.error('Unhandled Promise Rejection:', reason)
-  }
+  const error = reason instanceof Error ? reason.message : String(reason)
+  const stack = reason instanceof Error ? reason.stack : undefined
+  logger.error('Unhandled Promise Rejection', {
+    event: 'process.unhandled_rejection',
+    error,
+    stack,
+  })
   process.exit(1)
 })
 
 process.on('uncaughtException', (error: Error) => {
-  logger.error('Uncaught Exception:', error.message, error.stack)
+  logger.error('Uncaught Exception', {
+    event: 'process.uncaught_exception',
+    error: error.message,
+    stack: error.stack,
+  })
   process.exit(1)
 })
 

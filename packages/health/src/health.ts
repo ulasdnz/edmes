@@ -49,6 +49,8 @@ export function createHealthRoutes(config: HealthConfig): Router {
       if (result.status === 'rejected') {
         services[probe.name] = 'unhealthy'
         logger.warn(`Health check failed: ${probe.name} is unhealthy`, {
+          event: 'health.check.failed',
+          probe: probe.name,
           reason: result.reason?.message,
         })
       } else {
@@ -71,6 +73,7 @@ export function createHealthRoutes(config: HealthConfig): Router {
       res.status(200).json({ ready: true })
     } catch (error) {
       logger.warn('Readiness check failed', {
+        event: 'health.readiness.failed',
         reason: error instanceof Error ? error.message : String(error),
       })
       res.status(503).json({ ready: false })

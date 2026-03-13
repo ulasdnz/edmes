@@ -9,7 +9,7 @@ import mongoose from 'mongoose'
 import { config } from '../../config/index.js'
 import { SYSTEM_IDENTITY } from '../../constants/identity.js'
 import { cacheWrapDedup } from '../../lib/cache.js'
-import { logger, morganMiddleware } from '../../lib/logger.js'
+import { httpLoggerMiddleware, logger, morganMiddleware } from '../../lib/logger.js'
 import { generateOpenApiDocument } from '../../lib/openapi/setup.js'
 import { redisClient } from '../../lib/redis.js'
 import { passwordRecoveryPaths } from '../../modules/password-recovery/password-recovery.openapi.js'
@@ -55,7 +55,7 @@ export const initExpress = async () => {
   app.use(i18nMiddleware)
 
   app.use(contextMiddleware)
-  app.use(morganMiddleware)
+  app.use(config.NODE_ENV === 'production' ? httpLoggerMiddleware : morganMiddleware)
   app.use(express.static('public'))
   app.use('/uploads', express.static('uploads'))
   app.disable('x-powered-by')
@@ -81,9 +81,9 @@ export const initExpress = async () => {
       const { default: swaggerUi } = await import('swagger-ui-express')
       app.use('/docs', swaggerUi.serve, swaggerUi.setup(openApiSpec))
     } catch (error) {
-      // Gracefully handle the case where the app is run in a production Docker container
-      // but NODE_ENV is overridden to development, meaning devDependencies are missing.
-      console.warn('⚠️ Swagger UI is not available because swagger-ui-express is missing.')
+      logger.debug('Swagger UI not available — swagger-ui-express is not installed', {
+        event: 'server.swagger.unavailable',
+      })
     }
   }
 

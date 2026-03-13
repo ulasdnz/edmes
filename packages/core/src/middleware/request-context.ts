@@ -49,4 +49,8 @@ export const setUserId = (userId: string): void => {
   if (store) store.userId = userId
 }
 
+export const runInContext = <T>(ctx: RequestContext, fn: () => T): T => {
+  return als.run(ctx, fn)
+}
+
 export { als }

@@ -133,7 +133,11 @@ const recordFailedLogin = async (
     },
   })
 
-  logger.warn(`Failed login attempt ${newCount} for user ${userId}`)
+  logger.warn(`Failed login attempt ${newCount} for user ${userId}`, {
+    event: 'user.login.failed',
+    userId,
+    attemptCount: newCount,
+  })
 }
 
 /**
@@ -208,7 +212,10 @@ export const updateAvatar = async (
       const fs = await import('fs/promises')
       await fs.unlink(oldFilePath)
     } catch {
-      logger.warn(`Failed to delete old avatar: ${oldFilePath}`)
+      logger.warn(`Failed to delete old avatar: ${oldFilePath}`, {
+        event: 'user.avatar.delete_failed',
+        filePath: oldFilePath,
+      })
     }
   }
 

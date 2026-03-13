@@ -1,6 +1,6 @@
 import type { NextFunction, Request, Response } from 'express'
-import { ZodError } from 'zod'
 import type { Logger } from 'winston'
+import { ZodError } from 'zod'
 import { CustomError } from '../errors/index.js'
 import type { ErrorResponse, MongoError } from '../types/index.js'
 
@@ -47,7 +47,8 @@ export const createErrorHandler =
     let errors: ErrorResponse['errors']
     let stack: string | undefined
 
-    const tLog = req.i18n.getFixedT('en')
+    const identity = ((key: string) => key) as typeof req.t
+    const tLog = req.i18n?.getFixedT('en') ?? identity
 
     if (err instanceof ZodError) {
       isOperational = true
@@ -96,7 +97,7 @@ export const createErrorHandler =
     const logPayload = {
       statusCode,
       method: req.method,
-      path: req.path,
+      path: req.route ? `${req.baseUrl}${req.route.path}` : req.path,
     }
 
     let logMessage = tLog(messageKey, messageParams) as string
@@ -109,16 +110,15 @@ export const createErrorHandler =
     }
 
     if (!isOperational) {
-      logger.error(logMessage, { ...logPayload, stack })
-    } else {
-      logger.warn(logMessage, logPayload)
+      logger.error(logMessage, { event: 'error.unexpected', ...logPayload, stack })
     }
 
-    const responseMessage = req.t(messageKey, messageParams) as string
+    const t = req.t ?? identity
+    const responseMessage = t(messageKey, messageParams) as string
 
     const responseErrors = errors?.map(e => ({
       field: e.field,
-      message: req.t(e.message, {}) as string,
+      message: t(e.message, {}) as string,
     }))
 
     const response: ErrorResponse = {

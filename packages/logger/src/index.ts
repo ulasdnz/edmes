@@ -1,7 +1,7 @@
-import morgan from 'morgan'
-import type { Request, RequestHandler, Response } from 'express'
-import winston from 'winston'
 import { getContext } from '@mes/core'
+import type { NextFunction, Request, RequestHandler, Response } from 'express'
+import morgan from 'morgan'
+import winston from 'winston'
 
 export interface LoggerOptions {
   level: string
@@ -21,22 +21,34 @@ const consoleFormat = winston.format.combine(
   winston.format.colorize(),
   winston.format.timestamp({ format: () => new Date().toISOString() }),
   winston.format.printf(info => {
-    const { level, message, timestamp, traceId, stack } = info
+    const { level, message, timestamp, traceId, event, stack } = info
 
     const logMessage = stack || message || 'No message provided'
+    const eventTag = event ? ` [${event}]` : ''
 
-    return `[${timestamp}] ${level} [traceId=${traceId || 'no-trace'}] ${logMessage}`
+    return `[${timestamp}] ${level} [traceId=${traceId || 'no-trace'}]${eventTag} ${logMessage}`
   }),
 )
 
+const jsonFormat = winston.format.combine(
+  winston.format.errors({ stack: true }),
+  contextFormat(),
+  winston.format.timestamp(),
+  winston.format.json(),
+)
+
 export const createLogger = ({ level, serviceName }: LoggerOptions) => {
+  const isProd = process.env.NODE_ENV === 'production'
+
   const transports: winston.transport[] = [
     new winston.transports.Console({
-      format: winston.format.combine(
-        winston.format.errors({ stack: true }),
-        contextFormat(),
-        consoleFormat,
-      ),
+      format: isProd
+        ? jsonFormat
+        : winston.format.combine(
+            winston.format.errors({ stack: true }),
+            contextFormat(),
+            consoleFormat,
+          ),
     }),
   ]
 
@@ -60,3 +72,34 @@ export const createMorganMiddleware = (logger: winston.Logger): RequestHandler =
       },
     },
   )
+
+export const createHttpLoggerMiddleware =
+  (logger: winston.Logger): RequestHandler =>
+  (req: Request, res: Response, next: NextFunction) => {
+    const start = process.hrtime.bigint()
+
+    let logged = false
+    const log = (aborted: boolean) => {
+      if (logged) return
+      logged = true
+
+      const duration = Math.round(Number(process.hrtime.bigint() - start) / 1e6)
+      const path = req.route ? `${req.baseUrl}${req.route.path}` : req.path
+
+      logger.http('HTTP request completed', {
+        event: 'http.request.completed',
+        method: req.method,
+        path,
+        statusCode: res.statusCode,
+        duration,
+        ...(aborted && { aborted: true }),
+      })
+    }
+
+    res.on('finish', () => log(false))
+    res.on('close', () => {
+      if (!res.writableFinished) log(true)
+    })
+
+    next()
+  }

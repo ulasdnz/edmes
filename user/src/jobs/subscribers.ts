@@ -1,3 +1,4 @@
+import { runInContext } from '@mes/core'
 import { createStreamConsumer } from '@mes/events'
 import { logger } from '../lib/logger.js'
 import { streamClient } from '../lib/redis.js'
@@ -18,6 +19,7 @@ const consumer = createStreamConsumer({
     },
   },
   logger,
+  runInContext: (traceId, fn) => runInContext({ traceId, ip: 'internal' }, fn),
 })
 
 /**
@@ -28,7 +30,10 @@ const consumer = createStreamConsumer({
 export const initSubscribers = () => {
   // Start the poll loop in the background. Errors are logged internally.
   consumer.start().catch(err => {
-    logger.error('Stream consumer crashed', { error: err instanceof Error ? err.message : err })
+    logger.error('Stream consumer crashed', {
+      event: 'events.consumer.crashed',
+      error: err instanceof Error ? err.message : err,
+    })
   })
 }
 

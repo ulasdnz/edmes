@@ -61,7 +61,9 @@ export const requestCode = async (data: RequestCodeInput) => {
   })
 
   if (recentRequestsCount >= MAX_ATTEMPTS_PER_HOUR) {
-    logger.warn(`Password recovery rate-limited for ${maskEmail(normalizedEmail)}`)
+    logger.warn(`Password recovery rate-limited for ${maskEmail(normalizedEmail)}`, {
+      event: 'password.recovery.rate_limited',
+    })
     return buildGenericRequestResult(normalizedEmail)
   }
 
@@ -81,7 +83,9 @@ export const requestCode = async (data: RequestCodeInput) => {
     { $set: { expiredAt: new Date() } },
   )
 
-  logger.info(`Password recovery code generated for ${maskEmail(normalizedEmail)}`)
+  logger.info(`Password recovery code generated for ${maskEmail(normalizedEmail)}`, {
+    event: 'password.recovery.code_generated',
+  })
 
   return { email: normalizedEmail, expiredAt: recovery.expiredAt }
 }

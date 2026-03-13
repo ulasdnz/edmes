@@ -14,10 +14,12 @@ export interface StreamConsumerConfig {
   /** Map of stream → event type → handler. */
   streams: Record<string, Record<string, EventHandler>>
   logger: {
-    info: (msg: string, ...args: unknown[]) => void
-    warn: (msg: string, ...args: unknown[]) => void
-    error: (msg: string, ...args: unknown[]) => void
+    info: (msg: string, meta?: Record<string, unknown>) => void
+    warn: (msg: string, meta?: Record<string, unknown>) => void
+    error: (msg: string, meta?: Record<string, unknown>) => void
   }
+  /** Wraps each event handler to seed context (e.g. AsyncLocalStorage with traceId). */
+  runInContext?: (traceId: string, fn: () => Promise<void>) => Promise<void>
   /** Polling interval in ms when no messages are available. Default: 2000. */
   pollIntervalMs?: number
   /** Max messages to read per poll. Default: 10. */

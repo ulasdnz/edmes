@@ -13,15 +13,23 @@ const ensureModelIndexes = async (): Promise<void> => {
 
   const modelEntries = Object.entries(mongoose.models)
   if (modelEntries.length === 0) {
-    logger.warn('MongoDB index ensure skipped: no registered models')
+    logger.warn('MongoDB index ensure skipped: no registered models', {
+      event: 'db.mongo.index_skip',
+    })
     return
   }
 
-  logger.info(`Ensuring MongoDB indexes for ${modelEntries.length} models...`)
+  logger.info(`Ensuring MongoDB indexes for ${modelEntries.length} models`, {
+    event: 'db.mongo.index_start',
+    modelCount: modelEntries.length,
+  })
 
   for (const [modelName, model] of modelEntries) {
     await model.createIndexes()
-    logger.info(`MongoDB indexes ensured for model: ${modelName}`)
+    logger.debug(`MongoDB indexes ensured for model: ${modelName}`, {
+      event: 'db.mongo.index_ensured',
+      model: modelName,
+    })
   }
 }
 
@@ -34,11 +42,12 @@ export const initMongoose = async (): Promise<void> => {
 
     await ensureModelIndexes()
 
-    logger.info('MongoDB connected successfully')
+    logger.info('MongoDB connected successfully', { event: 'db.mongo.connected' })
 
     setupMongooseEventListeners()
   } catch (error) {
     logger.error('MongoDB connection failed', {
+      event: 'db.mongo.connection_failed',
       error: error instanceof Error ? error.message : error,
     })
     throw error
@@ -47,13 +56,14 @@ export const initMongoose = async (): Promise<void> => {
 
 function setupMongooseEventListeners(): void {
   mongoose.connection.on('disconnected', () => {
-    logger.warn('MongoDB disconnected unexpectedly')
+    logger.warn('MongoDB disconnected unexpectedly', { event: 'db.mongo.disconnected' })
   })
   mongoose.connection.on('reconnected', () => {
-    logger.info('MongoDB reconnected')
+    logger.info('MongoDB reconnected', { event: 'db.mongo.reconnected' })
   })
   mongoose.connection.on('error', err => {
     logger.error('MongoDB connection error', {
+      event: 'db.mongo.error',
       error: err instanceof Error ? err.message : err,
     })
   })

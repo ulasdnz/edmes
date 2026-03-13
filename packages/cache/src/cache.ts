@@ -20,7 +20,11 @@ export const setupCache = (redisClient: Redis, logger: Logger) => {
 
       return JSON.parse(raw) as T
     } catch (error) {
-      logger.warn('Cache GET failed, skipping cache', { key, error: (error as Error).message })
+      logger.warn('Cache GET failed, skipping cache', {
+        event: 'cache.get.failed',
+        key,
+        error: (error as Error).message,
+      })
       return null
     }
   }
@@ -30,7 +34,11 @@ export const setupCache = (redisClient: Redis, logger: Logger) => {
       const serialized = JSON.stringify(value)
       await redisClient.set(key, serialized, 'EX', ttlSeconds)
     } catch (error) {
-      logger.warn('Cache SET failed, skipping cache', { key, error: (error as Error).message })
+      logger.warn('Cache SET failed, skipping cache', {
+        event: 'cache.set.failed',
+        key,
+        error: (error as Error).message,
+      })
     }
   }
 
@@ -38,7 +46,11 @@ export const setupCache = (redisClient: Redis, logger: Logger) => {
     try {
       await redisClient.del(key)
     } catch (error) {
-      logger.warn('Cache DEL failed', { key, error: (error as Error).message })
+      logger.warn('Cache DEL failed', {
+        event: 'cache.del.failed',
+        key,
+        error: (error as Error).message,
+      })
     }
   }
 
@@ -55,7 +67,11 @@ export const setupCache = (redisClient: Redis, logger: Logger) => {
 
       return deleted
     } catch (error) {
-      logger.warn('Cache DEL pattern failed', { pattern, error: (error as Error).message })
+      logger.warn('Cache DEL pattern failed', {
+        event: 'cache.del_pattern.failed',
+        pattern,
+        error: (error as Error).message,
+      })
       return 0
     }
   }
