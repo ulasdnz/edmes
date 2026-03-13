@@ -1,8 +1,8 @@
-import type { Request, Response, NextFunction } from 'express'
-import jwt from 'jsonwebtoken'
 import { setUserId } from '@mes/core'
-import { getAuthConfig } from './config.js'
+import type { NextFunction, Request, Response } from 'express'
+import jwt from 'jsonwebtoken'
 import { buildAuthStatusCacheKey } from './cache-keys.js'
+import { getAuthConfig } from './config.js'
 import { AuthError } from './error.js'
 
 interface UserAuthStatus {
@@ -47,7 +47,9 @@ export const authenticate: any = async (req: Request, _res: Response, next: Next
     }
 
     if (status.passwordChangedAt && decoded.iat) {
-      const passwordChangedAtSeconds = Math.floor(new Date(status.passwordChangedAt).getTime() / 1000)
+      const passwordChangedAtSeconds = Math.floor(
+        new Date(status.passwordChangedAt).getTime() / 1000,
+      )
       if (decoded.iat < passwordChangedAtSeconds) {
         throw new AuthError(401, 'auth.unauthenticated')
       }

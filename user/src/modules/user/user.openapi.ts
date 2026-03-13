@@ -1,7 +1,6 @@
 import { z } from 'zod'
 import type { ZodOpenApiPathsObject } from 'zod-openapi'
 import { securityRequirement } from '../../lib/openapi/setup.js'
-import { paginationSchema } from '../../utils/pagination.js'
 import {
   adminCreateUserSchema,
   adminResetPasswordSchema,
@@ -10,6 +9,7 @@ import {
   registerSchema,
   updateMeSchema,
   userIdParamSchema,
+  userListSchema,
 } from './user.validators.js'
 
 export const userPaths: ZodOpenApiPathsObject = {
@@ -81,9 +81,11 @@ export const userPaths: ZodOpenApiPathsObject = {
     get: {
       tags: ['Users'],
       security: securityRequirement,
-      summary: 'List all users (requires readUsers permission)',
+      summary: 'List users with pagination, search, and filtering',
+      requestParams: { query: userListSchema },
       responses: {
-        '200': { description: 'Array of users' },
+        '200': { description: 'Paginated list of users' },
+        '400': { description: 'Invalid query parameters' },
         '403': { description: 'Forbidden — missing readUsers permission' },
       },
     },
@@ -99,21 +101,6 @@ export const userPaths: ZodOpenApiPathsObject = {
         '400': { description: 'Validation error' },
         '403': { description: 'Forbidden' },
         '409': { description: 'User already exists' },
-      },
-    },
-  },
-  '/users/paginate': {
-    post: {
-      tags: ['Users'],
-      security: securityRequirement,
-      summary: 'Advanced pagination and filtering for users (requires readUsers permission)',
-      requestBody: {
-        content: { 'application/json': { schema: paginationSchema } },
-      },
-      responses: {
-        '200': { description: 'Paginated user data' },
-        '400': { description: 'Invalid pagination parameters' },
-        '403': { description: 'Forbidden — missing readUsers permission' },
       },
     },
   },

@@ -2,4 +2,4 @@
  * Singleflight — re-exported from @mes/cache.
  */
 
-export { singleflight, isInflight, inflightCount } from '@mes/cache'
+export { inflightCount, isInflight, singleflight } from '@mes/cache'

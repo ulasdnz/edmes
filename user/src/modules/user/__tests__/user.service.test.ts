@@ -12,7 +12,7 @@ vi.mock('../user.model', () => ({
     findByIdAndUpdate: vi.fn(),
     countDocuments: vi.fn(),
     find: vi.fn(),
-  }
+  },
 }))
 vi.mock('bcryptjs')
 vi.mock('jsonwebtoken')

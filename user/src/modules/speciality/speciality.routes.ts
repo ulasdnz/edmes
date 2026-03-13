@@ -2,8 +2,8 @@
  * Protected speciality routes — authenticate + resolvePermissions applied at prefix level.
  */
 
-import { Router } from 'express'
 import { requirePermission } from '@mes/auth'
+import { Router } from 'express'
 import { validateBody, validateParams } from '../../core/middleware/validate.js'
 import * as specialityController from './speciality.controller.js'
 import {

@@ -1,4 +1,4 @@
-import type { Request, Response, NextFunction } from 'express'
+import type { NextFunction, Request, Response } from 'express'
 import { buildAuthContextCacheKey } from './cache-keys.js'
 import { getAuthConfig } from './config.js'
 import { AuthError } from './error.js'
@@ -36,7 +36,7 @@ export const resolvePermissions: any = async (req: Request, _res: Response, next
 
     req.user.roles = data?.roles || []
     req.user.permissions = data?.permissions || []
-    
+
     next()
   } catch (error) {
     if (req.user) {

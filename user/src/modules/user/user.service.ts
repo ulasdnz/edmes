@@ -7,7 +7,7 @@ import CustomError from '../../core/errors/index.js'
 import { invalidateAuthCache } from '../../jobs/auth-cache.events.js'
 import { emitUserCreated, emitUserDeleted, emitUserUpdated } from '../../jobs/events.js'
 import { logger } from '../../lib/logger.js'
-import { type PaginationInput, type PaginationResult, paginate } from '../../utils/pagination.js'
+import { type PaginatedResult, paginate } from '../../utils/pagination.js'
 import User, { type IUser } from './user.model.js'
 import type { AuthResponse, UserResponse } from './user.types.js'
 import type {
@@ -16,7 +16,7 @@ import type {
   AdminUpdateUserInput,
   LoginInput,
   RegisterInput,
-  UserQueryInput,
+  UserListInput,
 } from './user.validators.js'
 
 const getCacheInvalidationScope = (flags: {
@@ -248,10 +248,28 @@ export const getUser = async (userId: string): Promise<UserResponse> => {
   return user
 }
 
-export const getUsers = async (_query: UserQueryInput): Promise<UserResponse[]> => {
-  const q = User.find()
+export const getUsers = async (input: UserListInput): Promise<PaginatedResult<IUser>> => {
+  const { isActivated, departmentId, roles, ...pagination } = input
 
-  return q.exec()
+  const filters: Record<string, unknown> = {}
+  if (isActivated !== undefined) filters.isActivated = isActivated
+  if (departmentId) filters.departmentId = departmentId
+  if (roles) filters.roles = roles
+
+  return paginate(User, filters, pagination, {
+    select: '-password -failedLoginAttempts -lastFailedLoginAt',
+    populate: [{ path: 'roleNames', select: 'id name description _id' }],
+    searchFields: ['name', 'surname', 'username', 'email'],
+    allowedSortFields: [
+      'name',
+      'surname',
+      'username',
+      'email',
+      'createdAt',
+      'updatedAt',
+      'isActivated',
+    ],
+  })
 }
 
 export const findById = async (userId: string): Promise<UserResponse> => {
@@ -345,13 +363,6 @@ export const getPropsKeys = async (): Promise<string[]> => {
   ])
 
   return result[0]?.keys || []
-}
-
-export const paginateUsers = async (input: PaginationInput): Promise<PaginationResult<IUser>> => {
-  return paginate(User, input, {
-    select: '-password -failedLoginAttempts -lastFailedLoginAt',
-    populate: [{ path: 'roleNames', select: 'id name description _id' }],
-  })
 }
 
 // ─── Internal Dependency Checks ────────────────────────────────────────────────

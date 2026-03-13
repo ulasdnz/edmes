@@ -2,14 +2,13 @@ import type { Request, Response } from 'express'
 
 import CustomError from '../../core/errors/index.js'
 import type { SuccessResponse } from '../../core/types/api.types.js'
-import type { PaginationInput } from '../../utils/pagination.js'
 import * as userService from './user.service.js'
 import type { AuthResponse, UserResponse } from './user.types.js'
 import type {
   AdminCreateUserInput,
   AdminResetPasswordInput,
   AdminUpdateUserInput,
-  UserQueryInput,
+  UserListInput,
 } from './user.validators.js'
 
 export async function register(req: Request, res: Response<SuccessResponse<UserResponse>>) {
@@ -81,15 +80,15 @@ export async function getUser(req: Request, res: Response<SuccessResponse<UserRe
 }
 
 export async function getUsers(
-  req: Request<unknown, unknown, unknown, UserQueryInput>,
-  res: Response<SuccessResponse<UserResponse[]>>,
+  req: Request<unknown, unknown, unknown, UserListInput>,
+  res: Response,
 ) {
-  const users = await userService.getUsers(req.query)
+  const result = await userService.getUsers(req.query)
 
   res.json({
     success: true,
     message: req.t('success.get_all'),
-    data: users,
+    ...result,
   })
 }
 
@@ -244,7 +243,6 @@ export async function adminResetPassword(
 
 // ─── Microservice Sync Operations ────────────────────────────────────────────
 
-
 export async function checkUserDependencies(
   req: Request<
     unknown,
@@ -261,17 +259,5 @@ export async function checkUserDependencies(
     success: true,
     message: req.t('success.get'),
     data: { inUse },
-  })
-}
-
-export async function paginateUsers(
-  req: Request<unknown, unknown, PaginationInput>,
-  res: Response,
-) {
-  const result = await userService.paginateUsers(req.body)
-  res.json({
-    success: true,
-    message: req.t('success.get_all'),
-    ...result,
   })
 }

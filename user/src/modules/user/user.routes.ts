@@ -3,11 +3,10 @@
  * No auth/permission imports needed here.
  */
 
-import { Router } from 'express'
 import { requirePermission } from '@mes/auth'
+import { Router } from 'express'
 import { upload } from '../../core/middleware/upload.js'
 import { validateBody, validateParams, validateQuery } from '../../core/middleware/validate.js'
-import { paginationSchema } from '../../utils/pagination.js'
 import * as userController from './user.controller.js'
 import {
   adminCreateUserSchema,
@@ -15,7 +14,7 @@ import {
   adminUpdateUserSchema,
   updateMeSchema,
   userIdParamSchema,
-  userQuerySchema,
+  userListSchema,
 } from './user.validators.js'
 
 const router = Router()
@@ -27,13 +26,6 @@ router.patch('/users/me/avatar', upload.single('photo'), userController.updateAv
 router.delete('/users/me', userController.deleteUser)
 
 // Admin endpoints — require specific permissions
-router.post(
-  '/users/paginate',
-  requirePermission('readUsers'),
-  validateBody(paginationSchema),
-  userController.paginateUsers,
-)
-
 router.post(
   '/users',
   requirePermission('createUsers'),
@@ -84,7 +76,7 @@ router.get(
 router.get(
   '/users',
   requirePermission('readUsers'),
-  validateQuery(userQuerySchema),
+  validateQuery(userListSchema),
   userController.getUsers,
 )
 router.get(

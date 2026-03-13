@@ -5,11 +5,11 @@
  * shared across the async call chain.
  */
 
+export type { RequestContext } from '@mes/core'
 export {
+  als,
   contextMiddleware,
   getContext,
   getTraceId,
   setUserId,
-  als,
 } from '@mes/core'
-export type { RequestContext } from '@mes/core'

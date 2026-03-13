@@ -1,4 +1,4 @@
-import type { Request, Response, NextFunction } from 'express'
+import type { NextFunction, Request, Response } from 'express'
 
 /**
  * Ensures the authenticated user has the required permission.
@@ -8,7 +8,8 @@ export const requirePermission = (permission: string): any => {
   return (req: Request, res: Response, next: NextFunction): void => {
     // SYSTEM_IDENTITY bypasses all permissions via '*'
     if (req.user?.permissions?.includes('*')) {
-      return next()
+      next()
+      return
     }
 
     if (!req.user || !req.user.permissions?.includes(permission)) {

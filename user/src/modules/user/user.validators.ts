@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import 'zod-openapi'
+import { paginationSchema } from '../../utils/pagination.js'
 import { objectIdSchema } from '../../utils/validators.js'
 
 const emailSchema = z.email({ message: 'validation.email_invalid' }).meta({
@@ -94,7 +95,14 @@ export const adminResetPasswordSchema = z
   })
   .strict()
 
-export const userQuerySchema = z.object({})
+export const userListSchema = paginationSchema.extend({
+  isActivated: z
+    .enum(['true', 'false'])
+    .transform(v => v === 'true')
+    .optional(),
+  departmentId: objectIdSchema.optional(),
+  roles: objectIdSchema.optional(),
+})
 
 export const userIdParamSchema = z.object({
   id: objectIdSchema,
@@ -106,4 +114,4 @@ export type UpdateMeInput = z.infer<typeof updateMeSchema>
 export type AdminCreateUserInput = z.infer<typeof adminCreateUserSchema>
 export type AdminUpdateUserInput = z.infer<typeof adminUpdateUserSchema>
 export type AdminResetPasswordInput = z.infer<typeof adminResetPasswordSchema>
-export type UserQueryInput = z.infer<typeof userQuerySchema>
+export type UserListInput = z.infer<typeof userListSchema>

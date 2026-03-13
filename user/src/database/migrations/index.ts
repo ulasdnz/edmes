@@ -29,11 +29,7 @@ export async function runMigrations() {
       .sort()
 
     const appliedMigrationNames = new Set(
-      (
-        await collection
-          .find({}, { projection: { _id: 0, name: 1 } })
-          .toArray()
-      ).map(m => m.name),
+      (await collection.find({}, { projection: { _id: 0, name: 1 } }).toArray()).map(m => m.name),
     )
 
     for (const file of files) {

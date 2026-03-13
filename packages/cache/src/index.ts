@@ -1,2 +1,2 @@
-export { singleflight, isInflight, inflightCount } from './singleflight.js'
 export { setupCache } from './cache.js'
+export { inflightCount, isInflight, singleflight } from './singleflight.js'

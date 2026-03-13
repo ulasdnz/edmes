@@ -89,4 +89,3 @@ describe('OpenAPI route parity', () => {
     expect(extraInOpenApi).toEqual([])
   })
 })
-

@@ -5,7 +5,11 @@
  * while using the shared document generator and security schemes.
  */
 
-import { generateOpenApiDocument as generate, securityRequirement, securityComponent } from '@mes/openapi'
+import {
+  generateOpenApiDocument as generate,
+  securityComponent,
+  securityRequirement,
+} from '@mes/openapi'
 import type { ZodOpenApiPathsObject } from 'zod-openapi'
 
 export { securityRequirement, securityComponent }

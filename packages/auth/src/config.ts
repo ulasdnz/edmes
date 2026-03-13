@@ -5,7 +5,7 @@ export interface AuthMiddlewareConfig {
    * Used as fallback when Redis cache misses.
    */
   userServiceInternalUrl: string
-  
+
   /**
    * Cache wrapper to be injected by the consuming service.
    * Format matches @mes/cache -> cacheWrapDedup
@@ -21,7 +21,9 @@ export const configureAuth = (cfg: AuthMiddlewareConfig) => {
 
 export const getAuthConfig = (): AuthMiddlewareConfig => {
   if (!_config) {
-    throw new Error('[@mes/auth] Auth middleware used before initialization. Call configureAuth() first.')
+    throw new Error(
+      '[@mes/auth] Auth middleware used before initialization. Call configureAuth() first.',
+    )
   }
   return _config
 }

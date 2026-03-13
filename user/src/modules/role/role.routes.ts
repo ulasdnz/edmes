@@ -2,10 +2,10 @@
  * Protected role routes — authenticate + resolvePermissions applied at prefix level.
  */
 
+import { requirePermission } from '@mes/auth'
 import type { Request, Response } from 'express'
 import { Router } from 'express'
 import { PRIVILEGES } from '../../constants/privileges.js'
-import { requirePermission } from '@mes/auth'
 import { validateBody, validateParams } from '../../core/middleware/validate.js'
 import type { SuccessResponse } from '../../core/types/api.types.js'
 import * as roleController from './role.controller.js'
