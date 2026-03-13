@@ -16,6 +16,11 @@ vi.mock('../user.model', () => ({
 }))
 vi.mock('bcryptjs')
 vi.mock('jsonwebtoken')
+vi.mock('../../../jobs/events', () => ({
+  emitUserCreated: vi.fn(),
+  emitUserUpdated: vi.fn(),
+  emitUserDeleted: vi.fn(),
+}))
 
 describe('UserService', () => {
   beforeEach(() => {
