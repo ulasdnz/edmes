@@ -2,65 +2,41 @@ import { faker } from '@faker-js/faker'
 import bcrypt from 'bcryptjs'
 import { logger } from '../../lib/logger.js'
 import User from '../../modules/user/user.model.js'
-import { connectDB, disconnectDB } from '../../utils/db.js'
 
-interface SeedUser {
-  name: string
-  surname: string
-  email: string
-  password: string
-  role: 'user' | 'admin'
-  gender?: 'male' | 'female' | 'other'
-  countryCode?: string
-  birthDate?: Date
-  photoUrl: string
-  isActivated: boolean
-}
+const DEFAULT_PASSWORD = 'Test123456'
 
-async function generateUsers(count: number): Promise<SeedUser[]> {
-  const hashedPassword = await bcrypt.hash('Test123456', 10)
+export async function seedUsers(count = 10) {
+  logger.info('Starting user seeding...', { event: 'seed.user.start' })
 
-  const users: SeedUser[] = Array.from({ length: count }, (_, index) => {
+  await User.deleteMany({})
+  logger.info('Cleared existing users collection', { event: 'seed.user.cleared' })
+
+  const hashedPassword = await bcrypt.hash(DEFAULT_PASSWORD, 10)
+
+  const users = Array.from({ length: count }, (_, i) => {
     const gender = faker.helpers.arrayElement(['male', 'female'] as const)
+    const firstName = faker.person.firstName(gender)
+    const lastName = faker.person.lastName()
 
     return {
-      name: faker.person.firstName(gender),
-      surname: faker.person.lastName(),
-      email: faker.internet.email().toLowerCase(),
+      username: faker.internet.username({ firstName, lastName }).toLowerCase(),
+      email: faker.internet.email({ firstName, lastName }).toLowerCase(),
       password: hashedPassword,
-      role: index === 0 ? 'admin' : 'user', // First user is admin
-      gender: faker.helpers.arrayElement(['male', 'female', 'other']),
+      name: firstName,
+      surname: lastName,
+      gender: faker.helpers.arrayElement(['male', 'female', 'other'] as const),
       countryCode: faker.location.countryCode(),
       birthDate: faker.date.birthdate({ min: 18, max: 65, mode: 'age' }),
-      photoUrl:
-        'https://upload.wikimedia.org/wikipedia/commons/thumb/d/d9/Node.js_logo.svg/1200px-Node.js_logo.svg.png',
+      language: i === 0 ? 'tr' : faker.helpers.arrayElement(['en', 'tr'] as const),
       isActivated: true,
     }
   })
 
-  return users
-}
+  await User.insertMany(users)
 
-export async function seedUsers(count = 10) {
-  try {
-    await connectDB()
-
-    logger.info('🌱 Starting user seeding...')
-
-    await User.deleteMany({})
-    logger.info('🧹 Cleared existing users collection')
-
-    const users = await generateUsers(count)
-    await User.insertMany(users)
-
-    logger.info(`✅ Inserted ${users.length} users successfully`)
-    logger.info(`   - 1 admin user`)
-    logger.info(`   - ${users.length - 1} regular users`)
-    logger.info(`   - Test password for all: "Test123456"`)
-  } catch (error) {
-    logger.error('❌ User seeding failed:', error)
-    throw error
-  } finally {
-    await disconnectDB()
-  }
+  logger.info(`Inserted ${users.length} users successfully`, {
+    event: 'seed.user.completed',
+    count: users.length,
+    testPassword: DEFAULT_PASSWORD,
+  })
 }

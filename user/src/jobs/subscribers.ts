@@ -3,7 +3,6 @@ import { createStreamConsumer } from '@mes/events'
 import { logger } from '../lib/logger.js'
 import { streamClient } from '../lib/redis.js'
 import departmentDeletedHandler from './handlers/department-deleted.handler.js'
-import stationDeletedHandler from './handlers/station-deleted.handler.js'
 
 const SERVICE_GROUP = 'user-service'
 const CONSUMER_ID = `user-${process.pid}`
@@ -14,7 +13,6 @@ const consumer = createStreamConsumer({
   consumer: CONSUMER_ID,
   streams: {
     'events.station': {
-      'station.deleted': stationDeletedHandler,
       'department.deleted': departmentDeletedHandler,
     },
   },
