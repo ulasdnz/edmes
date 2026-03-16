@@ -7,6 +7,6 @@ dist
 *.tsbuildinfo
 **/*.tsbuildinfo
 .turbo
-Coverage
+coverage
 .vscode
 .idea
