@@ -7,7 +7,7 @@ RUN apk add --no-cache libc6-compat git openssh-client && \
     git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
 
 # Ensure pnpm is available (must match packageManager in package.json)
-RUN corepack enable && corepack prepare pnpm@10.30.3 --activate
+RUN corepack enable && corepack prepare pnpm@10.32.1 --activate
 
 WORKDIR /app
 

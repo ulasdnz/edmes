@@ -93,6 +93,15 @@ Streams: `events.user` (published by user-service), `events.station` (consumed b
 
 ## Key Conventions
 
+### API Design
+
+Standard REST: POST (create), PUT (full replace), PATCH (partial update), DELETE. No action-specific routes (if it is really needed) — state transitions and structural changes are field updates via PATCH; backend detects what changed and runs validation/side effects.
+
+### Mongoose Models
+
+- All Mongoose models must use `timestamps: true` (`createdAt`, `updatedAt` auto-managed).
+- Models that are created or modified by authenticated users include `createdBy` and `updatedBy` fields (user `_id`). Internal/system operations use a system identifier.
+
 ### TypeScript / Imports
 
 - All packages: `"type": "module"` + NodeNext — **imports MUST use `.js` extensions** (even for `.ts` source).
