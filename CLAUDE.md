@@ -64,7 +64,7 @@ testing → source-only (no build, vitest transpiles directly)
 ### Service Apps
 
 - `user/` — User, Role, Speciality CRUD + auth. Express 5, Mongoose 9, Zod 4.
-- New services go in `apps/*` (workspace configured). Follow `user/` structure exactly.
+- New services go in root directory (workspace configured). Follow `user/` structure exactly.
 
 ### Infrastructure
 
@@ -82,9 +82,9 @@ Streams: `events.user` (published by user-service), `events.station` (consumed b
 
 ## Adding a New Service
 
-1. Create `apps/<service-name>/` following `user/` directory structure
-2. Add `tsconfig.json` extending `../../tsconfig.app.json` with references to needed packages
-3. Add to `pnpm-workspace.yaml` (already includes `apps/*`)
+1. Create `<service-name>/` in the root following `user/` directory structure
+2. Add `tsconfig.json` extending `../tsconfig.app.json` with references to needed packages
+3. Add to `pnpm-workspace.yaml`
 4. Add to root `tsconfig.json` references
 5. Add Dockerfile following `user/Dockerfile` pattern (two-phase build)
 6. Add service to `docker-compose.yml` with Traefik labels, healthcheck, and named volumes
