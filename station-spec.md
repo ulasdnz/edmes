@@ -214,7 +214,7 @@ Station status is `active | archived`. Archiving is **reversible**. State diagra
 |------|-----|------------|-------------|--------|
 | active | archived | No open operator check-ins; station is not a contributor in any station's `metricComposition` | Aggregate: orphan all children. Derived aggregate: also clear `metricComposition` (must be reconfigured after reactivation) | `station.archived` + `station.updated` per orphaned child |
 | archived | active | — | No automatic restoration of previously cleared `metricComposition` or orphaned children. Composition must be reconfigured separately | `station.reactivated` |
-| active | hard delete | No inbound composition references; no active calendars; no open operator check-ins; no action-state history; no `user-service` stationIds references | Orphan children if any. Closed operator check-in records remain as orphaned references | `station.deleted` + `station.updated` per orphaned child |
+| active | hard delete | No inbound composition references; no active calendars; no operator check-in records (open or closed); no action-state history; no `user-service` stationIds references | Orphan children if any | `station.deleted` + `station.updated` per orphaned child |
 
 Hard delete blockers must be resolved manually before retrying. If hard delete is not possible, archive is always available (subject to its own validations).
 
