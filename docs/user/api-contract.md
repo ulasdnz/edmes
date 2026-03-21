@@ -302,7 +302,7 @@ Update own profile. Only user-editable fields accepted.
 }
 ```
 
-Schema: `updateMeSchema` — `.strict()`. Fields NOT available for self-update: `roles`, `isActivated`, `departmentId`, `stationIds`, `specialities`, `nfcId`, `personalNumber`, `props`, `isActiveDirectoryUser`.
+Schema: `updateMeSchema` — `.strict()`. Fields NOT available for self-update: `roles`, `isActivated`, `departmentId`, `stationIds`, `specialities`, `personalNumber`, `props`, `isActiveDirectoryUser`.
 
 | Status | Key | When |
 |--------|-----|------|
@@ -371,7 +371,6 @@ Create a user with admin-level fields.
   birthDate:             Date
   language:              'en' | 'tr'
   defaultDashboardId:    ObjectId | null
-  nfcId:                 string | null
   personalNumber:        string | null
   isActiveDirectoryUser: boolean
   isActivated:           boolean
@@ -807,7 +806,6 @@ Returned by all user endpoints. Sensitive fields are excluded.
   birthDate:              string | undefined     // ISO date
   photoUrl:               string | null
   language:               'en' | 'tr'
-  nfcId:                  string | null
   personalNumber:         string | null
   departmentId:           string | null          // ObjectId
   stationIds:             string[]               // ObjectId[]

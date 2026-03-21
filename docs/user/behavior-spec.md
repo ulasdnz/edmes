@@ -278,7 +278,7 @@ Client                Service               MongoDB            Out-of-band
 | Via | Allowed Fields | Auth | Permission |
 |-----|---------------|------|------------|
 | Self (PATCH /me) | name, surname, email, username, gender, countryCode, birthDate, language, defaultDashboardId | JWT | none |
-| Admin (PATCH /:id) | all self fields + nfcId, personalNumber, isActivated, isActiveDirectoryUser, departmentId, stationIds, specialities, roles, props | JWT | `writeUsers` |
+| Admin (PATCH /:id) | all self fields + personalNumber, isActivated, isActiveDirectoryUser, departmentId, stationIds, specialities, roles, props | JWT | `writeUsers` |
 
 **Side effects on update:**
 1. Email uniqueness check (409 on conflict)
@@ -622,7 +622,6 @@ There is no check like "can this admin modify this specific user?" — if you ha
 
 | Field | Validation |
 |-------|-----------|
-| nfcId | string or null |
 | personalNumber | string or null |
 | isActiveDirectoryUser | boolean |
 | isActivated | boolean |

@@ -31,7 +31,7 @@ export const createRoleSchema = z
       .array(permissionCodeSchema)
       .min(1, { message: 'validation.permissions_required' })
       .meta({
-        example: ['readUsers', 'writeWorkOrders'],
+        example: ['readUsers', 'writeUsers'],
         description: 'List of privilege codes assigned to this role',
       }),
     isDefault: z.boolean().default(false).meta({

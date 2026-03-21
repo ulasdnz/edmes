@@ -60,13 +60,6 @@ const userSchema = new Schema(
       default: 'en',
     },
 
-    // MES domain fields
-    nfcId: {
-      type: String,
-      unique: true,
-      sparse: true,
-      default: null,
-    },
     personalNumber: {
       type: String,
       default: null,

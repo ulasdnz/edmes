@@ -73,7 +73,6 @@
 | `birthDate` | Date | no | — | — |
 | `photoUrl` | String | no | `null` | path to uploaded file |
 | `language` | String | no | `'en'` | enum: `en`, `tr` |
-| `nfcId` | String | no | `null` | **unique + sparse** (allows multiple nulls) |
 | `personalNumber` | String | no | `null` | no uniqueness constraint |
 | `departmentId` | ObjectId | no | `null` | indexed, **no ref** (cross-service) |
 | `stationIds` | ObjectId[] | no | `[]` | indexed, **no ref** (cross-service) |
@@ -115,7 +114,6 @@ roleNames: {
 |--------|------|------|-------|
 | `username` | unique | implicit | from `unique: true` |
 | `email` | unique | `users_email_unique` | also created by migration |
-| `nfcId` | unique + sparse | implicit | allows multiple null values |
 | `roles` | regular | implicit | for user-by-role lookups |
 | `departmentId` | regular | implicit | for user-by-department lookups |
 | `stationIds` | regular | implicit | for user-by-station lookups |
@@ -142,7 +140,6 @@ export type IUser = InferSchemaType<typeof userSchema> & {
 | gender | `enum ['male', 'female', 'other']` | updateMe, adminUpdate |
 | language | `enum ['en', 'tr']` | updateMe, adminUpdate |
 | birthDate | `z.coerce.date()` | updateMe, adminUpdate |
-| nfcId | `string \| null` | adminUpdate only |
 | personalNumber | `string \| null` | adminUpdate only |
 | isActivated | `boolean` | adminUpdate only |
 | departmentId | `objectIdSchema \| null` | adminUpdate only |
@@ -450,7 +447,6 @@ MONGO_INDEX_STRATEGY:
 |------------|-------|------|---------|
 | `users` | `username` | unique | login, lookup |
 | `users` | `email` | unique | login, lookup, registration check |
-| `users` | `nfcId` | unique + sparse | NFC card lookup (nulls allowed) |
 | `users` | `roles` | regular | filter users by role |
 | `users` | `departmentId` | regular | filter users by department |
 | `users` | `stationIds` | regular | filter users by station |

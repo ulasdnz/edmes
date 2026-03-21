@@ -75,7 +75,6 @@ export const updateMeSchema = z
 
 export const adminUpdateUserSchema = updateMeSchema
   .extend({
-    nfcId: z.string().nullable().optional(),
     personalNumber: z.string().nullable().optional(),
     isActiveDirectoryUser: z.boolean().optional(),
     isActivated: z.boolean().optional(),
