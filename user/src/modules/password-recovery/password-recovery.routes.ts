@@ -18,13 +18,13 @@ router.post(
 )
 
 router.post(
-  '/password-recoveries/verification',
+  '/password-recoveries/verify',
   validateBody(verificationCodeSchema),
   passwordRecoveryController.verifyCode,
 )
 
 router.post(
-  '/password-recoveries/verification-and-update',
+  '/password-recoveries/verify-and-reset',
   validateBody(verificationAndUpdateSchema),
   passwordRecoveryController.verificationAndUpdate,
 )

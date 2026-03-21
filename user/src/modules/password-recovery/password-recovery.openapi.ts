@@ -23,7 +23,7 @@ export const passwordRecoveryPaths: ZodOpenApiPathsObject = {
       },
     },
   },
-  '/password-recoveries/verification': {
+  '/password-recoveries/verify': {
     post: {
       tags: ['Auth'],
       summary: 'Verify a password recovery PIN code',
@@ -40,7 +40,7 @@ export const passwordRecoveryPaths: ZodOpenApiPathsObject = {
       },
     },
   },
-  '/password-recoveries/verification-and-update': {
+  '/password-recoveries/verify-and-reset': {
     post: {
       tags: ['Auth'],
       summary: 'Verify a password recovery PIN code and reset password',

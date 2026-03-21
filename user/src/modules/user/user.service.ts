@@ -368,7 +368,7 @@ export const getPropsKeys = async (): Promise<string[]> => {
 // ─── Internal Dependency Checks ────────────────────────────────────────────────
 
 export const checkUserDependencies = async (
-  fieldName: 'departmentId' | 'stationIds',
+  fieldName: 'departmentId' | 'workCenterIds',
   fieldValue: string,
 ): Promise<boolean> => {
   const count = await User.countDocuments({ [fieldName]: fieldValue })

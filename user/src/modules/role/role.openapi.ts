@@ -66,7 +66,7 @@ export const rolePaths: ZodOpenApiPathsObject = {
       },
     },
   },
-  '/roles/privileges': {
+  '/roles/available-permissions': {
     get: {
       tags: ['Roles'],
       security: securityRequirement,

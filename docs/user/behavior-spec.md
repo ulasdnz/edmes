@@ -1,6 +1,6 @@
 # User Service — Behavior Spec
 
-> Generated from deep code review. Last updated: 2026-03-17.
+> Generated from deep code review. Last updated: 2026-03-22.
 
 ---
 
@@ -278,7 +278,7 @@ Client                Service               MongoDB            Out-of-band
 | Via | Allowed Fields | Auth | Permission |
 |-----|---------------|------|------------|
 | Self (PATCH /me) | name, surname, email, username, gender, countryCode, birthDate, language, defaultDashboardId | JWT | none |
-| Admin (PATCH /:id) | all self fields + personalNumber, isActivated, isActiveDirectoryUser, departmentId, stationIds, specialities, roles, props | JWT | `writeUsers` |
+| Admin (PATCH /:id) | all self fields + personalNumber, isActivated, isActiveDirectoryUser, departmentId, workCenterIds, specialities, roles, props | JWT | `writeUsers` |
 
 **Side effects on update:**
 1. Email uniqueness check (409 on conflict)
@@ -587,11 +587,11 @@ There is no check like "can this admin modify this specific user?" — if you ha
 
 | Code | Routes |
 |------|--------|
-| `readUsers` | GET /users, GET /users/:id, GET /user-by-*, GET /users-languages, GET /users/props-keys, GET /users/check-dependencies |
+| `readUsers` | GET /users, GET /users/:id, GET /users/by-*, GET /users/languages, GET /users/custom-field-keys, GET /users/check-dependencies |
 | `writeUsers` | PATCH /users/:id, POST /users/:id/reset-password |
 | `createUsers` | POST /users |
 | `deleteUsers` | DELETE /users/:id |
-| `readRoles` | GET /roles, GET /roles/:id, GET /roles/privileges |
+| `readRoles` | GET /roles, GET /roles/:id, GET /roles/available-permissions |
 | `writeRoles` | PATCH /roles/:id |
 | `createRoles` | POST /roles |
 | `deleteRoles` | DELETE /roles/:id |
@@ -626,7 +626,7 @@ There is no check like "can this admin modify this specific user?" — if you ha
 | isActiveDirectoryUser | boolean |
 | isActivated | boolean |
 | departmentId | ObjectId or null |
-| stationIds | ObjectId[] (default []) |
+| workCenterIds | ObjectId[] (default []) |
 | specialities | ObjectId[] (default []) |
 | roles | ObjectId[] (default []) |
 | props | Record\<string, string\> |

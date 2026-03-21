@@ -182,7 +182,7 @@ export const userPaths: ZodOpenApiPathsObject = {
   },
 
   // ── Lookups & Helpers ───────────────────────────────────────────────────────
-  '/user-by-username/{username}': {
+  '/users/by-username/{username}': {
     get: {
       tags: ['Users', 'Lookups'],
       security: securityRequirement,
@@ -195,7 +195,7 @@ export const userPaths: ZodOpenApiPathsObject = {
       },
     },
   },
-  '/user-by-email/{email}': {
+  '/users/by-email/{email}': {
     get: {
       tags: ['Users', 'Lookups'],
       security: securityRequirement,
@@ -208,7 +208,7 @@ export const userPaths: ZodOpenApiPathsObject = {
       },
     },
   },
-  '/user-with-roles/{id}': {
+  '/users/{id}/roles': {
     get: {
       tags: ['Users', 'Lookups'],
       security: securityRequirement,
@@ -247,7 +247,7 @@ export const userPaths: ZodOpenApiPathsObject = {
       },
     },
   },
-  '/users-languages': {
+  '/users/languages': {
     get: {
       tags: ['Users', 'Lookups'],
       security: securityRequirement,
@@ -258,7 +258,7 @@ export const userPaths: ZodOpenApiPathsObject = {
       },
     },
   },
-  '/users/props-keys': {
+  '/users/custom-field-keys': {
     get: {
       tags: ['Users', 'Lookups'],
       security: securityRequirement,
@@ -277,10 +277,10 @@ export const userPaths: ZodOpenApiPathsObject = {
       tags: ['Users', 'Sync'],
       security: securityRequirement,
       summary:
-        'Check if a specific dependency (e.g., departmentId, stationIds) is in use by any user',
+        'Check if a specific dependency (e.g., departmentId, workCenterIds) is in use by any user',
       requestParams: {
         query: z.object({
-          fieldName: z.enum(['departmentId', 'stationIds']),
+          fieldName: z.enum(['departmentId', 'workCenterIds']),
           fieldValue: z.string(),
         }),
       },

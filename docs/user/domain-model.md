@@ -1,6 +1,6 @@
 # User Service — Domain Model
 
-> Generated from deep code review. Last updated: 2026-03-17.
+> Generated from deep code review. Last updated: 2026-03-22.
 
 ---
 
@@ -32,7 +32,7 @@
 │   │          │                └──────────────┘                  │
 │   │          │  departmentId                                    │
 │   │          │─ ─ ─ ─ ─ ─ ─ ▶ [station-service]                │
-│   │          │  stationIds[]                                    │
+│   │          │  workCenterIds[]                                 │
 │   │          │─ ─ ─ ─ ─ ─ ─ ▶ [station-service]                │
 │   └──────────┘                                                  │
 │        │                                                        │
@@ -75,7 +75,7 @@
 | `language` | String | no | `'en'` | enum: `en`, `tr` |
 | `personalNumber` | String | no | `null` | no uniqueness constraint |
 | `departmentId` | ObjectId | no | `null` | indexed, **no ref** (cross-service) |
-| `stationIds` | ObjectId[] | no | `[]` | indexed, **no ref** (cross-service) |
+| `workCenterIds` | ObjectId[] | no | `[]` | indexed, **no ref** (cross-service) |
 | `specialities` | ObjectId[] | no | `[]` | references Speciality (no explicit index) |
 | `defaultDashboardId` | ObjectId | no | `null` | **no ref** (cross-service) |
 | `props` | Map\<String, String\> | no | `new Map()` | extensible key-value metadata |
@@ -116,7 +116,7 @@ roleNames: {
 | `email` | unique | `users_email_unique` | also created by migration |
 | `roles` | regular | implicit | for user-by-role lookups |
 | `departmentId` | regular | implicit | for user-by-department lookups |
-| `stationIds` | regular | implicit | for user-by-station lookups |
+| `workCenterIds` | regular | implicit | for user-by-work-center lookups |
 
 ### TypeScript Type
 
@@ -143,7 +143,7 @@ export type IUser = InferSchemaType<typeof userSchema> & {
 | personalNumber | `string \| null` | adminUpdate only |
 | isActivated | `boolean` | adminUpdate only |
 | departmentId | `objectIdSchema \| null` | adminUpdate only |
-| stationIds | `objectIdSchema[]`, default `[]` | adminUpdate only |
+| workCenterIds | `objectIdSchema[]`, default `[]` | adminUpdate only |
 | specialities | `objectIdSchema[]`, default `[]` | adminUpdate only |
 | roles | `objectIdSchema[]`, default `[]` | adminUpdate only |
 | props | `Record<string, string>` | adminUpdate only |
@@ -176,7 +176,7 @@ export type IUser = InferSchemaType<typeof userSchema> & {
 
 ### Permission Validation
 
-The `permissions` array stores string codes from the privilege registry (33 codes across 8 groups). Validation happens at the Zod schema level:
+The `permissions` array stores string codes from the privilege registry (30 codes). Validation happens at the Zod schema level:
 
 ```typescript
 permissions: z.array(
@@ -353,7 +353,7 @@ User.departmentId ─ ─ ─▶ [station-service] Department._id
   │ Handler: sets departmentId = null on affected users
   └ Safe: event handler exists
 
-User.stationIds[] ─ ─ ─▶ [station-service] Station._id
+User.workCenterIds[] ─ ─ ─▶ [work-center-service] WorkCenter._id
   │ Type: ObjectId array, no Mongoose ref
   │ Cascade: expected via 'station.deleted' event (not yet implemented?)
   └ Risk: orphaned station IDs if no handler
@@ -449,7 +449,7 @@ MONGO_INDEX_STRATEGY:
 | `users` | `email` | unique | login, lookup, registration check |
 | `users` | `roles` | regular | filter users by role |
 | `users` | `departmentId` | regular | filter users by department |
-| `users` | `stationIds` | regular | filter users by station |
+| `users` | `workCenterIds` | regular | filter users by work center |
 | `roles` | `name` | unique | prevent duplicate role names |
 | `specialities` | `name` | unique | prevent duplicate speciality names |
 | `audit_logs` | `{ model, documentId, timestamp }` | compound | document history queries |
@@ -483,7 +483,7 @@ The `props` field (`Map<String, String>`) on User is an extensible key-value sto
 - Integration identifiers from external systems
 - Per-deployment configuration data
 
-The `GET /users/props-keys` endpoint returns all distinct keys across all users via aggregation:
+The `GET /users/custom-field-keys` endpoint returns all distinct keys across all users via aggregation:
 
 ```javascript
 { $project: { propKeys: { $objectToArray: '$props' } } }

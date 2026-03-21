@@ -79,7 +79,7 @@ export const adminUpdateUserSchema = updateMeSchema
     isActiveDirectoryUser: z.boolean().optional(),
     isActivated: z.boolean().optional(),
     departmentId: objectIdSchema.nullable().optional(),
-    stationIds: objectIdArraySchema.optional(),
+    workCenterIds: objectIdArraySchema.optional(),
     specialities: objectIdArraySchema.optional(),
     roles: objectIdArraySchema.optional(),
     props: propsSchema,

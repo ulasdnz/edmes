@@ -79,11 +79,8 @@ export async function getUser(req: Request, res: Response<SuccessResponse<UserRe
   })
 }
 
-export async function getUsers(
-  req: Request<unknown, unknown, unknown, UserListInput>,
-  res: Response,
-) {
-  const result = await userService.getUsers(req.query)
+export async function getUsers(req: Request, res: Response) {
+  const result = await userService.getUsers(req.query as unknown as UserListInput)
 
   res.json({
     success: true,
@@ -248,7 +245,7 @@ export async function checkUserDependencies(
     unknown,
     unknown,
     unknown,
-    { fieldName: 'departmentId' | 'stationIds'; fieldValue: string }
+    { fieldName: 'departmentId' | 'workCenterIds'; fieldValue: string }
   >,
   res: Response<SuccessResponse<{ inUse: boolean }>>,
 ) {

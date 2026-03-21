@@ -60,7 +60,7 @@ const usernameParamSchema = z.object({ username: z.string() })
 const emailParamSchema = z.object({ email: z.email() })
 
 const checkDependencyQuerySchema = z.object({
-  fieldName: z.enum(['departmentId', 'stationIds']),
+  fieldName: z.enum(['departmentId', 'workCenterIds']),
   fieldValue: z.string(),
 })
 
@@ -80,19 +80,19 @@ router.get(
   userController.getUsers,
 )
 router.get(
-  '/user-by-username/:username',
+  '/users/by-username/:username',
   requirePermission('readUsers'),
   validateParams(usernameParamSchema),
   userController.getUserByUsername,
 )
 router.get(
-  '/user-by-email/:email',
+  '/users/by-email/:email',
   requirePermission('readUsers'),
   validateParams(emailParamSchema),
   userController.getUserByEmail,
 )
 router.get(
-  '/user-with-roles/:id',
+  '/users/:id/roles',
   requirePermission('readUsers'),
   validateParams(userIdParamSchema),
   userController.getUserByIdWithRoles,
@@ -109,8 +109,12 @@ router.get(
   validateParams(userIdParamSchema),
   userController.getUserAuthStatus,
 )
-router.get('/users-languages', requirePermission('readUsers'), userController.getUsersLanguages)
-router.get('/users/props-keys', requirePermission('readUsers'), userController.getUsersPropsKeys)
+router.get('/users/languages', requirePermission('readUsers'), userController.getUsersLanguages)
+router.get(
+  '/users/custom-field-keys',
+  requirePermission('readUsers'),
+  userController.getUsersPropsKeys,
+)
 
 router.get(
   '/users/:id',

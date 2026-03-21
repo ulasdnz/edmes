@@ -1,6 +1,6 @@
 # User Service — API Contract
 
-> Generated from deep code review. Last updated: 2026-03-17.
+> Generated from deep code review. Last updated: 2026-03-22.
 
 ---
 
@@ -224,7 +224,7 @@ Request a recovery code. Code is delivered out-of-band (email/SMS).
 - TTL: 2 minutes. MongoDB TTL index auto-deletes expired records.
 - Previous active codes for the same user are invalidated on new request.
 
-### POST /api/v1/password-recoveries/verification
+### POST /api/v1/password-recoveries/verify
 
 Verify a recovery code without changing password.
 
@@ -242,7 +242,7 @@ Verify a recovery code without changing password.
 |--------|-----|------|
 | 400 | `password_recovery.invalid_or_expired_code` | No matching active code |
 
-### POST /api/v1/password-recoveries/verification-and-update
+### POST /api/v1/password-recoveries/verify-and-reset
 
 Verify code and set new password in one step.
 
@@ -302,7 +302,7 @@ Update own profile. Only user-editable fields accepted.
 }
 ```
 
-Schema: `updateMeSchema` — `.strict()`. Fields NOT available for self-update: `roles`, `isActivated`, `departmentId`, `stationIds`, `specialities`, `personalNumber`, `props`, `isActiveDirectoryUser`.
+Schema: `updateMeSchema` — `.strict()`. Fields NOT available for self-update: `roles`, `isActivated`, `departmentId`, `workCenterIds`, `specialities`, `personalNumber`, `props`, `isActiveDirectoryUser`.
 
 | Status | Key | When |
 |--------|-----|------|
@@ -375,7 +375,7 @@ Create a user with admin-level fields.
   isActiveDirectoryUser: boolean
   isActivated:           boolean
   departmentId:          ObjectId | null
-  stationIds:            ObjectId[]       // default []
+  workCenterIds:         ObjectId[]       // default []
   specialities:          ObjectId[]       // default []
   roles:                 ObjectId[]       // default []
   props:                 Record<string, string>
@@ -467,21 +467,21 @@ Response: `PaginatedResult<UserResponse>` with `roleNames` virtual populated.
 
 Response: `SuccessResponse<UserResponse>`
 
-### GET /api/v1/user-by-username/:username
+### GET /api/v1/users/by-username/:username
 
 | **Permission** | `readUsers` |
 |---|---|
 
 Param: `username: z.string()`
 
-### GET /api/v1/user-by-email/:email
+### GET /api/v1/users/by-email/:email
 
 | **Permission** | `readUsers` |
 |---|---|
 
 Param: `email: z.email()`
 
-### GET /api/v1/user-with-roles/:id
+### GET /api/v1/users/:id/roles
 
 | **Permission** | `readUsers` |
 |---|---|
@@ -522,7 +522,7 @@ Returns activation and password change status. Used internally by `@mes/auth`.
 }
 ```
 
-### GET /api/v1/users-languages
+### GET /api/v1/users/languages
 
 Returns all supported languages.
 
@@ -531,7 +531,7 @@ Returns all supported languages.
 
 Response: `SuccessResponse<string[]>` — currently `['tr', 'en']` (hardcoded).
 
-### GET /api/v1/users/props-keys
+### GET /api/v1/users/custom-field-keys
 
 Returns all distinct keys used in user `props` maps across the database.
 
@@ -550,7 +550,7 @@ Check if a field value is in use by any user.
 ```typescript
 // Query
 {
-  fieldName:  'departmentId' | 'stationIds'
+  fieldName:  'departmentId' | 'workCenterIds'
   fieldValue: string   // ObjectId as string
 }
 
@@ -569,12 +569,12 @@ Check if a field value is in use by any user.
 
 Response: `SuccessResponse<IRole[]>` — no pagination, returns all roles.
 
-### GET /api/v1/roles/privileges
+### GET /api/v1/roles/available-permissions
 
 | **Permission** | `readRoles` |
 |---|---|
 
-Returns the full privilege registry. Response: `SuccessResponse<Privilege[]>` where each privilege has `code`, `text`, `group[]`, `required[]`.
+Returns the full privilege registry. Response: `SuccessResponse<Privilege[]>` where each privilege has `code` and `text`.
 
 ### GET /api/v1/roles/:id
 
@@ -690,7 +690,7 @@ Access restricted at the network level by Traefik gateway (internal routes are n
 | `writeUsers` | Edit users, reset passwords |
 | `createUsers` | Create new users |
 | `deleteUsers` | Delete users |
-| `navigateUsers` | UI navigation access |
+| `accessUsersScreen` | UI access to the users screen |
 
 ### Roles
 
@@ -700,7 +700,7 @@ Access restricted at the network level by Traefik gateway (internal routes are n
 | `writeRoles` | Edit roles |
 | `createRoles` | Create new roles |
 | `deleteRoles` | Delete roles |
-| `navigateRoles` | UI navigation access |
+| `accessRolesScreen` | UI access to the roles screen |
 
 ### Specialities
 
@@ -710,7 +710,7 @@ Access restricted at the network level by Traefik gateway (internal routes are n
 | `writeSpecialities` | Edit specialities |
 | `createSpecialities` | Create new specialities |
 | `deleteSpecialities` | Delete specialities |
-| `navigateSpecialities` | UI navigation access |
+| `accessSpecialitiesScreen` | UI access to the specialities screen |
 
 ### Password Policy
 
@@ -727,20 +727,20 @@ Access restricted at the network level by Traefik gateway (internal routes are n
 | `writeDashboards` | Edit dashboards |
 | `createDashboards` | Create dashboards |
 | `deleteDashboards` | Delete dashboards |
-| `navigateDashboards` | UI navigation access |
+| `accessDashboardsScreen` | UI access to the dashboards screen |
 
 ### Settings
 
 | Code | Purpose |
 |------|---------|
 | `writeSystemSettings` | Modify system settings |
-| `navigateSystemSettings` | UI navigation access |
+| `accessSystemSettingsScreen` | UI access to the system settings screen |
 
 ### Logs
 
 | Code | Purpose |
 |------|---------|
-| `navigateCrudLogs` | View audit logs |
+| `accessAuditLogsScreen` | UI access to the audit logs screen |
 
 ### Departments
 
@@ -750,7 +750,7 @@ Access restricted at the network level by Traefik gateway (internal routes are n
 | `writeDepartments` | Edit departments |
 | `createDepartments` | Create departments |
 | `deleteDepartments` | Delete departments |
-| `navigateDepartments` | UI navigation access |
+| `accessDepartmentsScreen` | UI access to the departments screen |
 
 ---
 
@@ -808,7 +808,7 @@ Returned by all user endpoints. Sensitive fields are excluded.
   language:               'en' | 'tr'
   personalNumber:         string | null
   departmentId:           string | null          // ObjectId
-  stationIds:             string[]               // ObjectId[]
+  workCenterIds:          string[]               // ObjectId[]
   specialities:           string[]               // ObjectId[]
   defaultDashboardId:     string | null          // ObjectId
   props:                  Record<string, string>

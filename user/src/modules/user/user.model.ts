@@ -69,7 +69,7 @@ const userSchema = new Schema(
       default: null,
       index: true,
     },
-    stationIds: {
+    workCenterIds: {
       type: [Schema.Types.ObjectId],
       default: [],
       index: true,

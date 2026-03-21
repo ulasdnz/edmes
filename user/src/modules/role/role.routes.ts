@@ -16,11 +16,11 @@ const router = Router()
 router.get('/roles', requirePermission('readRoles'), roleController.getRoles)
 
 /**
- * GET /api/v1/roles/privileges — returns all available privilege definitions.
+ * GET /api/v1/roles/available-permissions — returns all available privilege definitions.
  * Used by the frontend to populate the role management UI.
  */
 router.get(
-  '/roles/privileges',
+  '/roles/available-permissions',
   requirePermission('readRoles'),
   (req: Request, res: Response<SuccessResponse<typeof PRIVILEGES>>) => {
     res.json({

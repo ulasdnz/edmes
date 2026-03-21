@@ -27,6 +27,11 @@ const specialitiesPrivileges: readonly Privilege[] = [
   { code: 'accessSpecialitiesScreen', text: 'Access Specialities Screen' },
 ]
 
+const passwordPolicyPrivileges: readonly Privilege[] = [
+  { code: 'readPasswordPolicy', text: 'Read Password Policy' },
+  { code: 'writePasswordPolicy', text: 'Write Password Policy' },
+]
+
 const dashboardPrivileges: readonly Privilege[] = [
   { code: 'readDashboards', text: 'Read Dashboards' },
   { code: 'writeDashboards', text: 'Write Dashboards' },
@@ -56,6 +61,7 @@ export const PRIVILEGES: readonly Privilege[] = Object.freeze([
   ...usersPrivileges,
   ...rolesPrivileges,
   ...specialitiesPrivileges,
+  ...passwordPolicyPrivileges,
   ...dashboardPrivileges,
   ...settingsPrivileges,
   ...logsPrivileges,
