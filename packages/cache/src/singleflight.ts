@@ -4,7 +4,6 @@
  * Prevents thundering herd: when N concurrent calls request the same key,
  * only the first executes `fn`. The remaining N-1 await its result.
  *
- * Inspired by Go's `sync/singleflight` and the legacy `request-promise-cache.js`.
  * Zero dependencies, closure-based (no classes).
  */
 

@@ -78,7 +78,7 @@ testing → source-only (no build, vitest transpiles directly)
 
 Redis Streams via `@mes/events`. Publisher injects `traceId` from ALS context into event data. Consumer extracts it and seeds ALS via `runInContext` — enables end-to-end distributed tracing across services.
 
-Streams: `events.user` (published by user-service), `events.station` (consumed by user-service).
+Streams: `events.user` (published by user-service), `events.work_center` (consumed by user-service).
 
 ## Adding a New Service
 

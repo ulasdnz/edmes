@@ -12,7 +12,7 @@ const consumer = createStreamConsumer({
   group: SERVICE_GROUP,
   consumer: CONSUMER_ID,
   streams: {
-    'events.station': {
+    'events.work_center': {
       'department.deleted': departmentDeletedHandler,
     },
   },
