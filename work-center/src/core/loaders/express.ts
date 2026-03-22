@@ -12,7 +12,9 @@ import { cacheWrapDedup } from '../../lib/cache.js'
 import { httpLoggerMiddleware, logger, morganMiddleware } from '../../lib/logger.js'
 import { generateOpenApiDocument } from '../../lib/openapi/setup.js'
 import { redisClient } from '../../lib/redis.js'
-import actionStateRoutes from '../../modules/action-state/action-state.routes.js'
+import actionStateRoutes, {
+  actionStateInternalRoutes,
+} from '../../modules/action-state/action-state.routes.js'
 import operatorRoutes from '../../modules/operators/operators.routes.js'
 import scheduleRoutes from '../../modules/schedule/schedule.routes.js'
 import workCenterRoutes from '../../modules/work-center/work-center.routes.js'
@@ -104,6 +106,7 @@ export const initExpress = async () => {
     next()
   })
   mountSharedRoutes(internalRouter)
+  internalRouter.use(actionStateInternalRoutes)
 
   app.use('/internal/v1', internalRouter)
 

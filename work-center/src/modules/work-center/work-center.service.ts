@@ -216,9 +216,18 @@ export async function createWorkCenter(
   return saved
 }
 
-export async function getWorkCenter(id: string): Promise<IWorkCenter> {
+export async function getWorkCenter(
+  id: string,
+  visibleIds?: string[] | null,
+): Promise<IWorkCenter> {
   const wc = await WorkCenter.findById(id).lean()
   if (!wc) throw new CustomError(404, 'work_center.not_found')
+
+  // Visibility: if filter provided, user must have access
+  if (visibleIds && !visibleIds.includes(String(wc._id))) {
+    throw new CustomError(404, 'work_center.not_found')
+  }
+
   return wc as IWorkCenter
 }
 
@@ -228,6 +237,7 @@ export async function getWorkCenters(
     status?: string
     parentWorkCenterId?: string | null
   },
+  visibleIds?: string[] | null,
 ) {
   const { type, status, parentWorkCenterId, ...pagination } = input
   const filters: Record<string, unknown> = {}
@@ -235,6 +245,11 @@ export async function getWorkCenters(
   if (type) filters.type = type
   if (status) filters.status = status
   if (parentWorkCenterId !== undefined) filters.parentWorkCenterId = parentWorkCenterId
+
+  // Visibility: restrict to user's workCenterIds
+  if (visibleIds) {
+    filters._id = { $in: visibleIds }
+  }
 
   return paginate(WorkCenter, filters, pagination, {
     searchFields: ['code', 'name'],
