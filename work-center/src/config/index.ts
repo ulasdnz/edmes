@@ -43,7 +43,7 @@ const envSchema = z
         },
       ),
     MONGO_INDEX_STRATEGY: z.enum(['off', 'ensure']).optional(),
-    INTERNAL_API_USER: z.string().url().nonempty('INTERNAL_API_USER must be provided'),
+    INTERNAL_API_USER: z.string().trim().min(1, 'INTERNAL_API_USER must be provided').pipe(z.url()),
   })
   .transform(data => ({
     ...data,

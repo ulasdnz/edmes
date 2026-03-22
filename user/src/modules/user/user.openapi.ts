@@ -200,7 +200,7 @@ export const userPaths: ZodOpenApiPathsObject = {
       tags: ['Users', 'Lookups'],
       security: securityRequirement,
       summary: 'Get user by email (requires readUsers permission)',
-      requestParams: { path: z.object({ email: z.string().email() }) },
+      requestParams: { path: z.object({ email: z.email() }) },
       responses: {
         '200': { description: 'User data' },
         '403': { description: 'Forbidden' },

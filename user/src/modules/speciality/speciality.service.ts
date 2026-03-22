@@ -42,7 +42,7 @@ export const updateSpeciality = async (id: string, data: UpdateSpecialityInput) 
   const speciality = await Speciality.findByIdAndUpdate(
     id,
     { $set: data },
-    { new: true, runValidators: true },
+    { returnDocument: 'after', runValidators: true },
   )
   if (!speciality) {
     throw new CustomError(404, 'speciality.not_found')

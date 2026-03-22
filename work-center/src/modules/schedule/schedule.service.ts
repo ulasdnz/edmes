@@ -160,11 +160,11 @@ export async function upsertException(
         createdBy: userId,
       },
     },
-    { upsert: true, new: true, runValidators: true },
-  ).lean()
+    { upsert: true, returnDocument: 'after', runValidators: true },
+  )
 
   await emitScheduleChanged(workCenterId)
-  return doc as IDateException
+  return doc!
 }
 
 export async function deleteException(workCenterId: string, localDate: string): Promise<void> {

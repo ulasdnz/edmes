@@ -2,15 +2,16 @@ import { z } from 'zod'
 import 'zod-openapi'
 
 export const requestCodeSchema = z.object({
-  email: z
-    .email({ message: 'user.invalid_email_format' })
-    .meta({ example: 'john.doe@example.com', description: 'User email to send recovery code' }),
+  email: z.email({ message: 'user.invalid_email_format' }).meta({
+    example: 'john.doe@example.com',
+    description: 'User email to send recovery code',
+  }),
 })
 
 export const verificationCodeSchema = z.object({
-  email: z
-    .email({ message: 'user.invalid_email_format' })
-    .meta({ example: 'john.doe@example.com' }),
+  email: z.email({ message: 'user.invalid_email_format' }).meta({
+    example: 'john.doe@example.com',
+  }),
   code: z
     .number()
     .int()
@@ -20,9 +21,9 @@ export const verificationCodeSchema = z.object({
 })
 
 export const verificationAndUpdateSchema = z.object({
-  email: z
-    .email({ message: 'user.invalid_email_format' })
-    .meta({ example: 'john.doe@example.com' }),
+  email: z.email({ message: 'user.invalid_email_format' }).meta({
+    example: 'john.doe@example.com',
+  }),
   code: z.number().int().min(10000).max(99999).meta({ example: 12345 }),
   newPassword: z
     .string()
