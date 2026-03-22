@@ -94,6 +94,13 @@ services:
       - JWT_SECRET=${JWT_SECRET:-supersecretkey}
       - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-1d}
       - INTERNAL_API_USER=${INTERNAL_API_USER:-http://user:3000}
+      - SYSTEM_ADMIN_BOOTSTRAP_ENABLED=${SYSTEM_ADMIN_BOOTSTRAP_ENABLED:-true}
+      - SYSTEM_ADMIN_ROLE_NAME=${SYSTEM_ADMIN_ROLE_NAME:-System Administrator}
+      - SYSTEM_ADMIN_USERNAME=${SYSTEM_ADMIN_USERNAME:-system.admin}
+      - SYSTEM_ADMIN_NAME=${SYSTEM_ADMIN_NAME:-System}
+      - SYSTEM_ADMIN_SURNAME=${SYSTEM_ADMIN_SURNAME:-Administrator}
+      - SYSTEM_ADMIN_EMAIL=${SYSTEM_ADMIN_EMAIL:-system.admin@example.local}
+      - SYSTEM_ADMIN_PASSWORD=${SYSTEM_ADMIN_PASSWORD:-}
     depends_on:
       mongodb:
         condition: service_healthy
@@ -123,6 +130,47 @@ services:
       - "traefik.http.routers.user-auth.middlewares=global-compress@docker,secure-headers@docker,auth-rate-limit@docker,body-limit@docker"
       - "traefik.http.routers.user-auth.priority=10"
       - "traefik.http.routers.user-auth.service=user"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  work-center:
+    build:
+      context: .
+      dockerfile: work-center/Dockerfile
+    container_name: work_center_app
+    restart: unless-stopped
+    env_file:
+      - ./work-center/.env
+    environment:
+      - MONGO_URI=${MONGO_URI:-mongodb://mongodb:27017/mes?directConnection=true}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+      - JWT_SECRET=${JWT_SECRET:-supersecretkey}
+      - INTERNAL_API_USER=${INTERNAL_API_USER:-http://user:3000}
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - mes_network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/health/ready"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=mes_network"
+      # Work center routes — priority > 1 so they match before user-service catch-all
+      - "traefik.http.routers.work-center.rule=PathPrefix(`/api/v1/work-centers`)"
+      - "traefik.http.routers.work-center.entrypoints=web"
+      - "traefik.http.routers.work-center.middlewares=global-compress@docker,secure-headers@docker,rate-limit@docker,body-limit@docker"
+      - "traefik.http.routers.work-center.priority=5"
+      - "traefik.http.services.work-center.loadbalancer.server.port=3001"
     deploy:
       resources:
         limits:

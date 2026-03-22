@@ -108,6 +108,15 @@ Standard REST: POST (create), PUT (full replace), PATCH (partial update), DELETE
 - Shared packages: `composite: true` for project references.
 - Service apps: extend `tsconfig.app.json` (`composite: false`, `verbatimModuleSyntax`).
 
+### Permissions (RBAC)
+
+- `PRIVILEGES` in `user/src/constants/privileges.ts` is the **single source of truth** for all assignable permission codes. Every permission used in `requirePermission()` calls must exist here.
+- When adding a new module or feature, add its permission codes to `PRIVILEGES` **first**. The system admin role auto-syncs to include all `PRIVILEGES` on startup.
+- Naming convention: camelCase verb+entity — `readEntity`, `writeEntity`, `createEntity`, `deleteEntity`, `accessEntityScreen`.
+- `requirePermission('code')` from `@mes/auth` enforces permissions at route level; it checks string inclusion against the user's resolved permission array.
+- `SYSTEM_IDENTITY` (`'ffffffffffffffffffffffff'`) gets wildcard `['*']` for internal service-to-service calls. Real users (including the bootstrapped system admin) receive explicit permission codes.
+- The system admin role and user are protected from deletion and renaming via API guards.
+
 ### Logging
 
 Every log call includes an `event` field using dot-notation (`domain.entity.action`):

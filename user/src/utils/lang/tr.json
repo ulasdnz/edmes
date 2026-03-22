@@ -40,6 +40,7 @@
     "not_found": "KullanÄ±cÄ± bulunamadÄ±",
     "avatar_required": "Avatar dosyasÄ± gereklidir",
     "invalid_email_format": "Gecersiz e-posta formati",
+    "system_admin_protected": "Sistem yoneticisi hesabi silinemez",
     "password_required": "Sifre gereklidir"
   },
   "upload": {
@@ -67,7 +68,9 @@
   },
   "role": {
     "name_in_use": "Rol adi zaten kullanimda",
-    "not_found": "Rol bulunamadi"
+    "not_found": "Rol bulunamadi",
+    "system_admin_protected": "Sistem yoneticisi rolu silinemez",
+    "system_admin_rename_protected": "Sistem yoneticisi rolunun adi degistirilemez"
   },
   "speciality": {
     "name_in_use": "Uzmanlik adi zaten kullanimda",

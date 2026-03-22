@@ -3,6 +3,7 @@ import { logger } from '../../lib/logger.js'
 import { initRedis } from '../../lib/redis.js'
 import { initExpress } from './express.js'
 import { initMongoose } from './mongoose.js'
+import { ensureSystemAdmin } from './system-admin.js'
 
 export const initLoaders = async () => {
   try {
@@ -11,6 +12,7 @@ export const initLoaders = async () => {
     await initMongoose()
     await initRedis()
     await initSubscribers()
+    await ensureSystemAdmin()
 
     const app = await initExpress()
 

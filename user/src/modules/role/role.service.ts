@@ -1,3 +1,4 @@
+import { config } from '../../config/index.js'
 import CustomError from '../../core/errors/index.js'
 import { invalidateAuthCacheMany } from '../../jobs/auth-cache.events.js'
 import { emitRoleCreated, emitRoleDeleted, emitRoleUpdated } from '../../jobs/events.js'
@@ -31,13 +32,22 @@ export const getRoleById = async (id: string) => {
 
 export const updateRole = async (id: string, data: UpdateRoleInput) => {
   if (data.name) {
+    const currentRole = await Role.findById(id).lean()
+    if (currentRole?.name === config.SYSTEM_ADMIN_ROLE_NAME) {
+      throw new CustomError(403, 'role.system_admin_rename_protected')
+    }
+
     const existing = await Role.findOne({ name: data.name, _id: { $ne: id } })
     if (existing) {
       throw new CustomError(409, 'role.name_in_use')
     }
   }
 
-  const role = await Role.findByIdAndUpdate(id, { $set: data }, { new: true, runValidators: true })
+  const role = await Role.findByIdAndUpdate(
+    id,
+    { $set: data },
+    { returnDocument: 'after', runValidators: true },
+  )
   if (!role) {
     throw new CustomError(404, 'role.not_found')
   }
@@ -56,6 +66,14 @@ export const updateRole = async (id: string, data: UpdateRoleInput) => {
 }
 
 export const deleteRole = async (id: string) => {
+  const target = await Role.findById(id).lean()
+  if (!target) {
+    throw new CustomError(404, 'role.not_found')
+  }
+  if (target.name === config.SYSTEM_ADMIN_ROLE_NAME) {
+    throw new CustomError(403, 'role.system_admin_protected')
+  }
+
   const role = await Role.findByIdAndDelete(id)
   if (!role) {
     throw new CustomError(404, 'role.not_found')

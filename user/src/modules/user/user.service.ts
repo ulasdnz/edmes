@@ -158,11 +158,16 @@ const resetFailedLogin = async (userId: string, currentAttempts: number): Promis
 // ─── CRUD ────────────────────────────────────────────────────────────────────
 
 export const deleteUser = async (userId: string): Promise<void> => {
-  const user = await User.findByIdAndDelete(userId)
+  const user = await User.findById(userId)
   if (!user) {
     throw new CustomError(404, 'user.not_found')
   }
 
+  if (config.SYSTEM_ADMIN_BOOTSTRAP_ENABLED && user.email === config.SYSTEM_ADMIN_EMAIL) {
+    throw new CustomError(403, 'user.system_admin_protected')
+  }
+
+  await User.deleteOne({ _id: user._id })
   await invalidateAuthCache(userId, 'all')
   await emitUserDeleted(userId)
 }

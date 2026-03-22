@@ -47,14 +47,65 @@ const envSchema = z
     USER_DELETION_RETENTION_DAYS: z.coerce.number().default(30),
     LOGIN_MAX_ATTEMPTS: z.coerce.number().default(5),
     LOGIN_BLOCKING_DURATION_MS: z.coerce.number().default(300_000), // 5 minutes
-    INTERNAL_API_USER: z.string().url().nonempty('INTERNAL_API_USER must be provided'),
+    INTERNAL_API_USER: z.string().trim().min(1, 'INTERNAL_API_USER must be provided').pipe(z.url()),
+    SYSTEM_ADMIN_BOOTSTRAP_ENABLED: z.enum(['true', 'false']).optional(),
+    SYSTEM_ADMIN_ROLE_NAME: z
+      .string()
+      .trim()
+      .min(2, 'SYSTEM_ADMIN_ROLE_NAME must be at least 2 characters')
+      .max(50, 'SYSTEM_ADMIN_ROLE_NAME must be at most 50 characters')
+      .default('System Administrator'),
+    SYSTEM_ADMIN_USERNAME: z
+      .string()
+      .trim()
+      .min(3, 'SYSTEM_ADMIN_USERNAME must be at least 3 characters')
+      .max(30, 'SYSTEM_ADMIN_USERNAME must be at most 30 characters')
+      .default('system.admin'),
+    SYSTEM_ADMIN_NAME: z
+      .string()
+      .trim()
+      .min(2, 'SYSTEM_ADMIN_NAME must be at least 2 characters')
+      .max(24, 'SYSTEM_ADMIN_NAME must be at most 24 characters')
+      .default('System'),
+    SYSTEM_ADMIN_SURNAME: z
+      .string()
+      .trim()
+      .min(1, 'SYSTEM_ADMIN_SURNAME must be provided')
+      .default('Administrator'),
+    SYSTEM_ADMIN_EMAIL: z
+      .string()
+      .trim()
+      .min(1, 'SYSTEM_ADMIN_EMAIL must be a valid email')
+      .pipe(z.email('SYSTEM_ADMIN_EMAIL must be a valid email'))
+      .default('system.admin@example.local'),
+    SYSTEM_ADMIN_PASSWORD: z
+      .string()
+      .trim()
+      .optional()
+      .transform(value => (value ? value : undefined))
+      .refine(value => value === undefined || (value.length >= 8 && value.length <= 20), {
+        message: 'SYSTEM_ADMIN_PASSWORD must be 8-20 characters when provided',
+      }),
   })
   .transform(data => ({
     ...data,
     MONGO_INDEX_STRATEGY:
       data.MONGO_INDEX_STRATEGY ?? (data.NODE_ENV === 'production' ? 'ensure' : 'off'),
     USER_DELETION_RETENTION_MS: data.USER_DELETION_RETENTION_DAYS * 24 * 60 * 60 * 1000,
+    SYSTEM_ADMIN_BOOTSTRAP_ENABLED: (data.SYSTEM_ADMIN_BOOTSTRAP_ENABLED ?? 'true') === 'true',
   }))
+  .refine(
+    data =>
+      !(
+        data.NODE_ENV === 'production' &&
+        data.SYSTEM_ADMIN_BOOTSTRAP_ENABLED &&
+        !data.SYSTEM_ADMIN_PASSWORD
+      ),
+    {
+      message: 'SYSTEM_ADMIN_PASSWORD is required in production when bootstrap is enabled',
+      path: ['SYSTEM_ADMIN_PASSWORD'],
+    },
+  )
 
 const parsed = envSchema.safeParse(process.env)
 
