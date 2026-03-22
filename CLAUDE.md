@@ -101,6 +101,7 @@ Standard REST: POST (create), PUT (full replace), PATCH (partial update), DELETE
 
 - All Mongoose models must use `timestamps: true` (`createdAt`, `updatedAt` auto-managed).
 - Models that are created or modified by authenticated users include `createdBy` and `updatedBy` fields (user `_id`). Internal/system operations use a system identifier.
+- Don't use `.lean()` on `findOneAndUpdate`/`findOneAndDelete` if the model uses `auditLogPlugin` — the post hooks call `doc.toObject()` which doesn't exist on lean results. `.lean()` on `find`/`findById` is fine (audit plugin doesn't hook those).
 
 ### TypeScript / Imports
 
