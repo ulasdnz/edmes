@@ -1,0 +1,77 @@
+{
+  "work_center": {
+    "not_found": "Work center not found",
+    "code_in_use": "Work center code already in use",
+    "name_in_use": "Work center name already in use",
+    "parent_not_found": "Parent work center not found",
+    "parent_must_be_virtual": "Parent work center must be virtual",
+    "parent_must_be_active": "Parent work center must be active",
+    "cannot_be_own_parent": "Work center cannot be its own parent",
+    "circular_hierarchy": "Circular hierarchy detected",
+    "type_immutable": "Work center type cannot be changed",
+    "physical_field_on_virtual": "Field '{{field}}' is not applicable to virtual work centers",
+    "virtual_field_on_physical": "Field '{{field}}' is not applicable to physical work centers",
+    "must_be_active": "Work center must be active for this operation",
+    "must_be_archived": "Work center must be archived for this operation",
+    "must_be_physical": "This operation is only available for physical work centers",
+    "must_be_virtual": "This operation is only available for virtual work centers",
+    "composition_referenced": "Cannot clear composition while referenced by other work centers",
+    "composition_cycle": "Composition cycle detected",
+    "composition_all_families_required": "All three metric families (availability, productivity, quality) are required",
+    "composition_weights_must_sum_to_one": "Weights must sum to 1.0",
+    "contributor_not_found": "Contributor work center not found",
+    "contributor_not_active": "Contributor work center must be active",
+    "contributor_cannot_be_self": "Work center cannot be its own contributor",
+    "virtual_contributor_no_composition": "Virtual contributor must have valid metric composition",
+    "archive_blocked_open_checkins": "Cannot archive: open operator check-ins exist",
+    "archive_blocked_composition_ref": "Cannot archive: work center is referenced in another composition",
+    "delete_blocked_composition_ref": "Cannot delete: work center is referenced in another composition",
+    "delete_blocked_active_calendars": "Cannot delete: active calendars exist",
+    "delete_blocked_user_reference": "Cannot delete: work center is referenced by users",
+    "delete_blocked_checkin_records": "Cannot delete: operator check-in records exist",
+    "delete_blocked_action_state": "Cannot delete: non-empty action state records exist",
+    "speed_tag_required": "speedTagId is required when productivityMode is speed_based",
+    "action_settings_requires_attention_signal": "actionSettings requires attentionSignalTagId to be set",
+    "composition_conflicts_with_partial": "Cannot send both metricComposition and partialMetricComposition",
+    "partial_requires_existing_composition": "Cannot use partial composition update without existing composition"
+  },
+  "schedule": {
+    "calendar_not_found": "Calendar not found",
+    "overlapping_validity": "Calendar validity window overlaps with an existing calendar",
+    "exception_not_found": "Date exception not found",
+    "valid_from_before_valid_to": "validFrom must be before validTo",
+    "invalid_date_format": "Date must be in YYYY-MM-DD format"
+  },
+  "operators": {
+    "checkin_not_found": "Check-in record not found",
+    "duplicate_active_checkin": "Operator already has an active check-in at this work center",
+    "operator_not_found": "Operator not found in user service",
+    "already_checked_out": "Check-in record is already checked out"
+  },
+  "action_state": {
+    "ingestion_failed": "Action state ingestion failed"
+  },
+  "success": {
+    "create": "Work center created successfully",
+    "update": "Work center updated successfully",
+    "replace": "Work center replaced successfully",
+    "delete": "Work center deleted successfully",
+    "get": "Retrieved successfully",
+    "get_all": "List retrieved successfully",
+    "archive": "Work center archived successfully",
+    "reactivate": "Work center reactivated successfully",
+    "calendar_created": "Calendar created successfully",
+    "calendar_updated": "Calendar updated successfully",
+    "calendar_deleted": "Calendar deleted successfully",
+    "exception_saved": "Date exception saved successfully",
+    "exception_deleted": "Date exception deleted successfully",
+    "checked_in": "Operator checked in successfully",
+    "checked_out": "Operator checked out successfully",
+    "effective_schedule": "Effective schedule retrieved successfully",
+    "action_state": "Action state retrieved successfully"
+  },
+  "error": {
+    "unexpected": "An unexpected error occurred",
+    "invalid_id": "Invalid identifier"
+  }
+}

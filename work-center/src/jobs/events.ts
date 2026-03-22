@@ -1,0 +1,72 @@
+import { getTraceId } from '@mes/core'
+import { publishEvent } from '@mes/events'
+import { logger } from '../lib/logger.js'
+import { streamClient } from '../lib/redis.js'
+
+const STREAM = 'events.work_center'
+
+async function emit(type: string, data: Record<string, unknown>): Promise<void> {
+  try {
+    await publishEvent(streamClient, STREAM, type, { ...data, traceId: getTraceId() })
+  } catch (err) {
+    logger.warn(`Failed to publish event ${type}`, {
+      event: 'events.publish.failed',
+      eventType: type,
+      error: err instanceof Error ? err.message : err,
+    })
+  }
+}
+
+// ── WorkCenter lifecycle events ──────────────────────────────────────────────
+
+export const emitWorkCenterCreated = (workCenterId: string) =>
+  emit('work_center.created', { workCenterId })
+
+export const emitWorkCenterUpdated = (workCenterId: string) =>
+  emit('work_center.updated', { workCenterId })
+
+export const emitWorkCenterArchived = (workCenterId: string) =>
+  emit('work_center.archived', { workCenterId })
+
+export const emitWorkCenterReactivated = (workCenterId: string) =>
+  emit('work_center.reactivated', { workCenterId })
+
+export const emitWorkCenterDeleted = (workCenterId: string) =>
+  emit('work_center.deleted', { workCenterId })
+
+// ── Hierarchy events ─────────────────────────────────────────────────────────
+
+export const emitHierarchyChanged = (
+  workCenterId: string,
+  oldParentId: string | null,
+  newParentId: string | null,
+) => emit('work_center.hierarchy.changed', { workCenterId, oldParentId, newParentId })
+
+// ── Metric composition events ────────────────────────────────────────────────
+
+export const emitMetricCompositionChanged = (workCenterId: string) =>
+  emit('work_center.metric_composition.changed', { workCenterId })
+
+// ── Schedule events ──────────────────────────────────────────────────────────
+
+export const emitScheduleChanged = (workCenterId: string) =>
+  emit('work_center.schedule.changed', { workCenterId })
+
+// ── Operator events ──────────────────────────────────────────────────────────
+
+export const emitOperatorCheckedIn = (
+  workCenterId: string,
+  operatorId: string,
+  checkInId: string,
+) => emit('work_center.operator.checked_in', { workCenterId, operatorId, checkInId })
+
+export const emitOperatorCheckedOut = (
+  workCenterId: string,
+  operatorId: string,
+  checkInId: string,
+) => emit('work_center.operator.checked_out', { workCenterId, operatorId, checkInId })
+
+// ── Action state events ──────────────────────────────────────────────────────
+
+export const emitActionStateChanged = (workCenterId: string) =>
+  emit('work_center.action_state.changed', { workCenterId })

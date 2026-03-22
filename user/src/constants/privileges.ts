@@ -57,6 +57,18 @@ const departmentsPrivileges: readonly Privilege[] = [
   { code: 'accessDepartmentsScreen', text: 'Access Departments Screen' },
 ]
 
+const workCenterPrivileges: readonly Privilege[] = [
+  { code: 'readWorkCenters', text: 'Read Work Centers' },
+  { code: 'writeWorkCenters', text: 'Write Work Centers' },
+  { code: 'deleteWorkCenters', text: 'Delete Work Centers' },
+  { code: 'readSchedules', text: 'Read Schedules' },
+  { code: 'writeSchedules', text: 'Write Schedules' },
+  { code: 'readOperators', text: 'Read Operators' },
+  { code: 'writeOperators', text: 'Write Operators' },
+  { code: 'readActionState', text: 'Read Action State' },
+  { code: 'accessWorkCentersScreen', text: 'Access Work Centers Screen' },
+]
+
 export const PRIVILEGES: readonly Privilege[] = Object.freeze([
   ...usersPrivileges,
   ...rolesPrivileges,
@@ -66,6 +78,7 @@ export const PRIVILEGES: readonly Privilege[] = Object.freeze([
   ...settingsPrivileges,
   ...logsPrivileges,
   ...departmentsPrivileges,
+  ...workCenterPrivileges,
 ])
 
 export const VALID_PRIVILEGE_CODES: ReadonlySet<string> = new Set(PRIVILEGES.map(p => p.code))

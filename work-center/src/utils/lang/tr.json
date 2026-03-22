@@ -1,0 +1,77 @@
+{
+  "work_center": {
+    "not_found": "İş merkezi bulunamadı",
+    "code_in_use": "İş merkezi kodu zaten kullanımda",
+    "name_in_use": "İş merkezi adı zaten kullanımda",
+    "parent_not_found": "Üst iş merkezi bulunamadı",
+    "parent_must_be_virtual": "Üst iş merkezi sanal olmalıdır",
+    "parent_must_be_active": "Üst iş merkezi aktif olmalıdır",
+    "cannot_be_own_parent": "İş merkezi kendi üst öğesi olamaz",
+    "circular_hierarchy": "Döngüsel hiyerarşi tespit edildi",
+    "type_immutable": "İş merkezi türü değiştirilemez",
+    "physical_field_on_virtual": "'{{field}}' alanı sanal iş merkezleri için geçerli değildir",
+    "virtual_field_on_physical": "'{{field}}' alanı fiziksel iş merkezleri için geçerli değildir",
+    "must_be_active": "Bu işlem için iş merkezi aktif olmalıdır",
+    "must_be_archived": "Bu işlem için iş merkezi arşivlenmiş olmalıdır",
+    "must_be_physical": "Bu işlem yalnızca fiziksel iş merkezleri için kullanılabilir",
+    "must_be_virtual": "Bu işlem yalnızca sanal iş merkezleri için kullanılabilir",
+    "composition_referenced": "Diğer iş merkezleri tarafından referans alınırken bileşim temizlenemez",
+    "composition_cycle": "Bileşim döngüsü tespit edildi",
+    "composition_all_families_required": "Üç metrik ailesi (kullanılabilirlik, verimlilik, kalite) birlikte gereklidir",
+    "composition_weights_must_sum_to_one": "Ağırlıklar toplamı 1.0 olmalıdır",
+    "contributor_not_found": "Katkıda bulunan iş merkezi bulunamadı",
+    "contributor_not_active": "Katkıda bulunan iş merkezi aktif olmalıdır",
+    "contributor_cannot_be_self": "İş merkezi kendi katkıda bulunanı olamaz",
+    "virtual_contributor_no_composition": "Sanal katkıda bulunan geçerli metrik bileşimine sahip olmalıdır",
+    "archive_blocked_open_checkins": "Arşivlenemez: açık operatör giriş kayıtları mevcut",
+    "archive_blocked_composition_ref": "Arşivlenemez: iş merkezi başka bir bileşimde referans alınıyor",
+    "delete_blocked_composition_ref": "Silinemez: iş merkezi başka bir bileşimde referans alınıyor",
+    "delete_blocked_active_calendars": "Silinemez: aktif takvimler mevcut",
+    "delete_blocked_user_reference": "Silinemez: iş merkezi kullanıcılar tarafından referans alınıyor",
+    "delete_blocked_checkin_records": "Silinemez: operatör giriş kayıtları mevcut",
+    "delete_blocked_action_state": "Silinemez: boş olmayan aksiyon durumu kayıtları mevcut",
+    "speed_tag_required": "productivityMode speed_based olduğunda speedTagId gereklidir",
+    "action_settings_requires_attention_signal": "actionSettings için attentionSignalTagId ayarlanmış olmalıdır",
+    "composition_conflicts_with_partial": "metricComposition ve partialMetricComposition aynı anda gönderilemez",
+    "partial_requires_existing_composition": "Kısmi bileşim güncellemesi mevcut bir bileşim olmadan kullanılamaz"
+  },
+  "schedule": {
+    "calendar_not_found": "Takvim bulunamadı",
+    "overlapping_validity": "Takvim geçerlilik penceresi mevcut bir takvimle çakışıyor",
+    "exception_not_found": "Tarih istisnası bulunamadı",
+    "valid_from_before_valid_to": "validFrom, validTo'dan önce olmalıdır",
+    "invalid_date_format": "Tarih YYYY-MM-DD formatında olmalıdır"
+  },
+  "operators": {
+    "checkin_not_found": "Giriş kaydı bulunamadı",
+    "duplicate_active_checkin": "Operatör bu iş merkezinde zaten aktif bir girişe sahip",
+    "operator_not_found": "Operatör kullanıcı servisinde bulunamadı",
+    "already_checked_out": "Giriş kaydı zaten kapatılmış"
+  },
+  "action_state": {
+    "ingestion_failed": "Aksiyon durumu alımı başarısız oldu"
+  },
+  "success": {
+    "create": "İş merkezi başarıyla oluşturuldu",
+    "update": "İş merkezi başarıyla güncellendi",
+    "replace": "İş merkezi başarıyla değiştirildi",
+    "delete": "İş merkezi başarıyla silindi",
+    "get": "Başarıyla getirildi",
+    "get_all": "Liste başarıyla getirildi",
+    "archive": "İş merkezi başarıyla arşivlendi",
+    "reactivate": "İş merkezi başarıyla yeniden etkinleştirildi",
+    "calendar_created": "Takvim başarıyla oluşturuldu",
+    "calendar_updated": "Takvim başarıyla güncellendi",
+    "calendar_deleted": "Takvim başarıyla silindi",
+    "exception_saved": "Tarih istisnası başarıyla kaydedildi",
+    "exception_deleted": "Tarih istisnası başarıyla silindi",
+    "checked_in": "Operatör başarıyla giriş yaptı",
+    "checked_out": "Operatör başarıyla çıkış yaptı",
+    "effective_schedule": "Etkin çizelge başarıyla getirildi",
+    "action_state": "Aksiyon durumu başarıyla getirildi"
+  },
+  "error": {
+    "unexpected": "Beklenmeyen bir hata oluştu",
+    "invalid_id": "Geçersiz tanımlayıcı"
+  }
+}
