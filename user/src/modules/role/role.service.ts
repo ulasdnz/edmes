@@ -1,4 +1,4 @@
-import { config } from '../../config/index.js'
+import { SYSTEM_ADMIN_ROLE_NAME } from '../../constants/system-admin.js'
 import CustomError from '../../core/errors/index.js'
 import { invalidateAuthCacheMany } from '../../jobs/auth-cache.events.js'
 import { emitRoleCreated, emitRoleDeleted, emitRoleUpdated } from '../../jobs/events.js'
@@ -19,10 +19,10 @@ export const createRole = async (data: CreateRoleInput) => {
   return role
 }
 
-export const getRoles = async () => Role.find().lean()
+export const getRoles = async () => Role.find().select('-__v').lean()
 
 export const getRoleById = async (id: string) => {
-  const role = await Role.findById(id).lean()
+  const role = await Role.findById(id).select('-__v').lean()
   if (!role) {
     throw new CustomError(404, 'role.not_found')
   }
@@ -31,12 +31,17 @@ export const getRoleById = async (id: string) => {
 }
 
 export const updateRole = async (id: string, data: UpdateRoleInput) => {
-  if (data.name) {
-    const currentRole = await Role.findById(id).lean()
-    if (currentRole?.name === config.SYSTEM_ADMIN_ROLE_NAME) {
+  const currentRole = await Role.findById(id).lean()
+  if (currentRole?.name === SYSTEM_ADMIN_ROLE_NAME) {
+    if (data.name) {
       throw new CustomError(403, 'role.system_admin_rename_protected')
     }
+    if (data.permissions !== undefined) {
+      throw new CustomError(403, 'role.system_admin_permissions_protected')
+    }
+  }
 
+  if (data.name) {
     const existing = await Role.findOne({ name: data.name, _id: { $ne: id } })
     if (existing) {
       throw new CustomError(409, 'role.name_in_use')
@@ -70,7 +75,7 @@ export const deleteRole = async (id: string) => {
   if (!target) {
     throw new CustomError(404, 'role.not_found')
   }
-  if (target.name === config.SYSTEM_ADMIN_ROLE_NAME) {
+  if (target.name === SYSTEM_ADMIN_ROLE_NAME) {
     throw new CustomError(403, 'role.system_admin_protected')
   }
 

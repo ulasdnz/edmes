@@ -12,7 +12,7 @@ export const ingestActionState = async (
     req.body,
     req.user!.id,
   )
-  res.json({ success: true, message: req.t('success.action_state'), data: state })
+  res.json({ message: req.t('success.action_state'), data: state })
 }
 
 export const getLatestActionState = async (
@@ -20,5 +20,5 @@ export const getLatestActionState = async (
   res: Response<SuccessResponse<IActionState | null>>,
 ) => {
   const state = await actionStateService.getLatestActionState(req.params.workCenterId)
-  res.json({ success: true, message: req.t('success.action_state'), data: state })
+  res.json({ data: state })
 }

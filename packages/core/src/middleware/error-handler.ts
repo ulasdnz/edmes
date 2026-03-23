@@ -2,7 +2,7 @@ import type { NextFunction, Request, Response } from 'express'
 import type { Logger } from 'winston'
 import { ZodError } from 'zod'
 import { CustomError } from '../errors/index.js'
-import type { ErrorResponse, MongoError } from '../types/index.js'
+import type { ErrorDetail, ErrorResponse, MongoError } from '../types/index.js'
 
 interface StatusCodeError extends Error {
   statusCode: number
@@ -21,7 +21,7 @@ const normalizeStatusCode = (statusCode: number): number =>
 
 const extractPasswordViolations = (
   details?: Record<string, unknown>,
-): ErrorResponse['errors'] | undefined => {
+): ErrorDetail[] | undefined => {
   const violations = details?.violations
   if (!Array.isArray(violations)) return undefined
   return (violations as string[]).map(v => ({
@@ -44,7 +44,7 @@ export const createErrorHandler =
     let messageKey = 'error.unexpected'
     let messageParams: Record<string, string> = {}
 
-    let errors: ErrorResponse['errors']
+    let details: ErrorDetail[] | undefined
     let stack: string | undefined
 
     const identity = ((key: string) => key) as typeof req.t
@@ -54,7 +54,7 @@ export const createErrorHandler =
       isOperational = true
       statusCode = 400
       messageKey = 'error.validation_failed'
-      errors = err.issues.flatMap(e => {
+      details = err.issues.flatMap(e => {
         if (e.code === 'unrecognized_keys') {
           return e.keys.map(key => ({
             field: key,
@@ -71,14 +71,14 @@ export const createErrorHandler =
       isOperational = true
       statusCode = normalizeStatusCode(err.statusCode)
       messageKey = err.message
-      errors = extractPasswordViolations(err.details)
+      details = extractPasswordViolations(err.details)
     } else if (isStatusCodeError(err)) {
       isOperational = true
       statusCode = normalizeStatusCode(err.statusCode)
       messageKey = err.message || messageKey
-      const extractedErrors = extractPasswordViolations(err.details)
-      if (extractedErrors) {
-        errors = extractedErrors
+      const extractedDetails = extractPasswordViolations(err.details)
+      if (extractedDetails) {
+        details = extractedDetails
       }
     } else if (err && typeof err === 'object' && 'code' in err && err.code === 11000) {
       isOperational = true
@@ -102,11 +102,11 @@ export const createErrorHandler =
 
     let logMessage = tLog(messageKey, messageParams) as string
 
-    if (errors) {
-      const mappedErrors = errors
+    if (details) {
+      const mappedDetails = details
         .map(e => `${e.field}: ${tLog(e.message, {}) as string}`)
         .join(', ')
-      logMessage = `${logMessage} [${mappedErrors}]`
+      logMessage = `${logMessage} [${mappedDetails}]`
     }
 
     if (!isOperational) {
@@ -116,19 +116,21 @@ export const createErrorHandler =
     const t = req.t ?? identity
     const responseMessage = t(messageKey, messageParams) as string
 
-    const responseErrors = errors?.map(e => ({
+    const responseDetails = details?.map(e => ({
       field: e.field,
       message: t(e.message, {}) as string,
     }))
 
     const response: ErrorResponse = {
-      success: false,
-      message: responseMessage,
-      errors: responseErrors,
+      error: {
+        code: messageKey,
+        message: responseMessage,
+        details: responseDetails,
+      },
     }
 
     if (nodeEnv === 'development' && stack) {
-      response.stack = stack
+      response.error.stack = stack
     }
 
     res.status(statusCode).json(response)

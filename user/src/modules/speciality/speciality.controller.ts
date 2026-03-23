@@ -10,9 +10,8 @@ export const createSpeciality = async (
   const speciality = await specialityService.createSpeciality(req.body)
 
   res.status(201).json({
-    success: true,
-    message: req.t('success.create'),
     data: speciality,
+    message: req.t('success.create'),
   })
 }
 
@@ -23,8 +22,6 @@ export const getSpecialities = async (
   const specialities = await specialityService.getSpecialities()
 
   res.json({
-    success: true,
-    message: req.t('success.get_all'),
     data: specialities,
   })
 }
@@ -36,8 +33,6 @@ export const getSpecialityById = async (
   const speciality = await specialityService.getSpecialityById(req.params.id)
 
   res.json({
-    success: true,
-    message: req.t('success.get'),
     data: speciality,
   })
 }
@@ -49,21 +44,19 @@ export const updateSpeciality = async (
   const speciality = await specialityService.updateSpeciality(req.params.id, req.body)
 
   res.json({
-    success: true,
-    message: req.t('success.update'),
     data: speciality,
+    message: req.t('success.update'),
   })
 }
 
 export const deleteSpeciality = async (
   req: Request<{ id: string }>,
-  res: Response<SuccessResponse<void>>,
+  res: Response<SuccessResponse>,
 ) => {
   await specialityService.deleteSpeciality(req.params.id)
 
   res.json({
-    success: true,
-    message: req.t('success.delete'),
     data: undefined,
+    message: req.t('success.delete'),
   })
 }

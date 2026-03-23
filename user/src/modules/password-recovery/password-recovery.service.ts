@@ -117,6 +117,7 @@ export const verificationAndUpdate = async (data: VerificationAndUpdateInput) =>
 
   user.password = hashedPassword
   user.passwordChangedAt = new Date()
+  user.mustChangePassword = false
   user.failedLoginAttempts = 0
   user.lastFailedLoginAt = null
   await user.save()

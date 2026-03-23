@@ -5,18 +5,22 @@ import { streamClient } from '../lib/redis.js'
 
 const SERVICE_GROUP = 'work-center-service'
 const CONSUMER_ID = `wc-${process.pid}`
+const streams = {
+  // No external events consumed currently.
+  // Future: 'events.user': { 'user.deleted': cleanupHandler }
+}
 
-const consumer = createStreamConsumer({
-  redis: streamClient,
-  group: SERVICE_GROUP,
-  consumer: CONSUMER_ID,
-  streams: {
-    // No external events consumed currently.
-    // Future: 'events.user': { 'user.deleted': cleanupHandler }
-  },
-  logger,
-  runInContext: (traceId, fn) => runInContext({ traceId, ip: 'internal' }, fn),
-})
+const consumer =
+  Object.keys(streams).length === 0
+    ? null
+    : createStreamConsumer({
+        redis: streamClient,
+        group: SERVICE_GROUP,
+        consumer: CONSUMER_ID,
+        streams,
+        logger,
+        runInContext: (traceId, fn) => runInContext({ traceId, ip: 'internal' }, fn),
+      })
 
 /**
  * Start consuming cross-service events from Redis Streams.
@@ -24,6 +28,14 @@ const consumer = createStreamConsumer({
  * in the loader, it only resolves on shutdown.
  */
 export const initSubscribers = () => {
+  if (!consumer) {
+    logger.info('No stream subscriptions configured; skipping consumer startup', {
+      event: 'events.consumer.skipped',
+      group: SERVICE_GROUP,
+    })
+    return
+  }
+
   // Start the poll loop in the background. Errors are logged internally.
   consumer.start().catch(err => {
     logger.error('Stream consumer crashed', {
@@ -37,5 +49,5 @@ export const initSubscribers = () => {
  * Stop the consumer gracefully.
  */
 export const shutdownSubscribers = () => {
-  consumer.stop()
+  consumer?.stop()
 }

@@ -68,6 +68,7 @@ export async function checkOut(
 export async function getActiveCheckIns(workCenterId: string): Promise<IOperatorCheckIn[]> {
   return OperatorCheckIn.find({ workCenterId, checkedOutAt: null })
     .sort({ checkedInAt: -1 })
+    .select('-__v')
     .lean() as Promise<IOperatorCheckIn[]>
 }
 

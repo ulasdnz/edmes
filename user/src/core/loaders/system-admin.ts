@@ -1,7 +1,14 @@
 import bcrypt from 'bcryptjs'
-import { randomBytes } from 'crypto'
 import { config } from '../../config/index.js'
 import { PRIVILEGES } from '../../constants/privileges.js'
+import {
+  SYSTEM_ADMIN_DEV_PASSWORD,
+  SYSTEM_ADMIN_NAME,
+  SYSTEM_ADMIN_ROLE_DESCRIPTION,
+  SYSTEM_ADMIN_ROLE_NAME,
+  SYSTEM_ADMIN_SURNAME,
+  SYSTEM_ADMIN_USERNAME,
+} from '../../constants/system-admin.js'
 import {
   emitRoleCreated,
   emitRoleUpdated,
@@ -10,9 +17,7 @@ import {
 } from '../../jobs/events.js'
 import { logger } from '../../lib/logger.js'
 import Role, { type IRole } from '../../modules/role/role.model.js'
-import User, { type IUser } from '../../modules/user/user.model.js'
-
-const SYSTEM_ROLE_DESCRIPTION = 'Bootstrapped full-access system administrator role'
+import User from '../../modules/user/user.model.js'
 
 const sameStringSet = (left: string[], right: string[]): boolean => {
   if (left.length !== right.length) return false
@@ -21,16 +26,16 @@ const sameStringSet = (left: string[], right: string[]): boolean => {
   return right.every(value => leftSet.has(value))
 }
 
-const generateBootstrapPassword = (): string => randomBytes(10).toString('hex')
+export const isSystemAdminByUsername = (username: string): boolean =>
+  config.SYSTEM_ADMIN_BOOTSTRAP_ENABLED && username === SYSTEM_ADMIN_USERNAME
 
 const ensureSystemAdminRole = async (permissions: string[]): Promise<IRole> => {
-  const roleName = config.SYSTEM_ADMIN_ROLE_NAME.trim()
-  const existingRole = await Role.findOne({ name: roleName })
+  const existingRole = await Role.findOne({ name: SYSTEM_ADMIN_ROLE_NAME })
 
   if (!existingRole) {
     const role = await Role.create({
-      name: roleName,
-      description: SYSTEM_ROLE_DESCRIPTION,
+      name: SYSTEM_ADMIN_ROLE_NAME,
+      description: SYSTEM_ADMIN_ROLE_DESCRIPTION,
       permissions,
       isDefault: false,
     })
@@ -40,7 +45,7 @@ const ensureSystemAdminRole = async (permissions: string[]): Promise<IRole> => {
     logger.info('System admin role bootstrapped', {
       event: 'bootstrap.system_admin.role_created',
       roleId: role._id.toString(),
-      roleName,
+      roleName: SYSTEM_ADMIN_ROLE_NAME,
     })
 
     return role
@@ -48,8 +53,8 @@ const ensureSystemAdminRole = async (permissions: string[]): Promise<IRole> => {
 
   const nextPermissions = [...permissions]
   const shouldUpdate =
-    !sameStringSet(existingRole.permissions ?? [], nextPermissions) ||
-    existingRole.description !== SYSTEM_ROLE_DESCRIPTION ||
+    !sameStringSet((existingRole.permissions ?? []) as string[], nextPermissions) ||
+    existingRole.description !== SYSTEM_ADMIN_ROLE_DESCRIPTION ||
     existingRole.isDefault !== false
 
   if (!shouldUpdate) {
@@ -60,7 +65,7 @@ const ensureSystemAdminRole = async (permissions: string[]): Promise<IRole> => {
     { _id: existingRole._id },
     {
       $set: {
-        description: SYSTEM_ROLE_DESCRIPTION,
+        description: SYSTEM_ADMIN_ROLE_DESCRIPTION,
         permissions: nextPermissions,
         isDefault: false,
       },
@@ -77,52 +82,28 @@ const ensureSystemAdminRole = async (permissions: string[]): Promise<IRole> => {
   logger.info('System admin role synchronized', {
     event: 'bootstrap.system_admin.role_synced',
     roleId: role._id.toString(),
-    roleName,
+    roleName: SYSTEM_ADMIN_ROLE_NAME,
   })
 
   return role
 }
 
-const ensureSingleSystemUserCandidate = async (
-  email: string,
-  username: string,
-): Promise<IUser | null> => {
-  const existingByEmail = await User.findOne({ email })
-  const existingByUsername = await User.findOne({ username })
-
-  if (
-    existingByEmail &&
-    existingByUsername &&
-    existingByEmail._id.toString() !== existingByUsername._id.toString()
-  ) {
-    throw new Error(
-      'SYSTEM_ADMIN_EMAIL and SYSTEM_ADMIN_USERNAME resolve to different existing users',
-    )
-  }
-
-  return existingByEmail ?? existingByUsername ?? null
-}
-
 const ensureSystemAdminUser = async (roleId: string): Promise<void> => {
-  const email = config.SYSTEM_ADMIN_EMAIL.trim().toLowerCase()
-  const username = config.SYSTEM_ADMIN_USERNAME.trim().toLowerCase()
-  const name = config.SYSTEM_ADMIN_NAME.trim()
-  const surname = config.SYSTEM_ADMIN_SURNAME.trim()
-
-  const existingUser = await ensureSingleSystemUserCandidate(email, username)
+  const existingUser = await User.findOne({ username: SYSTEM_ADMIN_USERNAME })
 
   if (!existingUser) {
-    const password = config.SYSTEM_ADMIN_PASSWORD ?? generateBootstrapPassword()
+    const password = config.SYSTEM_ADMIN_PASSWORD ?? SYSTEM_ADMIN_DEV_PASSWORD
     const hashedPassword = await bcrypt.hash(password, 10)
 
     const user = await User.create({
-      username,
-      email,
-      name,
-      surname,
+      username: SYSTEM_ADMIN_USERNAME,
+      email: config.SYSTEM_ADMIN_EMAIL.trim().toLowerCase(),
+      name: SYSTEM_ADMIN_NAME,
+      surname: SYSTEM_ADMIN_SURNAME,
       password: hashedPassword,
       roles: [roleId],
       isActivated: true,
+      mustChangePassword: !config.SYSTEM_ADMIN_PASSWORD,
     })
 
     await emitUserCreated(user._id.toString())
@@ -130,48 +111,28 @@ const ensureSystemAdminUser = async (roleId: string): Promise<void> => {
     logger.info('System admin user bootstrapped', {
       event: 'bootstrap.system_admin.user_created',
       userId: user._id.toString(),
-      username,
-      email,
+      username: SYSTEM_ADMIN_USERNAME,
+      mustChangePassword: !config.SYSTEM_ADMIN_PASSWORD,
     })
-
-    if (!config.SYSTEM_ADMIN_PASSWORD) {
-      logger.warn(
-        'System admin password was generated automatically. Rotate it after first login.',
-        {
-          event: 'bootstrap.system_admin.password_generated',
-          email,
-          username,
-        },
-      )
-      process.stderr.write(`[BOOTSTRAP] System admin initial password: ${password}\n`)
-    }
 
     return
   }
 
   const currentRoles = (existingUser.roles ?? []).map(String)
-  const nextRoles = currentRoles.includes(roleId) ? currentRoles : [...currentRoles, roleId]
+  const hasSystemRole = currentRoles.includes(roleId)
 
-  const shouldUpdate =
-    existingUser.username !== username ||
-    existingUser.email !== email ||
-    existingUser.name !== name ||
-    existingUser.surname !== surname ||
-    existingUser.isActivated !== true ||
-    nextRoles.length !== currentRoles.length
+  const shouldUpdate = !hasSystemRole || existingUser.isActivated !== true
 
   if (!shouldUpdate) {
     return
   }
 
+  const nextRoles = hasSystemRole ? currentRoles : [...currentRoles, roleId]
+
   const user = await User.findOneAndUpdate(
     { _id: existingUser._id },
     {
       $set: {
-        username,
-        email,
-        name,
-        surname,
         isActivated: true,
         roles: nextRoles,
       },
@@ -188,8 +149,11 @@ const ensureSystemAdminUser = async (roleId: string): Promise<void> => {
   logger.info('System admin user synchronized', {
     event: 'bootstrap.system_admin.user_synced',
     userId: user._id.toString(),
-    username,
-    email,
+    username: SYSTEM_ADMIN_USERNAME,
+    syncedFields: {
+      roleAdded: !hasSystemRole,
+      reactivated: existingUser.isActivated !== true,
+    },
   })
 }
 
@@ -207,9 +171,8 @@ export const ensureSystemAdmin = async (): Promise<void> => {
 
   logger.info('System admin bootstrap completed', {
     event: 'bootstrap.system_admin.completed',
-    roleName: config.SYSTEM_ADMIN_ROLE_NAME,
-    username: config.SYSTEM_ADMIN_USERNAME,
-    email: config.SYSTEM_ADMIN_EMAIL,
+    roleName: SYSTEM_ADMIN_ROLE_NAME,
+    username: SYSTEM_ADMIN_USERNAME,
     permissionCount: permissions.length,
   })
 }

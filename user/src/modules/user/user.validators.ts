@@ -81,7 +81,7 @@ export const adminUpdateUserSchema = updateMeSchema
     departmentId: objectIdSchema.nullable().optional(),
     workCenterIds: objectIdArraySchema.optional(),
     specialities: objectIdArraySchema.optional(),
-    roles: objectIdArraySchema.optional(),
+    roles: z.array(objectIdSchema).optional(),
     props: propsSchema,
   })
   .strict()

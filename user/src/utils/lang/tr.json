@@ -41,6 +41,9 @@
     "avatar_required": "Avatar dosyasÄ± gereklidir",
     "invalid_email_format": "Gecersiz e-posta formati",
     "system_admin_protected": "Sistem yoneticisi hesabi silinemez",
+    "system_admin_username_protected": "Sistem yoneticisi kullanici adi degistirilemez",
+    "system_admin_deactivation_protected": "Sistem yoneticisi hesabi deaktive edilemez",
+    "system_admin_role_protected": "Sistem yoneticisi rolu bu kullanicidan kaldirilamaz",
     "password_required": "Sifre gereklidir"
   },
   "upload": {
@@ -70,7 +73,8 @@
     "name_in_use": "Rol adi zaten kullanimda",
     "not_found": "Rol bulunamadi",
     "system_admin_protected": "Sistem yoneticisi rolu silinemez",
-    "system_admin_rename_protected": "Sistem yoneticisi rolunun adi degistirilemez"
+    "system_admin_rename_protected": "Sistem yoneticisi rolunun adi degistirilemez",
+    "system_admin_permissions_protected": "Sistem yoneticisi rol yetkileri sistem tarafindan yonetilir ve degistirilemez"
   },
   "speciality": {
     "name_in_use": "Uzmanlik adi zaten kullanimda",

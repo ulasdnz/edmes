@@ -8,6 +8,10 @@ vi.mock('../../../core/loaders/mongoose', () => ({
   initMongoose: vi.fn(),
 }))
 
+vi.mock('../../../database/migrations/index', () => ({
+  runMigrations: vi.fn(),
+}))
+
 vi.mock('../../../jobs/subscribers', () => ({
   initSubscribers: vi.fn(),
   shutdownSubscribers: vi.fn(),
@@ -64,7 +68,6 @@ describe('User Routes Integration', () => {
     const res = await request(app).post('/api/v1/auth/register').send(userData)
 
     expect(res.status).toBe(201)
-    expect(res.body.success).toBe(true)
     expect(res.body.data.email).toBe(userData.email)
 
     const user = await User.findOne({ email: userData.email })
@@ -86,7 +89,7 @@ describe('User Routes Integration', () => {
     const res = await request(app).post('/api/v1/auth/register').send(userData)
 
     expect(res.status).toBe(409)
-    expect(res.body.success).toBe(false)
+    expect(res.body.error).toBeDefined()
   })
 
   it('POST /api/v1/auth/login should return token for valid credentials', async () => {
@@ -106,7 +109,6 @@ describe('User Routes Integration', () => {
     })
 
     expect(res.status).toBe(200)
-    expect(res.body.success).toBe(true)
     expect(res.body.data.token).toBeDefined()
   })
 

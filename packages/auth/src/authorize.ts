@@ -14,9 +14,10 @@ export const requirePermission = (permission: string): any => {
 
     if (!req.user || !req.user.permissions?.includes(permission)) {
       res.status(403).json({
-        success: false,
-        message: 'auth.insufficient_permissions', // standard i18n key
-        data: null,
+        error: {
+          code: 'auth.insufficient_permissions',
+          message: 'auth.insufficient_permissions',
+        },
       })
       return
     }

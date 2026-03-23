@@ -1,3 +1,4 @@
+import { runMigrations } from '../../database/migrations/index.js'
 import { initSubscribers } from '../../jobs/subscribers.js'
 import { logger } from '../../lib/logger.js'
 import { initRedis } from '../../lib/redis.js'
@@ -11,8 +12,9 @@ export const initLoaders = async () => {
 
     await initMongoose()
     await initRedis()
-    await initSubscribers()
+    await runMigrations()
     await ensureSystemAdmin()
+    await initSubscribers()
 
     const app = await initExpress()
 

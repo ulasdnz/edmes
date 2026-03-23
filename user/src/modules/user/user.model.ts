@@ -112,6 +112,10 @@ const userSchema = new Schema(
     passwordChangedAt: {
       type: Date,
     },
+    mustChangePassword: {
+      type: Boolean,
+      default: false,
+    },
   },
   {
     timestamps: true,
@@ -125,8 +129,13 @@ userSchema.virtual('roleNames', {
   foreignField: '_id',
 })
 
-userSchema.set('toObject', { virtuals: true })
-userSchema.set('toJSON', { virtuals: true })
+const stripVersionKey = (_doc: unknown, ret: Record<string, unknown>) => {
+  delete ret.__v
+  return ret
+}
+
+userSchema.set('toObject', { virtuals: true, transform: stripVersionKey })
+userSchema.set('toJSON', { virtuals: true, transform: stripVersionKey })
 
 export type IUser = InferSchemaType<typeof userSchema> & {
   _id: Types.ObjectId

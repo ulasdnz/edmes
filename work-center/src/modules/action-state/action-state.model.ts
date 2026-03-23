@@ -15,8 +15,20 @@ const actionStateSchema = new Schema(
   { timestamps: true, strict: true },
 )
 
-actionStateSchema.set('toObject', { virtuals: true })
-actionStateSchema.set('toJSON', { virtuals: true })
+actionStateSchema.set('toObject', {
+  virtuals: true,
+  transform: (_doc: unknown, ret: Record<string, unknown>) => {
+    delete ret.__v
+    return ret
+  },
+})
+actionStateSchema.set('toJSON', {
+  virtuals: true,
+  transform: (_doc: unknown, ret: Record<string, unknown>) => {
+    delete ret.__v
+    return ret
+  },
+})
 
 export type IActionState = InferSchemaType<typeof actionStateSchema> & {
   _id: Types.ObjectId

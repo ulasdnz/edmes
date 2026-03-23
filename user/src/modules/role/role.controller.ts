@@ -7,9 +7,8 @@ export const createRole = async (req: Request, res: Response<SuccessResponse<IRo
   const role = await roleService.createRole(req.body)
 
   res.status(201).json({
-    success: true,
-    message: req.t('success.create'),
     data: role,
+    message: req.t('success.create'),
   })
 }
 
@@ -17,8 +16,6 @@ export const getRoles = async (req: Request, res: Response<SuccessResponse<IRole
   const roles = await roleService.getRoles()
 
   res.json({
-    success: true,
-    message: req.t('success.get_all'),
     data: roles,
   })
 }
@@ -30,8 +27,6 @@ export const getRoleById = async (
   const role = await roleService.getRoleById(req.params.id)
 
   res.json({
-    success: true,
-    message: req.t('success.get'),
     data: role,
   })
 }
@@ -43,21 +38,16 @@ export const updateRole = async (
   const role = await roleService.updateRole(req.params.id, req.body)
 
   res.json({
-    success: true,
-    message: req.t('success.update'),
     data: role,
+    message: req.t('success.update'),
   })
 }
 
-export const deleteRole = async (
-  req: Request<{ id: string }>,
-  res: Response<SuccessResponse<void>>,
-) => {
+export const deleteRole = async (req: Request<{ id: string }>, res: Response<SuccessResponse>) => {
   await roleService.deleteRole(req.params.id)
 
   res.json({
-    success: true,
-    message: req.t('success.delete'),
     data: undefined,
+    message: req.t('success.delete'),
   })
 }

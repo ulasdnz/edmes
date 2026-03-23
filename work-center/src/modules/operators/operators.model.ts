@@ -19,8 +19,20 @@ const operatorCheckInSchema = new Schema(
 // Compound index for duplicate active check-in prevention + querying
 operatorCheckInSchema.index({ workCenterId: 1, operatorId: 1, checkedOutAt: 1 })
 
-operatorCheckInSchema.set('toObject', { virtuals: true })
-operatorCheckInSchema.set('toJSON', { virtuals: true })
+operatorCheckInSchema.set('toObject', {
+  virtuals: true,
+  transform: (_doc: unknown, ret: Record<string, unknown>) => {
+    delete ret.__v
+    return ret
+  },
+})
+operatorCheckInSchema.set('toJSON', {
+  virtuals: true,
+  transform: (_doc: unknown, ret: Record<string, unknown>) => {
+    delete ret.__v
+    return ret
+  },
+})
 
 export type IOperatorCheckIn = InferSchemaType<typeof operatorCheckInSchema> & {
   _id: Types.ObjectId

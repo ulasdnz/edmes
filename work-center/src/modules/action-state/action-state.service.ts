@@ -19,7 +19,10 @@ export async function ingestActionState(
   const sorted = [...data.activeActions].sort()
 
   // Idempotency: skip if latest snapshot has the same action set
-  const latest = await ActionState.findOne({ workCenterId }).sort({ changedAt: -1 }).lean()
+  const latest = await ActionState.findOne({ workCenterId })
+    .sort({ changedAt: -1 })
+    .select('-__v')
+    .lean()
   if (latest) {
     const latestSorted = [...latest.activeActions].sort()
     if (JSON.stringify(sorted) === JSON.stringify(latestSorted)) {
@@ -45,7 +48,10 @@ export async function getLatestActionState(workCenterId: string): Promise<IActio
   if (!wc) throw new CustomError(404, 'work_center.not_found')
   if (wc.type !== 'physical') throw new CustomError(400, 'work_center.must_be_physical')
 
-  const latest = await ActionState.findOne({ workCenterId }).sort({ changedAt: -1 }).lean()
+  const latest = await ActionState.findOne({ workCenterId })
+    .sort({ changedAt: -1 })
+    .select('-__v')
+    .lean()
   return latest as IActionState | null
 }
 

@@ -24,8 +24,6 @@ router.get(
   requirePermission('readRoles'),
   (req: Request, res: Response<SuccessResponse<typeof PRIVILEGES>>) => {
     res.json({
-      success: true,
-      message: req.t('success.get_all'),
       data: PRIVILEGES,
     })
   },

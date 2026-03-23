@@ -1,0 +1,6 @@
+export const SYSTEM_ADMIN_USERNAME = 'system'
+export const SYSTEM_ADMIN_ROLE_NAME = 'System Administrator'
+export const SYSTEM_ADMIN_NAME = 'System'
+export const SYSTEM_ADMIN_SURNAME = 'Administrator'
+export const SYSTEM_ADMIN_ROLE_DESCRIPTION = 'Bootstrapped full-access system administrator role'
+export const SYSTEM_ADMIN_DEV_PASSWORD = 'ChangeMe123!'

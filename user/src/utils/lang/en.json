@@ -41,13 +41,17 @@
     "avatar_required": "Avatar file is required",
     "invalid_email_format": "Invalid email format",
     "system_admin_protected": "The system administrator account cannot be deleted",
+    "system_admin_username_protected": "The system administrator username cannot be changed",
+    "system_admin_deactivation_protected": "The system administrator account cannot be deactivated",
+    "system_admin_role_protected": "The system administrator role cannot be removed from this user",
     "password_required": "Password is required"
   },
   "role": {
     "name_in_use": "Role name already in use",
     "not_found": "Role not found",
     "system_admin_protected": "The system administrator role cannot be deleted",
-    "system_admin_rename_protected": "The system administrator role cannot be renamed"
+    "system_admin_rename_protected": "The system administrator role cannot be renamed",
+    "system_admin_permissions_protected": "The system administrator role permissions are managed by the system and cannot be changed"
   },
   "speciality": {
     "name_in_use": "Speciality name already in use",

@@ -33,7 +33,7 @@ COPY work-center/ ./work-center/
 
 # 1. Build shared packages via project references (tsc -b handles order)
 # 2. Build work-center service (resolves @mes/* from packages/*/dist/)
-RUN pnpm build
+RUN pnpm build:packages && pnpm --filter work-center-service run build
 
 # Copy i18n JSON translation files to dist since tsc does not bundle them
 RUN mkdir -p work-center/dist/utils/lang && cp -r work-center/src/utils/lang/* work-center/dist/utils/lang/

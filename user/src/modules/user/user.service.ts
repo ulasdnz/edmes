@@ -3,11 +3,14 @@ import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import { config } from '../../config/index.js'
 import { SYSTEM_IDENTITY } from '../../constants/identity.js'
+import { SYSTEM_ADMIN_ROLE_NAME } from '../../constants/system-admin.js'
 import CustomError from '../../core/errors/index.js'
+import { isSystemAdminByUsername } from '../../core/loaders/system-admin.js'
 import { invalidateAuthCache } from '../../jobs/auth-cache.events.js'
 import { emitUserCreated, emitUserDeleted, emitUserUpdated } from '../../jobs/events.js'
 import { logger } from '../../lib/logger.js'
 import { type PaginatedResult, paginate } from '../../utils/pagination.js'
+import Role from '../role/role.model.js'
 import User, { type IUser } from './user.model.js'
 import type { AuthResponse, UserResponse } from './user.types.js'
 import type {
@@ -163,7 +166,7 @@ export const deleteUser = async (userId: string): Promise<void> => {
     throw new CustomError(404, 'user.not_found')
   }
 
-  if (config.SYSTEM_ADMIN_BOOTSTRAP_ENABLED && user.email === config.SYSTEM_ADMIN_EMAIL) {
+  if (isSystemAdminByUsername(user.username)) {
     throw new CustomError(403, 'user.system_admin_protected')
   }
 
@@ -176,6 +179,10 @@ export const updateUser = async (userId: string, data: Partial<IUser>): Promise<
   const user = await User.findById(userId)
   if (!user) {
     throw new CustomError(404, 'user.not_found')
+  }
+
+  if (isSystemAdminByUsername(user.username) && data.username !== undefined) {
+    throw new CustomError(403, 'user.system_admin_username_protected')
   }
 
   if (data.email && data.email !== user.email) {
@@ -408,6 +415,21 @@ export const adminUpdateUser = async (
     throw new CustomError(404, 'user.not_found')
   }
 
+  if (isSystemAdminByUsername(user.username)) {
+    if (data.username !== undefined) {
+      throw new CustomError(403, 'user.system_admin_username_protected')
+    }
+    if (data.isActivated === false) {
+      throw new CustomError(403, 'user.system_admin_deactivation_protected')
+    }
+    if (data.roles !== undefined) {
+      const systemRole = await Role.findOne({ name: SYSTEM_ADMIN_ROLE_NAME }).lean()
+      if (systemRole && !data.roles.includes(systemRole._id.toString())) {
+        throw new CustomError(403, 'user.system_admin_role_protected')
+      }
+    }
+  }
+
   if (data.email && data.email !== user.email) {
     const existing = await User.findOne({ email: data.email })
     if (existing) {
@@ -445,6 +467,7 @@ export const adminResetPassword = async (
 
   user.password = hashedPassword
   user.passwordChangedAt = new Date()
+  user.mustChangePassword = false
 
   // Also reset any active blocking since password is manually reset by admin
   user.failedLoginAttempts = 0

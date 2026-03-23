@@ -14,9 +14,7 @@ export const createCalendar = async (
     req.body,
     req.user!.id,
   )
-  res
-    .status(201)
-    .json({ success: true, message: req.t('success.calendar_created'), data: calendar })
+  res.status(201).json({ message: req.t('success.calendar_created'), data: calendar })
 }
 
 export const getCalendar = async (
@@ -24,7 +22,7 @@ export const getCalendar = async (
   res: Response<SuccessResponse<ICalendar>>,
 ) => {
   const calendar = await scheduleService.getCalendar(req.params.workCenterId, req.params.calendarId)
-  res.json({ success: true, message: req.t('success.get'), data: calendar })
+  res.json({ data: calendar })
 }
 
 export const getCalendars = async (
@@ -32,7 +30,7 @@ export const getCalendars = async (
   res: Response<SuccessResponse<ICalendar[]>>,
 ) => {
   const calendars = await scheduleService.getCalendars(req.params.workCenterId)
-  res.json({ success: true, message: req.t('success.get_all'), data: calendars })
+  res.json({ data: calendars })
 }
 
 export const replaceCalendar = async (
@@ -45,7 +43,7 @@ export const replaceCalendar = async (
     req.body,
     req.user!.id,
   )
-  res.json({ success: true, message: req.t('success.calendar_updated'), data: calendar })
+  res.json({ message: req.t('success.calendar_updated'), data: calendar })
 }
 
 export const updateCalendar = async (
@@ -58,7 +56,7 @@ export const updateCalendar = async (
     req.body,
     req.user!.id,
   )
-  res.json({ success: true, message: req.t('success.calendar_updated'), data: calendar })
+  res.json({ message: req.t('success.calendar_updated'), data: calendar })
 }
 
 export const deleteCalendar = async (
@@ -66,7 +64,7 @@ export const deleteCalendar = async (
   res: Response<SuccessResponse<void>>,
 ) => {
   await scheduleService.deleteCalendar(req.params.workCenterId, req.params.calendarId)
-  res.json({ success: true, message: req.t('success.calendar_deleted'), data: undefined })
+  res.json({ message: req.t('success.calendar_deleted'), data: undefined })
 }
 
 // ── Date exceptions ─────────────────────────────────────────────────────────
@@ -81,7 +79,7 @@ export const upsertException = async (
     req.body,
     req.user!.id,
   )
-  res.json({ success: true, message: req.t('success.exception_saved'), data: exception })
+  res.json({ message: req.t('success.exception_saved'), data: exception })
 }
 
 export const deleteException = async (
@@ -89,7 +87,7 @@ export const deleteException = async (
   res: Response<SuccessResponse<void>>,
 ) => {
   await scheduleService.deleteException(req.params.workCenterId, req.params.localDate)
-  res.json({ success: true, message: req.t('success.exception_deleted'), data: undefined })
+  res.json({ message: req.t('success.exception_deleted'), data: undefined })
 }
 
 // ── Effective schedule ──────────────────────────────────────────────────────
@@ -102,5 +100,5 @@ export const getEffectiveSchedule = async (
     req.params.workCenterId,
     req.query.date as string,
   )
-  res.json({ success: true, message: req.t('success.effective_schedule'), data: schedule })
+  res.json({ data: schedule })
 }

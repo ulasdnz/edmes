@@ -3,20 +3,18 @@ export interface ErrorDetail {
   message: string
 }
 
-export interface BaseResponse {
-  success: boolean
-  message: string
-}
-
-export interface SuccessResponse<T = void> extends BaseResponse {
-  success: true
+export interface SuccessResponse<T = void> {
   data: T
+  message?: string
 }
 
-export interface ErrorResponse extends BaseResponse {
-  success: false
-  errors?: ErrorDetail[] | null
-  stack?: string
+export interface ErrorResponse {
+  error: {
+    code: string
+    message: string
+    details?: ErrorDetail[]
+    stack?: string
+  }
 }
 
 export interface MongoError extends Error {

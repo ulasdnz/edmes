@@ -49,29 +49,6 @@ const envSchema = z
     LOGIN_BLOCKING_DURATION_MS: z.coerce.number().default(300_000), // 5 minutes
     INTERNAL_API_USER: z.string().trim().min(1, 'INTERNAL_API_USER must be provided').pipe(z.url()),
     SYSTEM_ADMIN_BOOTSTRAP_ENABLED: z.enum(['true', 'false']).optional(),
-    SYSTEM_ADMIN_ROLE_NAME: z
-      .string()
-      .trim()
-      .min(2, 'SYSTEM_ADMIN_ROLE_NAME must be at least 2 characters')
-      .max(50, 'SYSTEM_ADMIN_ROLE_NAME must be at most 50 characters')
-      .default('System Administrator'),
-    SYSTEM_ADMIN_USERNAME: z
-      .string()
-      .trim()
-      .min(3, 'SYSTEM_ADMIN_USERNAME must be at least 3 characters')
-      .max(30, 'SYSTEM_ADMIN_USERNAME must be at most 30 characters')
-      .default('system.admin'),
-    SYSTEM_ADMIN_NAME: z
-      .string()
-      .trim()
-      .min(2, 'SYSTEM_ADMIN_NAME must be at least 2 characters')
-      .max(24, 'SYSTEM_ADMIN_NAME must be at most 24 characters')
-      .default('System'),
-    SYSTEM_ADMIN_SURNAME: z
-      .string()
-      .trim()
-      .min(1, 'SYSTEM_ADMIN_SURNAME must be provided')
-      .default('Administrator'),
     SYSTEM_ADMIN_EMAIL: z
       .string()
       .trim()

@@ -147,8 +147,20 @@ workCenterSchema.index({ status: 1, type: 1 })
 
 // ── Virtuals & serialization ─────────────────────────────────────────────────
 
-workCenterSchema.set('toObject', { virtuals: true })
-workCenterSchema.set('toJSON', { virtuals: true })
+workCenterSchema.set('toObject', {
+  virtuals: true,
+  transform: (_doc: unknown, ret: Record<string, unknown>) => {
+    delete ret.__v
+    return ret
+  },
+})
+workCenterSchema.set('toJSON', {
+  virtuals: true,
+  transform: (_doc: unknown, ret: Record<string, unknown>) => {
+    delete ret.__v
+    return ret
+  },
+})
 
 // ── Type export ──────────────────────────────────────────────────────────────
 

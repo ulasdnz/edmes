@@ -53,6 +53,7 @@ export async function paginate<T>(
     .sort(sort)
     .skip(skip)
     .limit(limit)
+    .select('-__v')
     .lean()
   if (options.select) dataQuery = dataQuery.select(options.select) as typeof dataQuery
   if (options.populate) {

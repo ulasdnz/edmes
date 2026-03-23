@@ -27,7 +27,12 @@ export const validateQuery =
   (schema: ZodType) => async (req: Request, _res: Response, next: NextFunction) => {
     try {
       const result = await schema.parseAsync(req.query)
-      req.query = result as unknown as Request['query']
+      // Express 5: req.query is a read-only getter — override with parsed value
+      Object.defineProperty(req, 'query', {
+        value: result as unknown as Request['query'],
+        writable: true,
+        configurable: true,
+      })
       next()
     } catch (error) {
       next(error)

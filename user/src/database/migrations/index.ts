@@ -1,4 +1,4 @@
-﻿import fs from 'fs'
+import fs from 'fs'
 import mongoose from 'mongoose'
 import path from 'path'
 import { fileURLToPath, pathToFileURL } from 'url'
@@ -17,7 +17,8 @@ interface MigrationRecord {
 }
 
 export async function runMigrations() {
-  await connectDB()
+  const needsConnect = mongoose.connection.readyState !== 1
+  if (needsConnect) await connectDB()
 
   try {
     const collection = mongoose.connection.collection<MigrationRecord>(MIGRATION_COLLECTION)
@@ -59,7 +60,7 @@ export async function runMigrations() {
 
     logger.info('All pending migrations processed successfully')
   } finally {
-    await disconnectDB()
+    if (needsConnect) await disconnectDB()
   }
 }
 

@@ -20,10 +20,10 @@ export const createSpeciality = async (data: CreateSpecialityInput) => {
   return speciality
 }
 
-export const getSpecialities = async () => Speciality.find().lean()
+export const getSpecialities = async () => Speciality.find().select('-__v').lean()
 
 export const getSpecialityById = async (id: string) => {
-  const speciality = await Speciality.findById(id).lean()
+  const speciality = await Speciality.findById(id).select('-__v').lean()
   if (!speciality) {
     throw new CustomError(404, 'speciality.not_found')
   }

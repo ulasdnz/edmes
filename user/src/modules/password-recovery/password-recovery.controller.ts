@@ -14,9 +14,8 @@ export const requestCode = async (
   const result = await passwordRecoveryService.requestCode(req.body)
 
   res.json({
-    success: true,
-    message: req.t('success.create'),
     data: result,
+    message: req.t('success.create'),
   })
 }
 
@@ -27,9 +26,8 @@ export const verifyCode = async (
   const result = await passwordRecoveryService.verifyCode(req.body)
 
   res.json({
-    success: true,
-    message: req.t('success.verify'),
     data: result,
+    message: req.t('success.verify'),
   })
 }
 
@@ -40,8 +38,7 @@ export const verificationAndUpdate = async (
   await passwordRecoveryService.verificationAndUpdate(req.body)
 
   res.json({
-    success: true,
-    message: req.t('success.update'),
     data: undefined,
+    message: req.t('success.update'),
   })
 }

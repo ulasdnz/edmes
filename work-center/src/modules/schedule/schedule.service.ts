@@ -55,13 +55,15 @@ export async function createCalendar(
 }
 
 export async function getCalendar(workCenterId: string, calendarId: string): Promise<ICalendar> {
-  const cal = await Calendar.findOne({ _id: calendarId, workCenterId }).lean()
+  const cal = await Calendar.findOne({ _id: calendarId, workCenterId }).select('-__v').lean()
   if (!cal) throw new CustomError(404, 'schedule.calendar_not_found')
   return cal as ICalendar
 }
 
 export async function getCalendars(workCenterId: string): Promise<ICalendar[]> {
-  return Calendar.find({ workCenterId }).sort({ validFrom: -1 }).lean() as Promise<ICalendar[]>
+  return Calendar.find({ workCenterId }).sort({ validFrom: -1 }).select('-__v').lean() as Promise<
+    ICalendar[]
+  >
 }
 
 export async function replaceCalendar(
@@ -193,7 +195,9 @@ export async function getEffectiveSchedule(workCenterId: string, date: string) {
   const dateObj = new Date(date + 'T00:00:00.000Z')
 
   // 1. DateException — highest priority
-  const exception = await DateException.findOne({ workCenterId, localDate: dateObj }).lean()
+  const exception = await DateException.findOne({ workCenterId, localDate: dateObj })
+    .select('-__v')
+    .lean()
   if (exception) {
     return { source: 'exception' as const, date, intervals: exception.intervals }
   }
@@ -204,7 +208,9 @@ export async function getEffectiveSchedule(workCenterId: string, date: string) {
     status: 'active',
     validFrom: { $lte: dateObj },
     validTo: { $gte: dateObj },
-  }).lean()
+  })
+    .select('-__v')
+    .lean()
 
   if (calendar) {
     const dayOfWeek = DAYS_OF_WEEK[dateObj.getUTCDay()]

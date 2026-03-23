@@ -15,9 +15,8 @@ export async function register(req: Request, res: Response<SuccessResponse<UserR
   const user = await userService.registerUser(req.body)
 
   res.status(201).json({
-    success: true,
-    message: req.t('success.register'),
     data: user,
+    message: req.t('success.register'),
   })
 }
 
@@ -25,20 +24,17 @@ export async function login(req: Request, res: Response<SuccessResponse<AuthResp
   const result = await userService.loginUser(req.body)
 
   res.json({
-    success: true,
-    message: req.t('success.login'),
     data: result,
   })
 }
 
-export async function deleteUser(req: Request, res: Response<SuccessResponse<void>>) {
+export async function deleteUser(req: Request, res: Response<SuccessResponse>) {
   const userId = req.user!.id
   await userService.deleteUser(userId)
 
   res.json({
-    success: true,
-    message: req.t('success.delete'),
     data: undefined,
+    message: req.t('success.delete'),
   })
 }
 
@@ -47,9 +43,8 @@ export async function updateUser(req: Request, res: Response<SuccessResponse<Use
   const result = await userService.updateUser(userId, req.body)
 
   res.json({
-    success: true,
-    message: req.t('success.update'),
     data: result,
+    message: req.t('success.update'),
   })
 }
 
@@ -62,9 +57,8 @@ export async function updateAvatar(req: Request, res: Response<SuccessResponse<U
 
   const result = await userService.updateAvatar(userId, req.file)
   res.json({
-    success: true,
-    message: req.t('success.avatar_update'),
     data: result,
+    message: req.t('success.avatar_update'),
   })
 }
 
@@ -73,8 +67,6 @@ export async function getUser(req: Request, res: Response<SuccessResponse<UserRe
   const user = await userService.getUser(userId)
 
   res.json({
-    success: true,
-    message: req.t('success.get'),
     data: user,
   })
 }
@@ -82,11 +74,7 @@ export async function getUser(req: Request, res: Response<SuccessResponse<UserRe
 export async function getUsers(req: Request, res: Response) {
   const result = await userService.getUsers(req.query as unknown as UserListInput)
 
-  res.json({
-    success: true,
-    message: req.t('success.get_all'),
-    ...result,
-  })
+  res.json(result)
 }
 
 export async function getUserById(
@@ -96,8 +84,6 @@ export async function getUserById(
   const user = await userService.findById(req.params.id)
 
   res.json({
-    success: true,
-    message: req.t('success.get'),
     data: user,
   })
 }
@@ -110,8 +96,6 @@ export async function getUserByUsername(
 ) {
   const user = await userService.findByUsername(req.params.username)
   res.json({
-    success: true,
-    message: req.t('success.get'),
     data: user,
   })
 }
@@ -122,8 +106,6 @@ export async function getUserByEmail(
 ) {
   const user = await userService.findByEmail(req.params.email)
   res.json({
-    success: true,
-    message: req.t('success.get'),
     data: user,
   })
 }
@@ -134,8 +116,6 @@ export async function getUserByIdWithRoles(
 ) {
   const user = await userService.findByIdWithRoles(req.params.id)
   res.json({
-    success: true,
-    message: req.t('success.get'),
     data: user,
   })
 }
@@ -147,8 +127,6 @@ export async function getUserRolesAndPermissions(
   const data = await userService.getUserRolesAndPermissions(req.params.id)
 
   res.json({
-    success: true,
-    message: req.t('success.get'),
     data,
   })
 }
@@ -160,8 +138,6 @@ export async function getUserAuthStatus(
   const data = await userService.getUserAuthStatus(req.params.id)
 
   res.json({
-    success: true,
-    message: req.t('success.get'),
     data,
   })
 }
@@ -169,8 +145,6 @@ export async function getUserAuthStatus(
 export async function getUsersLanguages(req: Request, res: Response<SuccessResponse<string[]>>) {
   const languages = userService.getLanguages()
   res.json({
-    success: true,
-    message: req.t('success.get'),
     data: languages,
   })
 }
@@ -178,8 +152,6 @@ export async function getUsersLanguages(req: Request, res: Response<SuccessRespo
 export async function getUsersPropsKeys(req: Request, res: Response<SuccessResponse<string[]>>) {
   const keys = await userService.getPropsKeys()
   res.json({
-    success: true,
-    message: req.t('success.get'),
     data: keys,
   })
 }
@@ -193,9 +165,8 @@ export async function adminCreateUser(
   const user = await userService.adminCreateUser(req.body)
 
   res.status(201).json({
-    success: true,
-    message: req.t('success.create'),
     data: user,
+    message: req.t('success.create'),
   })
 }
 
@@ -206,35 +177,32 @@ export async function adminUpdateUser(
   const user = await userService.adminUpdateUser(req.params.id, req.body)
 
   res.json({
-    success: true,
-    message: req.t('success.update'),
     data: user,
+    message: req.t('success.update'),
   })
 }
 
 export async function adminDeleteUser(
   req: Request<{ id: string }>,
-  res: Response<SuccessResponse<void>>,
+  res: Response<SuccessResponse>,
 ) {
   await userService.deleteUser(req.params.id)
 
   res.json({
-    success: true,
-    message: req.t('success.delete'),
     data: undefined,
+    message: req.t('success.delete'),
   })
 }
 
 export async function adminResetPassword(
   req: Request<{ id: string }, unknown, AdminResetPasswordInput>,
-  res: Response<SuccessResponse<void>>,
+  res: Response<SuccessResponse>,
 ) {
   await userService.adminResetPassword(req.params.id, req.body)
 
   res.json({
-    success: true,
-    message: req.t('success.password_reset'),
     data: undefined,
+    message: req.t('success.password_reset'),
   })
 }
 
@@ -253,8 +221,6 @@ export async function checkUserDependencies(
   const inUse = await userService.checkUserDependencies(fieldName, fieldValue)
 
   res.json({
-    success: true,
-    message: req.t('success.get'),
     data: { inUse },
   })
 }

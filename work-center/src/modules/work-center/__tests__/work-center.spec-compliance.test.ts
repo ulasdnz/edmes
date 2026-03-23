@@ -40,9 +40,10 @@ vi.mock('@mes/auth', () => ({
       }
 
       res.status(403).json({
-        success: false,
-        message: 'auth.insufficient_permissions',
-        data: null,
+        error: {
+          code: 'auth.insufficient_permissions',
+          message: 'auth.insufficient_permissions',
+        },
       })
     }
   },
@@ -176,7 +177,7 @@ describe('Work Center Spec Compliance Review', () => {
     expect(await OperatorCheckIn.countDocuments({ workCenterId })).toBe(1)
   })
 
-  it('proves the effective schedule route 500s even though the service result is correct', async () => {
+  it('returns the effective schedule for a given date', async () => {
     const workCenterId = await createInternalWorkCenter(
       buildPhysicalWorkCenter({
         shiftIds: ['507f1f77bcf86cd799439014'],
@@ -215,7 +216,8 @@ describe('Work Center Spec Compliance Review', () => {
       calendarId: calendarRes.body.data._id,
       intervals: weeklyPattern.monday,
     })
-    expect(effectiveSchedule.status).toBe(500)
+    expect(effectiveSchedule.status).toBe(200)
+    expect(effectiveSchedule.body.data).toEqual(directSchedule)
   })
 
   it('matches the archive guard that blocks physical work centers with open check-ins', async () => {

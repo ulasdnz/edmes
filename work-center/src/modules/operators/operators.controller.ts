@@ -8,7 +8,7 @@ export const checkIn = async (
   res: Response<SuccessResponse<IOperatorCheckIn>>,
 ) => {
   const record = await operatorsService.checkIn(req.params.workCenterId, req.body, req.user!.id)
-  res.status(201).json({ success: true, message: req.t('success.checked_in'), data: record })
+  res.status(201).json({ message: req.t('success.checked_in'), data: record })
 }
 
 export const checkOut = async (
@@ -20,7 +20,7 @@ export const checkOut = async (
     req.params.checkInId,
     req.user!.id,
   )
-  res.json({ success: true, message: req.t('success.checked_out'), data: record })
+  res.json({ message: req.t('success.checked_out'), data: record })
 }
 
 export const getActiveCheckIns = async (
@@ -28,5 +28,5 @@ export const getActiveCheckIns = async (
   res: Response<SuccessResponse<IOperatorCheckIn[]>>,
 ) => {
   const records = await operatorsService.getActiveCheckIns(req.params.workCenterId)
-  res.json({ success: true, message: req.t('success.get_all'), data: records })
+  res.json({ data: records })
 }

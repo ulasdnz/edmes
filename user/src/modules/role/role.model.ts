@@ -27,6 +27,18 @@ const roleSchema = new Schema(
   {
     timestamps: true,
     strict: true,
+    toObject: {
+      transform(_doc: unknown, ret: Record<string, unknown>) {
+        delete ret.__v
+        return ret
+      },
+    },
+    toJSON: {
+      transform(_doc: unknown, ret: Record<string, unknown>) {
+        delete ret.__v
+        return ret
+      },
+    },
   },
 )
 

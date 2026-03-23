@@ -3,7 +3,6 @@
  */
 
 export type {
-  BaseResponse,
   ErrorDetail,
   ErrorResponse,
   MongoError,

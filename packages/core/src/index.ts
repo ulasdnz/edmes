@@ -20,7 +20,6 @@ export { validateBody, validateParams, validateQuery } from './middleware/valida
 export { isShuttingDown, setShuttingDown } from './shutdown.js'
 // Types
 export type {
-  BaseResponse,
   ErrorDetail,
   ErrorResponse,
   MongoError,

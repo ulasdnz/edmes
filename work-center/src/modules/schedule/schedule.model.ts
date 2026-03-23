@@ -47,8 +47,20 @@ const calendarSchema = new Schema(
 )
 
 calendarSchema.index({ workCenterId: 1, status: 1 })
-calendarSchema.set('toObject', { virtuals: true })
-calendarSchema.set('toJSON', { virtuals: true })
+calendarSchema.set('toObject', {
+  virtuals: true,
+  transform: (_doc: unknown, ret: Record<string, unknown>) => {
+    delete ret.__v
+    return ret
+  },
+})
+calendarSchema.set('toJSON', {
+  virtuals: true,
+  transform: (_doc: unknown, ret: Record<string, unknown>) => {
+    delete ret.__v
+    return ret
+  },
+})
 
 export type ICalendar = InferSchemaType<typeof calendarSchema> & {
   _id: Types.ObjectId
@@ -74,8 +86,20 @@ const dateExceptionSchema = new Schema(
 )
 
 dateExceptionSchema.index({ workCenterId: 1, localDate: 1 }, { unique: true })
-dateExceptionSchema.set('toObject', { virtuals: true })
-dateExceptionSchema.set('toJSON', { virtuals: true })
+dateExceptionSchema.set('toObject', {
+  virtuals: true,
+  transform: (_doc: unknown, ret: Record<string, unknown>) => {
+    delete ret.__v
+    return ret
+  },
+})
+dateExceptionSchema.set('toJSON', {
+  virtuals: true,
+  transform: (_doc: unknown, ret: Record<string, unknown>) => {
+    delete ret.__v
+    return ret
+  },
+})
 
 export type IDateException = InferSchemaType<typeof dateExceptionSchema> & {
   _id: Types.ObjectId

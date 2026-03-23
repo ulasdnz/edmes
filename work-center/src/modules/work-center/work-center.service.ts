@@ -220,7 +220,7 @@ export async function getWorkCenter(
   id: string,
   visibleIds?: string[] | null,
 ): Promise<IWorkCenter> {
-  const wc = await WorkCenter.findById(id).lean()
+  const wc = await WorkCenter.findById(id).select('-__v').lean()
   if (!wc) throw new CustomError(404, 'work_center.not_found')
 
   // Visibility: if filter provided, user must have access
