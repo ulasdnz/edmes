@@ -97,11 +97,20 @@ Streams: `events.user` (published by user-service), `events.work_center` (consum
 
 Standard REST: POST (create), PUT (full replace), PATCH (partial update), DELETE. No action-specific routes (if it is really needed) — state transitions and structural changes are field updates via PATCH; backend detects what changed and runs validation/side effects.
 
+**Response format:**
+- Success: `{ data }` for GETs, `{ data, message }` for mutations (POST/PATCH/DELETE). No `success` field.
+- Error: `{ error: { code, message, details? } }` — `code` is the i18n key, `message` is the translated string, `details` is optional (validation errors).
+- List endpoints: `{ data: [...], pagination: { page, limit, total, totalPages } }`.
+
+**Population:** List endpoints do NOT auto-populate references. Clients opt-in via `?populate=roles` query param. Only whitelisted fields are supported per endpoint.
+
 ### Mongoose Models
 
 - All Mongoose models must use `timestamps: true` (`createdAt`, `updatedAt` auto-managed).
 - Models that are created or modified by authenticated users include `createdBy` and `updatedBy` fields (user `_id`). Internal/system operations use a system identifier.
 - Don't use `.lean()` on `findOneAndUpdate`/`findOneAndDelete` if the model uses `auditLogPlugin` — the post hooks call `doc.toObject()` which doesn't exist on lean results. `.lean()` on `find`/`findById` is fine (audit plugin doesn't hook those).
+- `__v` is hidden from all API responses: `toObject`/`toJSON` transforms on models + `.select('-__v')` on `.lean()` queries (since lean bypasses transforms). New models must do both.
+- Use `ref` on schema fields directly for population (`ref: 'Role'`), not Mongoose virtuals — virtuals + `.lean()` cause duplicate fields in responses.
 
 ### TypeScript / Imports
 

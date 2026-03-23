@@ -261,16 +261,21 @@ export const getUser = async (userId: string): Promise<UserResponse> => {
 }
 
 export const getUsers = async (input: UserListInput): Promise<PaginatedResult<IUser>> => {
-  const { isActivated, departmentId, roles, ...pagination } = input
+  const { isActivated, departmentId, roles, populate, ...pagination } = input
 
   const filters: Record<string, unknown> = {}
   if (isActivated !== undefined) filters.isActivated = isActivated
   if (departmentId) filters.departmentId = departmentId
   if (roles) filters.roles = roles
 
+  const populateFields = populate?.split(',').map(s => s.trim()) ?? []
+  const populateOptions = populateFields.includes('roles')
+    ? [{ path: 'roles', select: 'name description' }]
+    : []
+
   return paginate(User, filters, pagination, {
     select: '-password -failedLoginAttempts -lastFailedLoginAt',
-    populate: [{ path: 'roleNames', select: 'id name description _id' }],
+    populate: populateOptions,
     searchFields: ['name', 'surname', 'username', 'email'],
     allowedSortFields: [
       'name',
@@ -315,8 +320,8 @@ export const findByEmail = async (email: string): Promise<UserResponse> => {
 
 export const findByIdWithRoles = async (userId: string): Promise<UserResponse> => {
   const user = await User.findById(userId).populate({
-    path: 'roleNames',
-    select: 'id name description _id',
+    path: 'roles',
+    select: 'name description',
   })
   if (!user) {
     throw new CustomError(404, 'user.not_found')
@@ -331,17 +336,17 @@ export const getUserRolesAndPermissions = async (
     return { roles: [], permissions: ['*'] }
   }
 
-  const user = await User.findById(userId).populate('roleNames', 'permissions').lean()
+  const user = await User.findById(userId).populate('roles', 'permissions').lean()
 
   if (!user) {
     throw new CustomError(404, 'user.not_found')
   }
 
-  const roles = user.roles ? user.roles.map(String) : []
-  const roleDocs = (user as any).roleNames || []
+  const roleDocs = (user.roles as any[]) || []
+  const roleIds = roleDocs.map((r: any) => String(r._id))
   const permissions = [...new Set(roleDocs.flatMap((r: any) => r.permissions || []))] as string[]
 
-  return { roles, permissions }
+  return { roles: roleIds, permissions }
 }
 
 export const getUserAuthStatus = async (

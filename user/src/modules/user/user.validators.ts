@@ -101,6 +101,7 @@ export const userListSchema = paginationSchema.extend({
     .optional(),
   departmentId: objectIdSchema.optional(),
   roles: objectIdSchema.optional(),
+  populate: z.string().optional(),
 })
 
 export const userIdParamSchema = z.object({

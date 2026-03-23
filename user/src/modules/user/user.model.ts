@@ -37,6 +37,7 @@ const userSchema = new Schema(
     },
     roles: {
       type: [Schema.Types.ObjectId],
+      ref: 'Role',
       default: [],
       index: true,
     },
@@ -123,19 +124,13 @@ const userSchema = new Schema(
   },
 )
 
-userSchema.virtual('roleNames', {
-  ref: 'Role',
-  localField: 'roles',
-  foreignField: '_id',
-})
-
 const stripVersionKey = (_doc: unknown, ret: Record<string, unknown>) => {
   delete ret.__v
   return ret
 }
 
-userSchema.set('toObject', { virtuals: true, transform: stripVersionKey })
-userSchema.set('toJSON', { virtuals: true, transform: stripVersionKey })
+userSchema.set('toObject', { transform: stripVersionKey })
+userSchema.set('toJSON', { transform: stripVersionKey })
 
 export type IUser = InferSchemaType<typeof userSchema> & {
   _id: Types.ObjectId
