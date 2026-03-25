@@ -1,0 +1,39 @@
+{
+  "success": {
+    "create": "Created successfully",
+    "update": "Updated successfully",
+    "delete": "Deleted successfully",
+    "started": "Job order started successfully",
+    "ended": "Job order ended successfully"
+  },
+  "error": {
+    "not_found": "Resource not found",
+    "empty_patch": "At least one field must be provided",
+    "duplicate_code": "Code already exists",
+    "referenced": "Cannot delete: resource is referenced by other records",
+    "work_center_not_physical": "Work center must be physical",
+    "work_center_unreachable": "Work center service is unreachable",
+    "counter_multiplier_required": "Counter multiplier is required for count-based work centers",
+    "ideal_speed_required": "Ideal speed is required for speed-based work centers",
+    "must_be_positive": "Value must be a positive number",
+    "product_standard_applied": "Applied product standard cannot be modified or deleted",
+    "product_standard_last_revision": "Cannot delete the last product standard for this product-work center combination while job orders exist",
+    "plan_target_exceeded": "Sum of child job order targets would exceed production plan target",
+    "plan_product_mismatch": "Job order product must match production plan product",
+    "plan_immutable_field": "Field cannot be changed after child job orders exist",
+    "job_order_no_standard": "No applicable product standard found for this product-work center combination",
+    "job_order_already_started": "Job order has already been started",
+    "job_order_not_started": "Job order has not been started",
+    "job_order_already_ended": "Job order has already been ended",
+    "job_order_overlap": "Execution interval overlaps with another job order on this work center",
+    "job_order_active_exists": "Another job order is active on this work center",
+    "job_order_start_future": "Start time cannot be in the future",
+    "job_order_end_future": "End time cannot be in the future",
+    "job_order_end_before_start": "End time cannot be before start time",
+    "job_order_time_before_start": "Time cannot be before job order start time",
+    "job_order_not_started_for_adjustment": "Job order must be started before creating adjustments",
+    "amount_zero": "Amount cannot be zero",
+    "scrap_end_before_start": "End time must be after start time",
+    "immutable_field": "This field cannot be changed"
+  }
+}

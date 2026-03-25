@@ -1,0 +1,39 @@
+{
+  "success": {
+    "create": "Başarıyla oluşturuldu",
+    "update": "Başarıyla güncellendi",
+    "delete": "Başarıyla silindi",
+    "started": "İş emri başarıyla başlatıldı",
+    "ended": "İş emri başarıyla sonlandırıldı"
+  },
+  "error": {
+    "not_found": "Kaynak bulunamadı",
+    "empty_patch": "En az bir alan sağlanmalıdır",
+    "duplicate_code": "Kod zaten mevcut",
+    "referenced": "Silinemez: kaynak başka kayıtlar tarafından referans ediliyor",
+    "work_center_not_physical": "İş merkezi fiziksel olmalıdır",
+    "work_center_unreachable": "İş merkezi servisi erişilemez durumda",
+    "counter_multiplier_required": "Sayaç çarpanı sayım tabanlı iş merkezleri için zorunludur",
+    "ideal_speed_required": "İdeal hız hız tabanlı iş merkezleri için zorunludur",
+    "must_be_positive": "Değer pozitif bir sayı olmalıdır",
+    "product_standard_applied": "Uygulanmış ürün standardı değiştirilemez veya silinemez",
+    "product_standard_last_revision": "İş emirleri mevcutken bu ürün-iş merkezi kombinasyonu için son ürün standardı silinemez",
+    "plan_target_exceeded": "Alt iş emri hedefleri toplamı üretim planı hedefini aşar",
+    "plan_product_mismatch": "İş emri ürünü üretim planı ürünüyle eşleşmelidir",
+    "plan_immutable_field": "Alt iş emirleri oluştuktan sonra bu alan değiştirilemez",
+    "job_order_no_standard": "Bu ürün-iş merkezi kombinasyonu için uygun ürün standardı bulunamadı",
+    "job_order_already_started": "İş emri zaten başlatılmış",
+    "job_order_not_started": "İş emri henüz başlatılmamış",
+    "job_order_already_ended": "İş emri zaten sonlandırılmış",
+    "job_order_overlap": "Çalışma aralığı bu iş merkezindeki başka bir iş emriyle çakışıyor",
+    "job_order_active_exists": "Bu iş merkezinde başka bir aktif iş emri var",
+    "job_order_start_future": "Başlangıç zamanı gelecekte olamaz",
+    "job_order_end_future": "Bitiş zamanı gelecekte olamaz",
+    "job_order_end_before_start": "Bitiş zamanı başlangıç zamanından önce olamaz",
+    "job_order_time_before_start": "Zaman iş emri başlangıç zamanından önce olamaz",
+    "job_order_not_started_for_adjustment": "Düzeltme oluşturmadan önce iş emri başlatılmış olmalıdır",
+    "amount_zero": "Miktar sıfır olamaz",
+    "scrap_end_before_start": "Bitiş zamanı başlangıç zamanından sonra olmalıdır",
+    "immutable_field": "Bu alan değiştirilemez"
+  }
+}
