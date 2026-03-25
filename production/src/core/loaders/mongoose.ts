@@ -7,6 +7,7 @@ import '../../modules/uom/uom.model.js'
 import '../../modules/product-category/product-category.model.js'
 import '../../modules/product/product.model.js'
 import '../../modules/product-standard/product-standard.model.js'
+import '../../modules/production-plan/production-plan.model.js'
 
 const ensureModelIndexes = async (): Promise<void> => {
   if (config.MONGO_INDEX_STRATEGY !== 'ensure') return

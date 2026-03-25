@@ -15,6 +15,7 @@ import { redisClient } from '../../lib/redis.js'
 import productRoutes from '../../modules/product/product.routes.js'
 import productCategoryRoutes from '../../modules/product-category/product-category.routes.js'
 import productStandardRoutes from '../../modules/product-standard/product-standard.routes.js'
+import productionPlanRoutes from '../../modules/production-plan/production-plan.routes.js'
 import uomRoutes from '../../modules/uom/uom.routes.js'
 import { errorHandler } from '../middleware/error-handler.js'
 import { contextMiddleware, setUserId } from '../middleware/request-context.js'
@@ -29,7 +30,7 @@ const mountSharedRoutes = (router: ReturnType<typeof Router>) => {
   router.use(productCategoryRoutes)
   router.use(productRoutes)
   router.use(productStandardRoutes)
-  // router.use(productionPlanRoutes)
+  router.use(productionPlanRoutes)
   // router.use(jobOrderRoutes)
   // router.use(quantityAdjustmentRoutes)
   // router.use(scrapEntryRoutes)
