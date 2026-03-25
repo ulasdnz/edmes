@@ -3,6 +3,7 @@ packages:
   - apps/*
   - user
   - work-center
+  - production
 
 ignoredBuiltDependencies:
   - '@scarf/scarf'
