@@ -12,6 +12,9 @@ import { cacheWrapDedup } from '../../lib/cache.js'
 import { httpLoggerMiddleware, logger, morganMiddleware } from '../../lib/logger.js'
 import { generateOpenApiDocument } from '../../lib/openapi/setup.js'
 import { redisClient } from '../../lib/redis.js'
+import productRoutes from '../../modules/product/product.routes.js'
+import productCategoryRoutes from '../../modules/product-category/product-category.routes.js'
+import uomRoutes from '../../modules/uom/uom.routes.js'
 import { errorHandler } from '../middleware/error-handler.js'
 import { contextMiddleware, setUserId } from '../middleware/request-context.js'
 import { initI18n } from './i18n.js'
@@ -21,10 +24,9 @@ import { initI18n } from './i18n.js'
  * The difference is the middleware chain, not the routes.
  */
 const mountSharedRoutes = (router: ReturnType<typeof Router>) => {
-  // Module routes will be imported and mounted here as they are implemented.
-  // router.use(uomRoutes)
-  // router.use(productCategoryRoutes)
-  // router.use(productRoutes)
+  router.use(uomRoutes)
+  router.use(productCategoryRoutes)
+  router.use(productRoutes)
   // router.use(productStandardRoutes)
   // router.use(productionPlanRoutes)
   // router.use(jobOrderRoutes)

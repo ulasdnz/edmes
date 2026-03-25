@@ -3,7 +3,9 @@ import { config } from '../../config/index.js'
 import { logger } from '../../lib/logger.js'
 
 // Register models up-front so index ensure phase sees all schemas.
-// Models will be imported here as they are implemented.
+import '../../modules/uom/uom.model.js'
+import '../../modules/product-category/product-category.model.js'
+import '../../modules/product/product.model.js'
 
 const ensureModelIndexes = async (): Promise<void> => {
   if (config.MONGO_INDEX_STRATEGY !== 'ensure') return
