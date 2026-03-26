@@ -1,4 +1,5 @@
 import { config } from '../config/index.js'
+import { cacheDel, cacheWrapDedup } from './cache.js'
 import { logger } from './logger.js'
 
 const USER_API = config.INTERNAL_API_USER
@@ -93,15 +94,27 @@ export async function isWorkCenterReferencedByUsers(workCenterId: string): Promi
  * Fetch a user's workCenterIds for visibility filtering.
  * Returns null if user-service is unreachable (caller decides fallback).
  */
+const VISIBILITY_TTL = 300 // 5 minutes
+
 export async function getUserWorkCenterIds(userId: string): Promise<string[] | null> {
   try {
-    const res = await fetchInternal(`/users/${userId}`)
-    if (!res.ok) return null
-    const body = (await res.json()) as { data?: { workCenterIds?: string[] } }
-    return body.data?.workCenterIds?.map(String) ?? []
+    return await cacheWrapDedup<string[] | null>(
+      `visibility:${userId}`,
+      VISIBILITY_TTL,
+      async () => {
+        const res = await fetchInternal(`/users/${userId}`)
+        if (!res.ok) return null
+        const body = (await res.json()) as { data?: { workCenterIds?: string[] } }
+        return body.data?.workCenterIds?.map(String) ?? []
+      },
+    )
   } catch {
     return null
   }
+}
+
+export async function invalidateUserVisibility(userId: string): Promise<void> {
+  await cacheDel(`visibility:${userId}`)
 }
 
 /**
