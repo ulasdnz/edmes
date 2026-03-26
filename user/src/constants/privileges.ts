@@ -69,6 +69,37 @@ const workCenterPrivileges: readonly Privilege[] = [
   { code: 'accessWorkCentersScreen', text: 'Access Work Centers Screen' },
 ]
 
+const catalogPrivileges: readonly Privilege[] = [
+  { code: 'readCatalog', text: 'Read Catalog (UoM, Categories, Products)' },
+  { code: 'writeCatalog', text: 'Write Catalog (UoM, Categories, Products)' },
+  { code: 'deleteCatalog', text: 'Delete Catalog (UoM, Categories, Products)' },
+]
+
+const productStandardPrivileges: readonly Privilege[] = [
+  { code: 'readProductStandards', text: 'Read Product Standards' },
+  { code: 'writeProductStandards', text: 'Write Product Standards' },
+  { code: 'deleteProductStandards', text: 'Delete Product Standards' },
+]
+
+const productionPlanPrivileges: readonly Privilege[] = [
+  { code: 'readProductionPlans', text: 'Read Production Plans' },
+  { code: 'writeProductionPlans', text: 'Write Production Plans' },
+  { code: 'deleteProductionPlans', text: 'Delete Production Plans' },
+]
+
+const jobOrderPrivileges: readonly Privilege[] = [
+  { code: 'readJobOrders', text: 'Read Job Orders' },
+  { code: 'writeJobOrders', text: 'Write Job Orders' },
+  { code: 'deleteJobOrders', text: 'Delete Job Orders' },
+  { code: 'executeJobOrders', text: 'Execute Job Orders (Start/End)' },
+]
+
+const productionAdjustmentPrivileges: readonly Privilege[] = [
+  { code: 'readProductionAdjustments', text: 'Read Production Adjustments (Quantity/Scrap)' },
+  { code: 'writeProductionAdjustments', text: 'Write Production Adjustments (Quantity/Scrap)' },
+  { code: 'deleteProductionAdjustments', text: 'Delete Production Adjustments (Quantity/Scrap)' },
+]
+
 export const PRIVILEGES: readonly Privilege[] = Object.freeze([
   ...usersPrivileges,
   ...rolesPrivileges,
@@ -79,6 +110,11 @@ export const PRIVILEGES: readonly Privilege[] = Object.freeze([
   ...logsPrivileges,
   ...departmentsPrivileges,
   ...workCenterPrivileges,
+  ...catalogPrivileges,
+  ...productStandardPrivileges,
+  ...productionPlanPrivileges,
+  ...jobOrderPrivileges,
+  ...productionAdjustmentPrivileges,
 ])
 
 export const VALID_PRIVILEGE_CODES: ReadonlySet<string> = new Set(PRIVILEGES.map(p => p.code))
