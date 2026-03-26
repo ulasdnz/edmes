@@ -12,6 +12,7 @@ import { cacheWrapDedup } from '../../lib/cache.js'
 import { httpLoggerMiddleware, logger, morganMiddleware } from '../../lib/logger.js'
 import { generateOpenApiDocument } from '../../lib/openapi/setup.js'
 import { redisClient } from '../../lib/redis.js'
+import workCenterReferencesRoutes from '../../modules/internal/work-center-references.routes.js'
 import jobOrderRoutes from '../../modules/job-order/job-order.routes.js'
 import productRoutes from '../../modules/product/product.routes.js'
 import productCategoryRoutes from '../../modules/product-category/product-category.routes.js'
@@ -105,8 +106,7 @@ export const initExpress = async () => {
     next()
   })
   mountSharedRoutes(internalRouter)
-  // Internal-only routes mounted separately on internalRouter:
-  // internalRouter.use(workCenterReferencesInternalRoutes)
+  internalRouter.use(workCenterReferencesRoutes)
 
   app.use('/internal/v1', internalRouter)
 
