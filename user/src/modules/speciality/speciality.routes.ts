@@ -1,5 +1,5 @@
 /**
- * Protected speciality routes — authenticate + resolvePermissions applied at prefix level.
+ * Protected speciality routes — authenticate applied at prefix level.
  */
 
 import { requirePermission } from '@mes/auth'

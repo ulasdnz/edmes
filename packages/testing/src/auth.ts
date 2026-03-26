@@ -6,6 +6,7 @@ export interface MockUser {
   email: string
   roles: string[]
   permissions: string[]
+  workCenterIds?: string[]
 }
 
 const defaultMockUser: MockUser = {
@@ -23,11 +24,6 @@ export function createAuthMocks(user: Partial<MockUser> = {}) {
     next()
   }
 
-  const resolvePermissions: RequestHandler = (_req, _res, next) => {
-    ;(_req as any).permissions = mockUser.permissions
-    next()
-  }
-
   const requirePermission =
     (_permission: string): RequestHandler =>
     (_req, _res, next) => {
@@ -36,7 +32,6 @@ export function createAuthMocks(user: Partial<MockUser> = {}) {
 
   return {
     authenticate: vi.fn(authenticate),
-    resolvePermissions: vi.fn(resolvePermissions),
     requirePermission: vi.fn(requirePermission),
     configureAuth: vi.fn(),
     getAuthConfig: vi.fn(() => ({})),

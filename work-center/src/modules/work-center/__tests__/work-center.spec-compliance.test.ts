@@ -17,20 +17,13 @@ vi.mock('@mes/auth', () => ({
     req.user = {
       id: req.header('x-user-id') ?? '507f1f77bcf86cd799439091',
       roles: [],
-      permissions: [],
-      workCenterIds: wcHeader !== undefined ? wcHeader.split(',').filter(Boolean) : undefined,
-    }
-    next()
-  },
-  resolvePermissions: (req: Request, _res: Response, next: NextFunction) => {
-    req.user = {
-      ...req.user!,
       permissions:
         req
           .header('x-permissions')
           ?.split(',')
           .map(permission => permission.trim())
           .filter(Boolean) ?? [],
+      workCenterIds: wcHeader !== undefined ? wcHeader.split(',').filter(Boolean) : undefined,
     }
     next()
   },

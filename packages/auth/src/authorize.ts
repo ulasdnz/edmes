@@ -2,7 +2,7 @@ import type { NextFunction, Request, Response } from 'express'
 
 /**
  * Ensures the authenticated user has the required permission.
- * MUST be applied AFTER authenticate and resolvePermissions.
+ * MUST be applied AFTER authenticate.
  */
 export const requirePermission = (permission: string): any => {
   return (req: Request, res: Response, next: NextFunction): void => {

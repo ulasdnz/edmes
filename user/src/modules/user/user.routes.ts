@@ -1,5 +1,5 @@
 /**
- * Protected user routes — authenticate + resolvePermissions applied at prefix level.
+ * Protected user routes — authenticate applied at prefix level.
  * No auth/permission imports needed here.
  */
 

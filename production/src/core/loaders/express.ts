@@ -1,4 +1,4 @@
-import { authenticate, configureAuth, resolvePermissions } from '@mes/auth'
+import { authenticate, configureAuth } from '@mes/auth'
 import { createHealthRoutes, mongoProbe, redisProbe } from '@mes/health'
 import compression from 'compression'
 import cors from 'cors'
@@ -93,7 +93,6 @@ export const initExpress = async () => {
   // ─── Protected API routes ───────────────────────────────────────────────────
   const apiRouter = Router()
   apiRouter.use(authenticate as express.RequestHandler)
-  apiRouter.use(resolvePermissions as express.RequestHandler)
   mountSharedRoutes(apiRouter)
 
   app.use('/api/v1', apiRouter)
@@ -101,7 +100,7 @@ export const initExpress = async () => {
   // ─── Internal routes (inter-service, no auth) ──────────────────────────────
   const internalRouter = Router()
   internalRouter.use((req: Request, _res: Response, next: NextFunction) => {
-    req.user = { id: SYSTEM_IDENTITY, roles: [], permissions: ['*'] }
+    req.user = { id: SYSTEM_IDENTITY, roles: [], permissions: ['*'], workCenterIds: [] }
     setUserId(SYSTEM_IDENTITY)
     next()
   })

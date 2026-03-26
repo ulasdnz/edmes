@@ -1,5 +1,5 @@
 /**
- * Protected work center routes — authenticate + resolvePermissions applied at prefix level.
+ * Protected work center routes — authenticate applied at prefix level.
  */
 
 import { requirePermission } from '@mes/auth'
