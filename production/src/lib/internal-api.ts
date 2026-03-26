@@ -22,16 +22,12 @@ const VISIBILITY_TTL = 300 // 5 minutes
 
 export async function getUserWorkCenterIds(userId: string): Promise<string[] | null> {
   try {
-    return await cacheWrapDedup<string[] | null>(
-      `visibility:${userId}`,
-      VISIBILITY_TTL,
-      async () => {
-        const res = await fetchInternal(USER_API, `/users/${userId}`)
-        if (!res.ok) return null
-        const body = (await res.json()) as { data?: { workCenterIds?: string[] } }
-        return body.data?.workCenterIds?.map(String) ?? []
-      },
-    )
+    return await cacheWrapDedup<string[] | null>(`user:wc:${userId}`, VISIBILITY_TTL, async () => {
+      const res = await fetchInternal(USER_API, `/users/${userId}`)
+      if (!res.ok) return null
+      const body = (await res.json()) as { data?: { workCenterIds?: string[] } }
+      return body.data?.workCenterIds?.map(String) ?? []
+    })
   } catch {
     logger.warn('User-service unreachable for visibility check', {
       event: 'internal_api.user.unreachable',
@@ -42,7 +38,7 @@ export async function getUserWorkCenterIds(userId: string): Promise<string[] | n
 }
 
 export async function invalidateUserVisibility(userId: string): Promise<void> {
-  await cacheDel(`visibility:${userId}`)
+  await cacheDel(`user:wc:${userId}`)
 }
 
 // ── Work center service calls ───────────────────────────────────────────────
