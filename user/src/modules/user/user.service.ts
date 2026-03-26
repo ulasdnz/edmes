@@ -1,4 +1,3 @@
-import type { AuthCacheScope } from '@mes/auth'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import { config } from '../../config/index.js'
@@ -21,16 +20,6 @@ import type {
   RegisterInput,
   UserListInput,
 } from './user.validators.js'
-
-const getCacheInvalidationScope = (flags: {
-  status: boolean
-  context: boolean
-}): AuthCacheScope | null => {
-  if (flags.status && flags.context) return 'all'
-  if (flags.status) return 'status'
-  if (flags.context) return 'context'
-  return null
-}
 
 // ─── Auth ────────────────────────────────────────────────────────────────────
 
@@ -171,7 +160,7 @@ export const deleteUser = async (userId: string): Promise<void> => {
   }
 
   await User.deleteOne({ _id: user._id })
-  await invalidateAuthCache(userId, 'all')
+  await invalidateAuthCache(userId)
   await emitUserDeleted(userId)
 }
 
@@ -195,13 +184,10 @@ export const updateUser = async (userId: string, data: Partial<IUser>): Promise<
   Object.assign(user, data)
   await user.save()
 
-  const cacheScope = getCacheInvalidationScope({
-    context: data.roles !== undefined,
-    status: data.isActivated !== undefined,
-  })
-
-  if (cacheScope) {
-    await invalidateAuthCache(userId, cacheScope)
+  const needsInvalidation =
+    data.roles !== undefined || data.isActivated !== undefined || data.workCenterIds !== undefined
+  if (needsInvalidation) {
+    await invalidateAuthCache(userId)
   }
 
   await emitUserUpdated(userId)
@@ -368,6 +354,47 @@ export const getUserAuthStatus = async (
   }
 }
 
+export const getUserAuthContext = async (
+  userId: string,
+): Promise<{
+  isActivated: boolean
+  passwordChangedAt: string | null
+  roles: string[]
+  permissions: string[]
+  workCenterIds: string[]
+}> => {
+  if (userId === SYSTEM_IDENTITY) {
+    return {
+      isActivated: true,
+      passwordChangedAt: null,
+      roles: [],
+      permissions: ['*'],
+      workCenterIds: [],
+    }
+  }
+
+  const user = await User.findById(userId)
+    .populate('roles', 'permissions')
+    .select('+passwordChangedAt isActivated workCenterIds roles')
+    .lean()
+
+  if (!user) {
+    throw new CustomError(404, 'user.not_found')
+  }
+
+  const roleDocs = (user.roles as any[]) || []
+  const roleIds = roleDocs.map((r: any) => String(r._id))
+  const permissions = [...new Set(roleDocs.flatMap((r: any) => r.permissions || []))] as string[]
+
+  return {
+    isActivated: user.isActivated,
+    passwordChangedAt: user.passwordChangedAt ? user.passwordChangedAt.toISOString() : null,
+    roles: roleIds,
+    permissions,
+    workCenterIds: (user.workCenterIds ?? []).map(String),
+  }
+}
+
 export const getLanguages = (): string[] => {
   return ['tr', 'en']
 }
@@ -445,13 +472,10 @@ export const adminUpdateUser = async (
   Object.assign(user, data)
   await user.save()
 
-  const cacheScope = getCacheInvalidationScope({
-    context: data.roles !== undefined,
-    status: data.isActivated !== undefined,
-  })
-
-  if (cacheScope) {
-    await invalidateAuthCache(userId, cacheScope)
+  const needsInvalidation =
+    data.roles !== undefined || data.isActivated !== undefined || data.workCenterIds !== undefined
+  if (needsInvalidation) {
+    await invalidateAuthCache(userId)
   }
 
   await emitUserUpdated(userId)
@@ -480,5 +504,5 @@ export const adminResetPassword = async (
 
   await user.save()
 
-  await invalidateAuthCache(userId, 'status')
+  await invalidateAuthCache(userId)
 }

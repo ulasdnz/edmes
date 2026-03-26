@@ -59,10 +59,7 @@ export const updateRole = async (id: string, data: UpdateRoleInput) => {
 
   if (data.permissions !== undefined) {
     const affectedUsers = await User.find({ roles: id }).select('_id').lean()
-    await invalidateAuthCacheMany(
-      affectedUsers.map(user => String(user._id)),
-      'context',
-    )
+    await invalidateAuthCacheMany(affectedUsers.map(user => String(user._id)))
   }
 
   await emitRoleUpdated(role._id.toString())
@@ -90,10 +87,7 @@ export const deleteRole = async (id: string) => {
   if (affectedUsers.length > 0) {
     await User.updateMany({ roles: id }, { $pull: { roles: id } })
 
-    await invalidateAuthCacheMany(
-      affectedUsers.map(user => String(user._id)),
-      'context',
-    )
+    await invalidateAuthCacheMany(affectedUsers.map(user => String(user._id)))
   }
 
   await emitRoleDeleted(id)

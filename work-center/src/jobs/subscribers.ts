@@ -1,6 +1,7 @@
+import { buildAuthContextCacheKey } from '@mes/auth'
 import { runInContext } from '@mes/core'
 import { createStreamConsumer } from '@mes/events'
-import { invalidateUserVisibility } from '../lib/internal-api.js'
+import { sharedCacheDel } from '../lib/cache.js'
 import { logger } from '../lib/logger.js'
 import { streamClient } from '../lib/redis.js'
 
@@ -9,9 +10,9 @@ const CONSUMER_ID = `wc-${process.pid}`
 const streams = {
   'events.user': {
     'user.updated': async (data: { userId: string }) => {
-      await invalidateUserVisibility(data.userId)
-      logger.debug('Invalidated visibility cache', {
-        event: 'cache.visibility.invalidated',
+      await sharedCacheDel(buildAuthContextCacheKey(data.userId))
+      logger.debug('Invalidated auth context cache', {
+        event: 'cache.auth_context.invalidated',
         userId: data.userId,
       })
     },

@@ -8,7 +8,7 @@ import helmet from 'helmet'
 import mongoose from 'mongoose'
 import { config } from '../../config/index.js'
 import { SYSTEM_IDENTITY } from '../../constants/identity.js'
-import { cacheWrapDedup } from '../../lib/cache.js'
+import { sharedCacheWrapDedup } from '../../lib/cache.js'
 import { httpLoggerMiddleware, logger, morganMiddleware } from '../../lib/logger.js'
 import { generateOpenApiDocument } from '../../lib/openapi/setup.js'
 import { redisClient } from '../../lib/redis.js'
@@ -39,7 +39,7 @@ export const initExpress = async () => {
   configureAuth({
     jwtSecret: config.JWT_SECRET,
     userServiceInternalUrl: config.INTERNAL_API_USER,
-    cacheWrapDedup,
+    cacheWrapDedup: sharedCacheWrapDedup,
   })
 
   const i18nMiddleware = await initI18n()

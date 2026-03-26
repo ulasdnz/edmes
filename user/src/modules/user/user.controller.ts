@@ -142,6 +142,22 @@ export async function getUserAuthStatus(
   })
 }
 
+export async function getUserAuthContext(
+  req: Request<{ id: string }>,
+  res: Response<
+    SuccessResponse<{
+      isActivated: boolean
+      passwordChangedAt: string | null
+      roles: string[]
+      permissions: string[]
+      workCenterIds: string[]
+    }>
+  >,
+) {
+  const data = await userService.getUserAuthContext(req.params.id)
+  res.json({ data })
+}
+
 export async function getUsersLanguages(req: Request, res: Response<SuccessResponse<string[]>>) {
   const languages = userService.getLanguages()
   res.json({

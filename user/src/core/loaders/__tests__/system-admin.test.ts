@@ -42,6 +42,14 @@ vi.mock('../../../lib/redis.js', () => ({
     del: vi.fn(),
     quit: vi.fn(),
   },
+  sharedClient: {
+    connect: vi.fn(),
+    ping: vi.fn().mockResolvedValue('PONG'),
+    get: vi.fn(),
+    set: vi.fn(),
+    del: vi.fn(),
+    quit: vi.fn(),
+  },
   streamClient: {
     connect: vi.fn(),
     ping: vi.fn().mockResolvedValue('PONG'),

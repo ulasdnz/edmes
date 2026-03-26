@@ -5,6 +5,7 @@ declare global {
         id: string
         roles: string[]
         permissions: string[]
+        workCenterIds?: string[]
       }
     }
   }

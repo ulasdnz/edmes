@@ -48,6 +48,14 @@ redisClient.on('connect', () => logger.info('Redis: Connection established'))
 redisClient.on('ready', () => logger.info('Redis: Ready to receive commands'))
 redisClient.on('reconnecting', () => logger.warn('Redis: Reconnecting...'))
 
+// ── Shared client for cross-service cache (auth context) ────────────────────
+// No keyPrefix — cache keys are shared across all services.
+export const sharedClient = new Redis(REDIS_URL, baseOptions)
+
+sharedClient.on('error', err => {
+  logger.error('Redis Shared Client Error:', { error: err.message })
+})
+
 // ── Stream client for Redis Streams (publishing + consuming) ────────────────
 // No keyPrefix — stream names must be consistent across all services.
 export const streamClient = new Redis(REDIS_URL, baseOptions)
@@ -62,6 +70,10 @@ export const initRedis = async () => {
     await redisClient.ping()
     logger.info('Redis: Initial connection verified')
 
+    await sharedClient.connect()
+    await sharedClient.ping()
+    logger.info('Redis Shared Client: Connection verified')
+
     await streamClient.connect()
     await streamClient.ping()
     logger.info('Redis Stream Client: Connection verified')
@@ -72,5 +84,5 @@ export const initRedis = async () => {
 }
 
 export const closeRedis = async () => {
-  await Promise.all([redisClient.quit(), streamClient.quit()])
+  await Promise.all([redisClient.quit(), sharedClient.quit(), streamClient.quit()])
 }

@@ -125,7 +125,7 @@ export const verificationAndUpdate = async (data: VerificationAndUpdateInput) =>
   recovery.isUsed = true
   await recovery.save()
 
-  await invalidateAuthCache(String(user._id), 'status')
+  await invalidateAuthCache(String(user._id))
 
   return { success: true }
 }

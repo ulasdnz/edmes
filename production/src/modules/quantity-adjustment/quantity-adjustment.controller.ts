@@ -1,17 +1,15 @@
 import { CustomError } from '@mes/core'
 import type { Request, Response } from 'express'
-import { SYSTEM_IDENTITY } from '../../constants/identity.js'
 import type { SuccessResponse } from '../../core/types/api.types.js'
-import { getUserWorkCenterIds } from '../../lib/internal-api.js'
 import type { PaginatedResult } from '../../utils/pagination.js'
 import type { IQuantityAdjustment } from './quantity-adjustment.model.js'
 import * as service from './quantity-adjustment.service.js'
 
-async function resolveVisibility(req: Request): Promise<string[] | undefined> {
-  if (req.user!.id === SYSTEM_IDENTITY) return undefined
-  const ids = await getUserWorkCenterIds(req.user!.id)
-  if (!ids) throw new CustomError(503, 'error.visibility_unavailable')
-  return ids
+function assertVisible(workCenterId: string, visibleIds?: string[]): void {
+  if (!visibleIds) return
+  if (!visibleIds.includes(workCenterId.toString())) {
+    throw new CustomError(404, 'error.not_found')
+  }
 }
 
 export const create = async (req: Request, res: Response<SuccessResponse<IQuantityAdjustment>>) => {
@@ -23,17 +21,13 @@ export const getById = async (
   req: Request<{ id: string }>,
   res: Response<SuccessResponse<IQuantityAdjustment>>,
 ) => {
-  const visibleIds = await resolveVisibility(req)
   const doc = await service.getById(req.params.id)
-  if (visibleIds && !visibleIds.includes(doc.workCenterId.toString())) {
-    throw new CustomError(404, 'error.not_found')
-  }
+  assertVisible(doc.workCenterId.toString(), req.user!.workCenterIds)
   res.json({ data: doc })
 }
 
 export const list = async (req: Request, res: Response<PaginatedResult<IQuantityAdjustment>>) => {
-  const visibleIds = await resolveVisibility(req)
-  const result = await service.list(req.query as never, visibleIds)
+  const result = await service.list(req.query as never, req.user!.workCenterIds)
   res.json(result)
 }
 

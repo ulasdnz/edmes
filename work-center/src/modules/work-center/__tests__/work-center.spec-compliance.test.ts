@@ -11,18 +11,20 @@ const fetchMock = vi.hoisted(() => vi.fn())
 
 vi.mock('@mes/auth', () => ({
   configureAuth: vi.fn(),
+  buildAuthContextCacheKey: (userId: string) => `auth:ctx:${userId}`,
   authenticate: (req: Request, _res: Response, next: NextFunction) => {
+    const wcHeader = req.header('x-work-center-ids')
     req.user = {
       id: req.header('x-user-id') ?? '507f1f77bcf86cd799439091',
       roles: [],
       permissions: [],
+      workCenterIds: wcHeader !== undefined ? wcHeader.split(',').filter(Boolean) : undefined,
     }
     next()
   },
   resolvePermissions: (req: Request, _res: Response, next: NextFunction) => {
     req.user = {
-      id: req.user?.id ?? '507f1f77bcf86cd799439091',
-      roles: [],
+      ...req.user!,
       permissions:
         req
           .header('x-permissions')
@@ -62,6 +64,14 @@ vi.mock('../../../lib/redis', () => ({
   initRedis: vi.fn(),
   closeRedis: vi.fn(),
   redisClient: {
+    connect: vi.fn(),
+    ping: vi.fn().mockResolvedValue('PONG'),
+    get: vi.fn(),
+    set: vi.fn(),
+    del: vi.fn(),
+    quit: vi.fn(),
+  },
+  sharedClient: {
     connect: vi.fn(),
     ping: vi.fn().mockResolvedValue('PONG'),
     get: vi.fn(),
@@ -277,29 +287,17 @@ describe('Work Center Spec Compliance Review', () => {
   it('enforces public visibility membership through user workCenterIds', async () => {
     const workCenterId = await createInternalWorkCenter(buildPhysicalWorkCenter())
 
-    fetchMock.mockReset()
-    fetchMock.mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      json: async () => ({ data: { workCenterIds: [] } }),
-    } as Response)
-
     const denied = await request(app)
       .get(`/api/v1/work-centers/${workCenterId}`)
       .set('x-user-id', '507f1f77bcf86cd799439017')
       .set('x-permissions', 'readWorkCenters')
-
-    fetchMock.mockReset()
-    fetchMock.mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      json: async () => ({ data: { workCenterIds: [workCenterId] } }),
-    } as Response)
+      .set('x-work-center-ids', '')
 
     const allowed = await request(app)
       .get(`/api/v1/work-centers/${workCenterId}`)
       .set('x-user-id', '507f1f77bcf86cd799439017')
       .set('x-permissions', 'readWorkCenters')
+      .set('x-work-center-ids', workCenterId)
 
     expect(denied.status).toBe(404)
     expect(allowed.status).toBe(200)
