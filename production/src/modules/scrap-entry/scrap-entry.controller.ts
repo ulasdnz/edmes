@@ -1,12 +1,14 @@
 import { CustomError } from '@mes/core'
 import type { Request, Response } from 'express'
+import { SYSTEM_IDENTITY } from '../../constants/identity.js'
 import type { SuccessResponse } from '../../core/types/api.types.js'
 import { getUserWorkCenterIds } from '../../lib/internal-api.js'
 import type { PaginatedResult } from '../../utils/pagination.js'
 import type { IScrapEntry } from './scrap-entry.model.js'
 import * as service from './scrap-entry.service.js'
 
-async function resolveVisibility(req: Request): Promise<string[]> {
+async function resolveVisibility(req: Request): Promise<string[] | undefined> {
+  if (req.user!.id === SYSTEM_IDENTITY) return undefined
   const ids = await getUserWorkCenterIds(req.user!.id)
   if (!ids) throw new CustomError(503, 'error.visibility_unavailable')
   return ids
@@ -23,7 +25,7 @@ export const getById = async (
 ) => {
   const visibleIds = await resolveVisibility(req)
   const doc = await service.getById(req.params.id)
-  if (!visibleIds.includes(doc.workCenterId.toString())) {
+  if (visibleIds && !visibleIds.includes(doc.workCenterId.toString())) {
     throw new CustomError(404, 'error.not_found')
   }
   res.json({ data: doc })
