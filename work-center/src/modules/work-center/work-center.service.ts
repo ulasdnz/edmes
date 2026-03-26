@@ -200,8 +200,8 @@ export async function createWorkCenter(
 
   const doc = new WorkCenter({
     ...data,
-    createdBy: userId,
-    updatedBy: userId,
+    createdBy: new Types.ObjectId(userId),
+    updatedBy: new Types.ObjectId(userId),
   })
 
   const saved = await doc.save()

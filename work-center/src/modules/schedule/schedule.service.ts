@@ -47,8 +47,8 @@ export async function createCalendar(
   const doc = new Calendar({
     ...data,
     workCenterId,
-    createdBy: userId,
-    updatedBy: userId,
+    createdBy: new Types.ObjectId(userId),
+    updatedBy: new Types.ObjectId(userId),
   })
   const saved = await doc.save()
   await emitScheduleChanged(workCenterId)
@@ -155,12 +155,12 @@ export async function upsertException(
     {
       $set: {
         intervals: data.intervals,
-        updatedBy: userId,
+        updatedBy: new Types.ObjectId(userId),
       },
       $setOnInsert: {
         workCenterId,
         localDate: dateObj,
-        createdBy: userId,
+        createdBy: new Types.ObjectId(userId),
       },
     },
     { upsert: true, returnDocument: 'after', runValidators: true },

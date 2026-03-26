@@ -1,3 +1,4 @@
+import { Types } from 'mongoose'
 import { CustomError } from '../../core/errors/index.js'
 import { emitActionStateChanged } from '../../jobs/events.js'
 import WorkCenter from '../work-center/work-center.model.js'
@@ -34,7 +35,7 @@ export async function ingestActionState(
     workCenterId,
     changedAt: new Date(),
     activeActions: sorted,
-    createdBy: userId,
+    createdBy: new Types.ObjectId(userId),
   })
   const saved = await doc.save()
   await emitActionStateChanged(workCenterId)
