@@ -12,6 +12,7 @@ import { cacheWrapDedup } from '../../lib/cache.js'
 import { httpLoggerMiddleware, logger, morganMiddleware } from '../../lib/logger.js'
 import { generateOpenApiDocument } from '../../lib/openapi/setup.js'
 import { redisClient } from '../../lib/redis.js'
+import jobOrderRoutes from '../../modules/job-order/job-order.routes.js'
 import productRoutes from '../../modules/product/product.routes.js'
 import productCategoryRoutes from '../../modules/product-category/product-category.routes.js'
 import productStandardRoutes from '../../modules/product-standard/product-standard.routes.js'
@@ -31,7 +32,7 @@ const mountSharedRoutes = (router: ReturnType<typeof Router>) => {
   router.use(productRoutes)
   router.use(productStandardRoutes)
   router.use(productionPlanRoutes)
-  // router.use(jobOrderRoutes)
+  router.use(jobOrderRoutes)
   // router.use(quantityAdjustmentRoutes)
   // router.use(scrapEntryRoutes)
 }
