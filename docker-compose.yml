@@ -173,6 +173,83 @@ services:
           cpus: '0.5'
           memory: 512M
 
+  production:
+    build:
+      context: .
+      dockerfile: production/Dockerfile
+    container_name: production_app
+    restart: unless-stopped
+    env_file:
+      - ./production/.env
+    environment:
+      - MONGO_URI=${MONGO_URI:-mongodb://mongodb:27017/mes?directConnection=true}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+      - JWT_SECRET=${JWT_SECRET:-supersecretkey}
+      - INTERNAL_API_USER=${INTERNAL_API_USER:-http://user:3000}
+      - INTERNAL_API_WORK_CENTER=${INTERNAL_API_WORK_CENTER:-http://work-center:3001}
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - mes_network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3002/health/ready"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=mes_network"
+      - "traefik.http.routers.production-uoms.rule=PathPrefix(`/api/v1/uoms`)"
+      - "traefik.http.routers.production-uoms.entrypoints=web"
+      - "traefik.http.routers.production-uoms.priority=5"
+      - "traefik.http.routers.production-uoms.middlewares=global-compress@docker,secure-headers@docker,rate-limit@docker,body-limit@docker"
+      - "traefik.http.routers.production-uoms.service=production"
+      - "traefik.http.routers.production-categories.rule=PathPrefix(`/api/v1/product-categories`)"
+      - "traefik.http.routers.production-categories.entrypoints=web"
+      - "traefik.http.routers.production-categories.priority=5"
+      - "traefik.http.routers.production-categories.middlewares=global-compress@docker,secure-headers@docker,rate-limit@docker,body-limit@docker"
+      - "traefik.http.routers.production-categories.service=production"
+      - "traefik.http.routers.production-products.rule=PathPrefix(`/api/v1/products`)"
+      - "traefik.http.routers.production-products.entrypoints=web"
+      - "traefik.http.routers.production-products.priority=5"
+      - "traefik.http.routers.production-products.middlewares=global-compress@docker,secure-headers@docker,rate-limit@docker,body-limit@docker"
+      - "traefik.http.routers.production-products.service=production"
+      - "traefik.http.routers.production-standards.rule=PathPrefix(`/api/v1/product-standards`)"
+      - "traefik.http.routers.production-standards.entrypoints=web"
+      - "traefik.http.routers.production-standards.priority=5"
+      - "traefik.http.routers.production-standards.middlewares=global-compress@docker,secure-headers@docker,rate-limit@docker,body-limit@docker"
+      - "traefik.http.routers.production-standards.service=production"
+      - "traefik.http.routers.production-plans.rule=PathPrefix(`/api/v1/production-plans`)"
+      - "traefik.http.routers.production-plans.entrypoints=web"
+      - "traefik.http.routers.production-plans.priority=5"
+      - "traefik.http.routers.production-plans.middlewares=global-compress@docker,secure-headers@docker,rate-limit@docker,body-limit@docker"
+      - "traefik.http.routers.production-plans.service=production"
+      - "traefik.http.routers.production-jobs.rule=PathPrefix(`/api/v1/job-orders`)"
+      - "traefik.http.routers.production-jobs.entrypoints=web"
+      - "traefik.http.routers.production-jobs.priority=5"
+      - "traefik.http.routers.production-jobs.middlewares=global-compress@docker,secure-headers@docker,rate-limit@docker,body-limit@docker"
+      - "traefik.http.routers.production-jobs.service=production"
+      - "traefik.http.routers.production-adjustments.rule=PathPrefix(`/api/v1/quantity-adjustments`)"
+      - "traefik.http.routers.production-adjustments.entrypoints=web"
+      - "traefik.http.routers.production-adjustments.priority=5"
+      - "traefik.http.routers.production-adjustments.middlewares=global-compress@docker,secure-headers@docker,rate-limit@docker,body-limit@docker"
+      - "traefik.http.routers.production-adjustments.service=production"
+      - "traefik.http.routers.production-scrap.rule=PathPrefix(`/api/v1/scrap-entries`)"
+      - "traefik.http.routers.production-scrap.entrypoints=web"
+      - "traefik.http.routers.production-scrap.priority=5"
+      - "traefik.http.routers.production-scrap.middlewares=global-compress@docker,secure-headers@docker,rate-limit@docker,body-limit@docker"
+      - "traefik.http.routers.production-scrap.service=production"
+      - "traefik.http.services.production.loadbalancer.server.port=3002"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
   loki:
     image: grafana/loki:3.4.1
     container_name: loki
