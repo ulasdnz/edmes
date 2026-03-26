@@ -110,16 +110,8 @@ authenticate middleware        user-service (internal)       Redis Cache
   │  set req.user = { id }           │                          │
   │                                  │                          │
 
-resolvePermissions middleware
-  │                                  │                          │
-  │  GET /internal/v1/users/:id/     │                          │
-  │  roles-permissions               │                          │
-  │  (via cacheWrapDedup, TTL 5min)  │                          │
-  │─────────────────────────────────▶│                          │
-  │  { roles: [...], permissions: [...] }                       │
-  │◀─────────────────────────────────│                          │
-  │                                  │                          │
-  │  set req.user.roles              │                          │
+  │  set req.user.roles, permissions, │                          │
+  │  workCenterIds from auth context │                          │
   │  set req.user.permissions        │                          │
   │                                  │                          │
   │  [on failure: silently set       │                          │
@@ -709,31 +701,25 @@ Static files served via `express.static('uploads')`. Avatar URLs stored as `/upl
 
 **Workaround**: Query audit logs for a given `documentId` sorted by `timestamp` — the first entry is the real create, subsequent entries are updates regardless of the `operation` field.
 
-### 2. `resolvePermissions` Silent Failure
-
-**What**: If the internal HTTP call to fetch roles/permissions fails, `resolvePermissions` middleware silently sets `req.user.roles = []` and `req.user.permissions = []`, then calls `next()`.
-
-**Impact**: The user proceeds with no permissions. All `requirePermission` checks will fail with 403. The user can still access "me" endpoints (no permission required). No error is surfaced to the client.
-
-### 3. Multer Error Classification
+### 2. Multer Error Classification
 
 **What**: Non-image file upload throws `Error('upload.only_images')` — a plain Error, not a CustomError.
 
 **Impact**: Falls through to the generic 500 handler in production. The i18n key `upload.only_images` appears as the raw message rather than a translated string.
 
-### 4. `requirePermission` Bypasses i18n
+### 3. `requirePermission` Bypasses i18n
 
 **What**: The 403 response sends the literal key `'auth.insufficient_permissions'` via `res.json()` inline, not through the error handler.
 
 **Impact**: The message is not translated — clients always receive the English key regardless of `Accept-Language`.
 
-### 5. Speciality Deletion — No User Cleanup
+### 4. Speciality Deletion — No User Cleanup
 
 **What**: Unlike Role deletion (which does `$pull` on all users), Speciality deletion performs no cascade.
 
 **Impact**: Users retain deleted speciality ObjectIds in their `specialities[]` array. These are "ghost" references — they don't resolve to anything but don't cause errors either.
 
-### 6. Avatar Orphaning on User Delete
+### 5. Avatar Orphaning on User Delete
 
 **What**: `deleteUser` does not remove the user's avatar file from disk.
 

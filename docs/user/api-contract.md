@@ -869,8 +869,7 @@ Returned by all user endpoints. Sensitive fields are excluded.
     │
     ├─ [Public routes: /docs, /health, /ready, /auth/*, /password-recoveries/*]
     │
-    ├─ authenticate (JWT verify + auth-status check)
-    ├─ resolvePermissions (load roles/permissions from cache/DB)
+    ├─ authenticate (JWT verify + consolidated auth context)
     │
     ├─ [Per-route: requirePermission(code)]
     ├─ [Per-route: validateBody/Params/Query(schema)]
