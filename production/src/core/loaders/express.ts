@@ -17,6 +17,8 @@ import productRoutes from '../../modules/product/product.routes.js'
 import productCategoryRoutes from '../../modules/product-category/product-category.routes.js'
 import productStandardRoutes from '../../modules/product-standard/product-standard.routes.js'
 import productionPlanRoutes from '../../modules/production-plan/production-plan.routes.js'
+import quantityAdjustmentRoutes from '../../modules/quantity-adjustment/quantity-adjustment.routes.js'
+import scrapEntryRoutes from '../../modules/scrap-entry/scrap-entry.routes.js'
 import uomRoutes from '../../modules/uom/uom.routes.js'
 import { errorHandler } from '../middleware/error-handler.js'
 import { contextMiddleware, setUserId } from '../middleware/request-context.js'
@@ -33,8 +35,8 @@ const mountSharedRoutes = (router: ReturnType<typeof Router>) => {
   router.use(productStandardRoutes)
   router.use(productionPlanRoutes)
   router.use(jobOrderRoutes)
-  // router.use(quantityAdjustmentRoutes)
-  // router.use(scrapEntryRoutes)
+  router.use(quantityAdjustmentRoutes)
+  router.use(scrapEntryRoutes)
 }
 
 export const initExpress = async () => {

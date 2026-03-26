@@ -1,0 +1,52 @@
+import { CustomError } from '@mes/core'
+import type { Request, Response } from 'express'
+import type { SuccessResponse } from '../../core/types/api.types.js'
+import { getUserWorkCenterIds } from '../../lib/internal-api.js'
+import type { PaginatedResult } from '../../utils/pagination.js'
+import type { IQuantityAdjustment } from './quantity-adjustment.model.js'
+import * as service from './quantity-adjustment.service.js'
+
+async function resolveVisibility(req: Request): Promise<string[]> {
+  const ids = await getUserWorkCenterIds(req.user!.id)
+  if (!ids) throw new CustomError(503, 'error.visibility_unavailable')
+  return ids
+}
+
+export const create = async (req: Request, res: Response<SuccessResponse<IQuantityAdjustment>>) => {
+  const doc = await service.create(req.body, req.user!.id)
+  res.status(201).json({ message: req.t('success.create'), data: doc })
+}
+
+export const getById = async (
+  req: Request<{ id: string }>,
+  res: Response<SuccessResponse<IQuantityAdjustment>>,
+) => {
+  const visibleIds = await resolveVisibility(req)
+  const doc = await service.getById(req.params.id)
+  if (!visibleIds.includes(doc.workCenterId.toString())) {
+    throw new CustomError(404, 'error.not_found')
+  }
+  res.json({ data: doc })
+}
+
+export const list = async (req: Request, res: Response<PaginatedResult<IQuantityAdjustment>>) => {
+  const visibleIds = await resolveVisibility(req)
+  const result = await service.list(req.query as never, visibleIds)
+  res.json(result)
+}
+
+export const update = async (
+  req: Request<{ id: string }>,
+  res: Response<SuccessResponse<IQuantityAdjustment>>,
+) => {
+  const doc = await service.update(req.params.id, req.body, req.user!.id)
+  res.json({ message: req.t('success.update'), data: doc })
+}
+
+export const remove = async (
+  req: Request<{ id: string }>,
+  res: Response<SuccessResponse<IQuantityAdjustment>>,
+) => {
+  const doc = await service.remove(req.params.id)
+  res.json({ message: req.t('success.delete'), data: doc })
+}

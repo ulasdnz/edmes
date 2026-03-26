@@ -9,6 +9,8 @@ import '../../modules/product/product.model.js'
 import '../../modules/product-standard/product-standard.model.js'
 import '../../modules/production-plan/production-plan.model.js'
 import '../../modules/job-order/job-order.model.js'
+import '../../modules/quantity-adjustment/quantity-adjustment.model.js'
+import '../../modules/scrap-entry/scrap-entry.model.js'
 
 const ensureModelIndexes = async (): Promise<void> => {
   if (config.MONGO_INDEX_STRATEGY !== 'ensure') return
