@@ -10,8 +10,8 @@ const operatorCheckInSchema = new Schema(
     checkedInAt: { type: Date, required: true, default: () => new Date() },
     checkedOutAt: { type: Date, default: null },
     shiftId: { type: Schema.Types.ObjectId, default: null },
-    createdBy: { type: String, required: true },
-    updatedBy: { type: String, required: true },
+    createdBy: { type: Schema.Types.ObjectId, required: true },
+    updatedBy: { type: Schema.Types.ObjectId, required: true },
   },
   { timestamps: true, strict: true },
 )

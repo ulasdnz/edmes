@@ -1,3 +1,4 @@
+import { Types } from 'mongoose'
 import type { z } from 'zod'
 import { CustomError } from '../../core/errors/index.js'
 import {
@@ -299,7 +300,7 @@ export async function replaceWorkCenter(
   }
 
   Object.assign(existing, parsed)
-  existing.updatedBy = userId
+  existing.updatedBy = new Types.ObjectId(userId)
 
   const saved = await existing.save()
 
@@ -429,7 +430,7 @@ export async function updateWorkCenter(
   for (const [key, value] of Object.entries(updateFields)) {
     ;(existing as unknown as Record<string, unknown>)[key] = value
   }
-  existing.updatedBy = userId
+  existing.updatedBy = new Types.ObjectId(userId)
 
   const saved = await existing.save()
 
@@ -546,7 +547,7 @@ async function archiveWorkCenter(
   }
 
   existing.status = 'archived'
-  existing.updatedBy = userId
+  existing.updatedBy = new Types.ObjectId(userId)
   const saved = await existing.save()
 
   await emitWorkCenterArchived(id)
@@ -563,7 +564,7 @@ async function reactivateWorkCenter(
   }
 
   existing.status = 'active'
-  existing.updatedBy = userId
+  existing.updatedBy = new Types.ObjectId(userId)
   const saved = await existing.save()
 
   await emitWorkCenterReactivated(id)

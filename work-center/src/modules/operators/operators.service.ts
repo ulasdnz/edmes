@@ -1,3 +1,5 @@
+import { Types } from 'mongoose'
+import { SYSTEM_IDENTITY } from '../../constants/identity.js'
 import { CustomError } from '../../core/errors/index.js'
 import { emitOperatorCheckedIn, emitOperatorCheckedOut } from '../../jobs/events.js'
 import { validateOperatorExists } from '../../lib/internal-api.js'
@@ -35,8 +37,8 @@ export async function checkIn(
     operatorId: data.operatorId,
     shiftId: data.shiftId ?? null,
     checkedInAt: new Date(),
-    createdBy: userId,
-    updatedBy: userId,
+    createdBy: new Types.ObjectId(userId),
+    updatedBy: new Types.ObjectId(userId),
   })
 
   const saved = await doc.save()
@@ -56,7 +58,7 @@ export async function checkOut(
   if (record.checkedOutAt) throw new CustomError(400, 'operators.already_checked_out')
 
   record.checkedOutAt = new Date()
-  record.updatedBy = userId
+  record.updatedBy = new Types.ObjectId(userId)
 
   const saved = await record.save()
   await emitOperatorCheckedOut(workCenterId, String(record.operatorId), String(saved._id))
@@ -93,7 +95,7 @@ export async function autoCheckOutByShift(workCenterId: string): Promise<string[
 
   for (const ci of openCheckIns) {
     ci.checkedOutAt = now
-    ci.updatedBy = 'system'
+    ci.updatedBy = new Types.ObjectId(SYSTEM_IDENTITY)
     await ci.save()
     await emitOperatorCheckedOut(workCenterId, String(ci.operatorId), String(ci._id))
     checkedOutIds.push(String(ci._id))

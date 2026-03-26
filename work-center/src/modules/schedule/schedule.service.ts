@@ -1,3 +1,4 @@
+import { Types } from 'mongoose'
 import { CustomError } from '../../core/errors/index.js'
 import { emitScheduleChanged } from '../../jobs/events.js'
 import WorkCenter from '../work-center/work-center.model.js'
@@ -80,7 +81,7 @@ export async function replaceCalendar(
   await assertNoOverlap(workCenterId, data.validFrom, data.validTo, calendarId)
 
   Object.assign(existing, data)
-  existing.updatedBy = userId
+  existing.updatedBy = new Types.ObjectId(userId)
   const saved = await existing.save()
   await emitScheduleChanged(workCenterId)
   return saved
@@ -125,7 +126,7 @@ export async function updateCalendar(
     }
   }
 
-  existing.updatedBy = userId
+  existing.updatedBy = new Types.ObjectId(userId)
   const saved = await existing.save()
   await emitScheduleChanged(workCenterId)
   return saved

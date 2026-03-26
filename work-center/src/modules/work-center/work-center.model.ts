@@ -132,8 +132,8 @@ const workCenterSchema = new Schema(
     },
 
     // ── Audit ────────────────────────────────────────────────────────────────
-    createdBy: { type: String, required: true },
-    updatedBy: { type: String, required: true },
+    createdBy: { type: Schema.Types.ObjectId, required: true },
+    updatedBy: { type: Schema.Types.ObjectId, required: true },
   },
   {
     timestamps: true,

@@ -40,8 +40,8 @@ const calendarSchema = new Schema(
     validTo: { type: Date, required: true },
     status: { type: String, enum: ['active', 'retired'], default: 'active' },
     weeklyPattern: { type: weeklyPatternSchema, required: true },
-    createdBy: { type: String, required: true },
-    updatedBy: { type: String, required: true },
+    createdBy: { type: Schema.Types.ObjectId, required: true },
+    updatedBy: { type: Schema.Types.ObjectId, required: true },
   },
   { timestamps: true, strict: true },
 )
@@ -79,8 +79,8 @@ const dateExceptionSchema = new Schema(
     workCenterId: { type: Schema.Types.ObjectId, required: true },
     localDate: { type: Date, required: true },
     intervals: { type: [shiftSchema], default: [] },
-    createdBy: { type: String, required: true },
-    updatedBy: { type: String, required: true },
+    createdBy: { type: Schema.Types.ObjectId, required: true },
+    updatedBy: { type: Schema.Types.ObjectId, required: true },
   },
   { timestamps: true, strict: true },
 )

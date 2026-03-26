@@ -10,7 +10,7 @@ const actionStateSchema = new Schema(
       type: [{ type: String, enum: ['downtime', 'operator', 'jobOrder', 'service'] }],
       default: [],
     },
-    createdBy: { type: String, required: true },
+    createdBy: { type: Schema.Types.ObjectId, required: true },
   },
   { timestamps: true, strict: true },
 )
