@@ -35,12 +35,12 @@ COPY production/ ./production/
 # 2. Build production service (resolves @mes/* from packages/*/dist/)
 RUN pnpm build:packages && pnpm --filter production-service run build
 
-# Copy i18n JSON translation files to dist since tsc does not bundle them
-RUN mkdir -p production/dist/utils/lang && cp -r production/src/utils/lang/* production/dist/utils/lang/
-
 # Magically deploy the exact dependencies (including workspace dependencies)
 # into a clean "/prod/production" folder. This completely isolates the service.
 RUN pnpm --filter=production-service --prod deploy --legacy /prod/production
+
+# Copy i18n translation files (outside dist, referenced via relative path from loaders)
+RUN cp -r production/locales /prod/production/locales
 
 # ---------------------------------------
 # Stage 2: Runner (Production Image)
