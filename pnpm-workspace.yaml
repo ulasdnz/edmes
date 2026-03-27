@@ -4,6 +4,7 @@ packages:
   - user
   - work-center
   - production
+  - realtime
 
 ignoredBuiltDependencies:
   - '@scarf/scarf'

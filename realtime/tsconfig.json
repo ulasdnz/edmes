@@ -1,0 +1,15 @@
+{
+  "extends": "../tsconfig.app.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src"
+  },
+  "include": ["src"],
+  "exclude": ["**/*.test.ts", "**/*.spec.ts"],
+  "references": [
+    { "path": "../packages/core" },
+    { "path": "../packages/logger" },
+    { "path": "../packages/health" },
+    { "path": "../packages/events" }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "name": "realtime-service",
+  "version": "1.0.0",
+  "description": "Realtime gateway — bridges Redis Streams to Socket.io",
+  "author": "Ulas Deniz Isik",
+  "license": "MIT",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/app.js",
+    "dev": "tsx watch src/app.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^25.3.5",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@mes/core": "workspace:*",
+    "@mes/logger": "workspace:*",
+    "@mes/events": "workspace:*",
+    "@mes/health": "workspace:*",
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1",
+    "ioredis": "^5.10.0",
+    "socket.io": "^4.8.1",
+    "winston": "^3.19.0",
+    "zod": "^4.3.6"
+  },
+  "type": "module"
+}
