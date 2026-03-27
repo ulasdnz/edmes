@@ -44,25 +44,33 @@ Clients join additional rooms by emitting a `join` event after connecting:
 socket.emit('join', { workCenterIds: ['id1', 'id2', 'id3'] })
 ```
 
-This joins the client to `workCenter:{id}` rooms for each provided ID.
+Each `join` call **replaces** the client's current workCenter room subscriptions — old rooms are left before joining new ones. This prevents room accumulation across multiple calls.
 
 **Room types:**
-- `global` — all connected clients. Receives events with no `workCenterId` in the payload.
+- `global` — all connected clients. Receives operationally relevant events with no `workCenterId`.
 - `workCenter:{id}` — clients that explicitly joined. Receives events scoped to that work center.
+- `admin` — clients that explicitly joined. Receives system-level events (user/role changes, config). No clients join this room in v1; the room exists for when an admin panel is built.
+
+**Client contract:** On every connect and reconnect, the client must re-emit `join` and re-fetch current state for all visible screens. Socket events are invalidation triggers, not a reliable event log — events emitted during a disconnect window are not replayed.
 
 ---
 
 ## Event Routing Rule
 
-The gateway applies one routing rule per event:
+The gateway applies routing in two steps per event:
 
+**Step 1 — Policy lookup:** Check the event type against the event policy table (see below). If the policy is `none`, consume and discard — do not forward to any browser.
+
+**Step 2 — Room resolution:**
 ```
 if payload.workCenterId is present:
   → emit to room workCenter:{workCenterId}
   if payload.previousWorkCenterId is present:
     → also emit to room workCenter:{previousWorkCenterId}
-else:
+else if policy is 'global':
   → emit to room global
+else if policy is 'admin':
+  → emit to room admin
 ```
 
 The Socket.io event name equals the Redis Stream event type:
@@ -79,11 +87,38 @@ socket.on('work_center.operator.checked_in', (data) => { ... })
 
 ---
 
+## Event Policy Table
+
+Defined in `gateway/event-policy.ts`. Every event type consumed by the gateway must have an explicit policy entry. Unknown event types are treated as `none`.
+
+| Stream | Event type pattern | Policy | Room |
+|--------|--------------------|--------|------|
+| events.production | `job_order.*` | workCenter | `workCenter:{workCenterId}` |
+| events.production | `scrap_entry.*` | workCenter | `workCenter:{workCenterId}` |
+| events.production | `quantity_adjustment.*` | workCenter | `workCenter:{workCenterId}` |
+| events.production | `production_plan.*` | global | `global` |
+| events.production | `product.*` | global | `global` |
+| events.production | `product_category.*` | global | `global` |
+| events.production | `product_standard.*` | global | `global` |
+| events.production | `uom.*` | admin | `admin` |
+| events.work_center | `work_center.*` | workCenter | `workCenter:{workCenterId}` |
+| events.user | `user.*` | admin | `admin` |
+| events.user | `role.*` | admin | `admin` |
+| events.user | `speciality.*` | admin | `admin` |
+
+When a new service is added, its event types must be added to this table before the gateway is deployed.
+
+---
+
 ## Transport
 
 Socket.io configured in **WebSocket-only mode** — polling fallback disabled. On factory LAN, WebSocket is always available. This eliminates the need for sticky sessions.
 
-No authentication on WebSocket connections. The system is on-premises, factory LAN only.
+**Single-instance constraint:** This service is designed for a single instance. Running multiple instances is not supported without a Socket.io Redis adapter — each instance holds its own in-process room state, and the Redis consumer group would distribute events across instances, causing clients on one instance to miss events consumed by another. If horizontal scaling is needed in the future, add `@socket.io/redis-adapter`.
+
+**Delivery guarantee:** This service provides best-effort delivery. Consumer name is process-based (`pid`), so pending messages from a crashed instance are not recovered on restart — they remain stranded in the consumer group. This is acceptable: if the gateway crashes, all socket connections drop and clients reconnect, triggering a full state refresh. Events emitted during the crash window are intentionally lost. This gateway is an invalidation signal bus, not a reliable event log.
+
+**No authentication on WebSocket connections.** The system is on-premises, factory LAN only. Accepted risk: any LAN-internal client can connect and join any `workCenter:{id}` or `admin` room without credential verification. This is a deliberate trade-off — the REST API layer enforces auth for all data reads, so a rogue subscriber can receive event notifications but cannot act on them without valid credentials.
 
 ---
 
@@ -133,7 +168,8 @@ realtime/
 │   │   └── shutdown.ts
 │   ├── gateway/
 │   │   ├── socket.ts             # Socket.io server setup, join handler
-│   │   └── router.ts             # resolveRooms(payload) → string[]
+│   │   ├── router.ts             # resolveRooms(type, payload) → string[]
+│   │   └── event-policy.ts       # EVENT_POLICY map: type → 'workCenter'|'global'|'admin'|'none'
 │   ├── jobs/
 │   │   └── subscribers.ts        # creates stream consumers for all streams
 │   ├── core/loaders/
@@ -144,12 +180,20 @@ realtime/
 └── Dockerfile
 ```
 
+**http.Server ownership:** `app.ts` creates the Node.js `http.Server` and passes it to both Express (for `/health`) and Socket.io:
+```typescript
+const httpServer = http.createServer(expressApp)
+const io = new Server(httpServer, { transports: ['websocket'] })
+httpServer.listen(PORT)
+```
+Socket.io attaches to the same server — single port, single process.
+
 `router.ts` exports a single pure function:
 ```typescript
-export function resolveRooms(payload: Record<string, unknown>): string[]
+export function resolveRooms(type: string, payload: Record<string, unknown>): string[]
 ```
 
-This is the only routing logic in the system. It has no side effects and no dependencies — easy to reason about and test in isolation.
+Takes the event type (for policy lookup) and the payload (for workCenterId). Returns the list of Socket.io rooms to emit to — empty array means the event is dropped. No side effects, no dependencies.
 
 ---
 
