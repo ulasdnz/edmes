@@ -53,7 +53,7 @@ export function createStreamConsumer(config: StreamConsumerConfig) {
 
     for (const [id, fields] of messages) {
       const parsed = parseFields(fields)
-      const handler = handlers[parsed.type]
+      const handler = handlers[parsed.type] ?? handlers['*']
 
       if (!handler) {
         logger.warn(`No handler for event type "${parsed.type}" on stream "${stream}", skipping`, {
@@ -69,7 +69,7 @@ export function createStreamConsumer(config: StreamConsumerConfig) {
         const data = JSON.parse(parsed.data ?? '{}')
         const traceId: string = data.traceId ?? id
 
-        const execute = () => handler(data)
+        const execute = () => handler(data, parsed.type)
         await (runInContext ? runInContext(traceId, execute) : execute())
 
         await redis.xack(stream, group, id)

@@ -2,7 +2,7 @@ import type { Redis } from 'ioredis'
 
 // biome-ignore lint: Handlers receive parsed JSON — callers narrow with their own types.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type EventHandler = (data: any) => Promise<void>
+export type EventHandler = (data: any, type: string) => Promise<void>
 
 export interface StreamConsumerConfig {
   /** Redis client dedicated to consuming (no keyPrefix). */
