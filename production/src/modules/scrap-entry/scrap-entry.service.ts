@@ -18,6 +18,8 @@ export async function create(data: CreateScrapEntryInput, userId: string): Promi
   if (!jo) throw new CustomError(404, 'error.not_found')
   if (!jo.startTime) throw new CustomError(400, 'error.job_order_not_started_for_adjustment')
 
+  if (data.amount <= 0) throw new CustomError(400, 'error.amount_not_positive')
+
   if (new Date(data.endTime) <= new Date(data.startTime)) {
     throw new CustomError(400, 'error.scrap_end_before_start')
   }
@@ -31,7 +33,7 @@ export async function create(data: CreateScrapEntryInput, userId: string): Promi
     productId: jo.productId,
     createdBy: userId,
   })
-  emitScrapEntryCreated(doc._id.toString())
+  emitScrapEntryCreated(doc._id.toString(), doc.jobOrderId.toString(), doc.workCenterId.toString())
   return doc
 }
 
@@ -126,13 +128,13 @@ export async function update(
     { returnDocument: 'after', runValidators: true },
   )
   if (!doc) throw new CustomError(404, 'error.not_found')
-  emitScrapEntryUpdated(id)
+  emitScrapEntryUpdated(id, scrap.jobOrderId.toString(), scrap.workCenterId.toString())
   return doc
 }
 
 export async function remove(id: string): Promise<IScrapEntry> {
   const doc = await ScrapEntry.findOneAndDelete({ _id: id })
   if (!doc) throw new CustomError(404, 'error.not_found')
-  emitScrapEntryDeleted(id)
+  emitScrapEntryDeleted(id, doc.jobOrderId.toString(), doc.workCenterId.toString())
   return doc
 }

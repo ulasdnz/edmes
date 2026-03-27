@@ -74,18 +74,36 @@ export const emitJobOrderDeleted = (jobOrderId: string, workCenterId: string) =>
 
 // ── QuantityAdjustment events ───────────────────────────────────────────────
 
-export const emitQuantityAdjustmentCreated = (adjustmentId: string) =>
-  emit('quantity_adjustment.created', { adjustmentId })
-export const emitQuantityAdjustmentUpdated = (adjustmentId: string) =>
-  emit('quantity_adjustment.updated', { adjustmentId })
-export const emitQuantityAdjustmentDeleted = (adjustmentId: string) =>
-  emit('quantity_adjustment.deleted', { adjustmentId })
+export const emitQuantityAdjustmentCreated = (
+  adjustmentId: string,
+  jobOrderId: string,
+  workCenterId: string,
+) => emit('quantity_adjustment.created', { adjustmentId, jobOrderId, workCenterId })
+export const emitQuantityAdjustmentUpdated = (
+  adjustmentId: string,
+  jobOrderId: string,
+  workCenterId: string,
+) => emit('quantity_adjustment.updated', { adjustmentId, jobOrderId, workCenterId })
+export const emitQuantityAdjustmentDeleted = (
+  adjustmentId: string,
+  jobOrderId: string,
+  workCenterId: string,
+) => emit('quantity_adjustment.deleted', { adjustmentId, jobOrderId, workCenterId })
 
 // ── ScrapEntry events ───────────────────────────────────────────────────────
 
-export const emitScrapEntryCreated = (scrapEntryId: string) =>
-  emit('scrap_entry.created', { scrapEntryId })
-export const emitScrapEntryUpdated = (scrapEntryId: string) =>
-  emit('scrap_entry.updated', { scrapEntryId })
-export const emitScrapEntryDeleted = (scrapEntryId: string) =>
-  emit('scrap_entry.deleted', { scrapEntryId })
+export const emitScrapEntryCreated = (
+  scrapEntryId: string,
+  jobOrderId: string,
+  workCenterId: string,
+) => emit('scrap_entry.created', { scrapEntryId, jobOrderId, workCenterId })
+export const emitScrapEntryUpdated = (
+  scrapEntryId: string,
+  jobOrderId: string,
+  workCenterId: string,
+) => emit('scrap_entry.updated', { scrapEntryId, jobOrderId, workCenterId })
+export const emitScrapEntryDeleted = (
+  scrapEntryId: string,
+  jobOrderId: string,
+  workCenterId: string,
+) => emit('scrap_entry.deleted', { scrapEntryId, jobOrderId, workCenterId })

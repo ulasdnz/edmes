@@ -32,7 +32,11 @@ export async function create(
     productId: jo.productId,
     createdBy: userId,
   })
-  emitQuantityAdjustmentCreated(doc._id.toString())
+  emitQuantityAdjustmentCreated(
+    doc._id.toString(),
+    doc.jobOrderId.toString(),
+    doc.workCenterId.toString(),
+  )
   return doc
 }
 
@@ -107,13 +111,13 @@ export async function update(
     { returnDocument: 'after', runValidators: true },
   )
   if (!doc) throw new CustomError(404, 'error.not_found')
-  emitQuantityAdjustmentUpdated(id)
+  emitQuantityAdjustmentUpdated(id, qa.jobOrderId.toString(), qa.workCenterId.toString())
   return doc
 }
 
 export async function remove(id: string): Promise<IQuantityAdjustment> {
   const doc = await QuantityAdjustment.findOneAndDelete({ _id: id })
   if (!doc) throw new CustomError(404, 'error.not_found')
-  emitQuantityAdjustmentDeleted(id)
+  emitQuantityAdjustmentDeleted(id, doc.jobOrderId.toString(), doc.workCenterId.toString())
   return doc
 }

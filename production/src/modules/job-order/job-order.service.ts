@@ -168,7 +168,11 @@ export async function update(
     { returnDocument: 'after', runValidators: true },
   )
   if (!doc) throw new CustomError(404, 'error.not_found')
-  emitJobOrderUpdated(id, doc.workCenterId.toString())
+  const previousWorkCenterId =
+    data.workCenterId && data.workCenterId !== jo.workCenterId.toString()
+      ? jo.workCenterId.toString()
+      : undefined
+  emitJobOrderUpdated(id, doc.workCenterId.toString(), previousWorkCenterId)
   return doc
 }
 
