@@ -26,8 +26,7 @@ Redis Streams                  realtime service              Frontend
 ──────────────                 ────────────────              ────────
 events.user        ──┐
 events.work_center ──┤  consumer group   ┌──────────────┐  Socket.io
-events.production  ──┤  "realtime"       │   realtime   │ ─────────► React (tablet)
-events.scripts     ──┘                   │   service    │            Admin Panel
+events.production  ──┘  "realtime"       │   realtime   │ ─────────► React (tablet)
 (future streams)                         └──────────────┘
 ```
 
@@ -37,19 +36,27 @@ The service follows the existing `user/` service pattern: same directory structu
 
 ## Socket.io Room Structure
 
-Every connected client is automatically joined to the `global` room.
-
-Clients join additional rooms by emitting a `join` event after connecting:
+No auto-join. Clients join only the rooms they need by emitting a `join` event after connecting:
 ```js
-socket.emit('join', { workCenterIds: ['id1', 'id2', 'id3'] })
+socket.emit('join', { rooms: ['wc:abc', 'wc:def', 'production_plan'] })
 ```
 
-Each `join` call **replaces** the client's current workCenter room subscriptions — old rooms are left before joining new ones. This prevents room accumulation across multiple calls.
+Each `join` call **replaces** the client's current room subscriptions — old rooms are left before joining new ones. This prevents room accumulation across multiple calls.
 
-**Room types:**
-- `global` — all connected clients. Receives operationally relevant events with no `workCenterId`.
-- `workCenter:{id}` — clients that explicitly joined. Receives events scoped to that work center.
-- `admin` — clients that explicitly joined. Receives system-level events (user/role changes, config). No clients join this room in v1; the room exists for when an admin panel is built.
+**Room types (convention-based, not configured):**
+- **Entity prefix rooms** (`job_order`, `role`, `work_center`, `production_plan`, etc.) — derived from the event type. Every event is always emitted to its entity prefix room. Client joins if they want all events of that entity type regardless of work center.
+- **Routing key rooms** (`wc:{id}`, future: `tag:{id}`) — derived from payload fields. Additionally emitted to when present. Client joins for entity-specific events.
+
+**Examples:**
+
+| Event | Rooms emitted to |
+|-------|-----------------|
+| `job_order.started` (workCenterId: abc) | `job_order`, `wc:abc` |
+| `role.updated` (no routing key) | `role` |
+| `production_plan.created` (no routing key) | `production_plan` |
+| `tag.value_changed` (tagId: 123, future) | `tag`, `tag:123` |
+
+If nobody has joined a room, the event is not transmitted — zero bandwidth.
 
 **Client contract:** On every connect and reconnect, the client must re-emit `join` and re-fetch current state for all visible screens. Socket events are invalidation triggers, not a reliable event log — events emitted during a disconnect window are not replayed.
 
@@ -57,26 +64,26 @@ Each `join` call **replaces** the client's current workCenter room subscriptions
 
 ## Event Routing Rule
 
-The gateway applies routing in two steps per event:
+The gateway applies one routing function per event — no policy table, no event-type configuration:
 
-**Step 1 — Policy lookup:** Check the event type against the event policy table (see below). If the policy is `none`, consume and discard — do not forward to any browser.
+```typescript
+function resolveRooms(type: string, payload: Record<string, unknown>): string[] {
+  const rooms = [type.split('.')[0]]  // entity prefix room
 
-**Step 2 — Room resolution:**
+  if (payload.workCenterId) rooms.push(`wc:${payload.workCenterId}`)
+  if (payload.previousWorkCenterId) rooms.push(`wc:${payload.previousWorkCenterId}`)
+  // future routing keys (e.g. tagId) follow the same pattern
+
+  return rooms
+}
 ```
-if payload.workCenterId is present:
-  → emit to room workCenter:{workCenterId}
-  if payload.previousWorkCenterId is present:
-    → also emit to room workCenter:{previousWorkCenterId}
-else if policy is 'global':
-  → emit to room global
-else if policy is 'admin':
-  → emit to room admin
-```
+
+Socket.io deduplicates across chained `.to()` calls — each socket receives the event at most once even if it belongs to multiple matching rooms.
 
 The Socket.io event name equals the Redis Stream event type:
 ```
 Redis type: "job_order.started"
-Socket.io:  socket.emit("job_order.started", { jobOrderId, workCenterId, ... })
+Socket.io:  io.to('job_order').to('wc:abc').emit('job_order.started', payload)
 ```
 
 Frontend listens per event type:
@@ -84,33 +91,6 @@ Frontend listens per event type:
 socket.on('job_order.started', (data) => { ... })
 socket.on('work_center.operator.checked_in', (data) => { ... })
 ```
-
----
-
-## Event Policy Table
-
-Defined in `gateway/event-policy.ts` as a `getEventPolicy(type: string)` function using prefix matching. The table below is documentation — the implementation uses `type.startsWith(prefix)` checks, not a Record keyed on exact type strings.
-
-Unknown event types (no matching prefix) return `'none'` and are silently discarded.
-
-| Event type prefix | Policy | Room |
-|-------------------|--------|------|
-| `job_order.` | workCenter | `workCenter:{workCenterId}` |
-| `scrap_entry.` | workCenter | `workCenter:{workCenterId}` |
-| `quantity_adjustment.` | workCenter | `workCenter:{workCenterId}` |
-| `work_center.` | workCenter | `workCenter:{workCenterId}` |
-| `production_plan.` | global | `global` |
-| `product.` | global | `global` |
-| `product_category.` | global | `global` |
-| `product_standard.` | global | `global` |
-| `uom.` | admin | `admin` |
-| `user.` | admin | `admin` |
-| `role.` | admin | `admin` |
-| `speciality.` | admin | `admin` |
-
-When a new service is added, its event type prefixes must be added to `event-policy.ts`.
-
-**Admin event payload constraint:** Admin room events (`user.*`, `role.*`, `speciality.*`, `uom.*`) must carry only IDs — no names, emails, or config values. This is consistent with the general payload rule but is explicitly enforced for admin events because the admin room is unauthenticated. A rogue LAN subscriber on the admin room must gain nothing beyond the fact that something changed.
 
 ---
 
@@ -136,7 +116,7 @@ const handler = handlers[parsed.type] ?? handlers['*']
 const execute = () => handler(data, parsed.type)  // was: handler(data)
 ```
 
-The gateway registers a single `'*'` handler per stream. That handler receives both `data` and `type`, calls `resolveRooms(type, data)`, and emits to the resolved rooms. No per-type handler registration in the gateway.
+The gateway registers a single `'*'` handler per stream. That handler receives both `data` and `type`, calls `resolveRooms(type, data)`, and emits to the resolved rooms via Socket.io. No per-type handler registration, no policy lookup — the routing function derives rooms purely from the event type prefix and payload fields.
 
 ---
 
@@ -148,7 +128,7 @@ Socket.io configured in **WebSocket-only mode** — polling fallback disabled. O
 
 **Delivery guarantee:** This service provides best-effort delivery. Consumer name is process-based (`pid`), so pending messages from a crashed instance are not recovered on restart — they remain stranded in the consumer group. This is acceptable: if the gateway crashes, all socket connections drop and clients reconnect, triggering a full state refresh. Events emitted during the crash window are intentionally lost. This gateway is an invalidation signal bus, not a reliable event log.
 
-**No authentication on WebSocket connections.** The system is on-premises, factory LAN only. Accepted risk: any LAN-internal client can connect and join any `workCenter:{id}` or `admin` room without credential verification. This is a deliberate trade-off — the REST API layer enforces auth for all data reads, so a rogue subscriber can receive event notifications but cannot act on them without valid credentials.
+**No authentication on WebSocket connections.** The system is on-premises, factory LAN only. Accepted risk: any LAN-internal client can connect and join any room without credential verification. Event payloads carry only IDs (never names, emails, or config values), so a rogue subscriber gains nothing beyond the fact that something changed. The REST API layer enforces auth for all actual data reads.
 
 ---
 
@@ -207,8 +187,7 @@ realtime/
 │   │   └── shutdown.ts
 │   ├── gateway/
 │   │   ├── socket.ts             # Socket.io server setup, join handler
-│   │   ├── router.ts             # resolveRooms(type, payload) → string[]
-│   │   └── event-policy.ts       # EVENT_POLICY map: type → 'workCenter'|'global'|'admin'|'none'
+│   │   └── router.ts             # resolveRooms(type, payload) → string[]
 │   ├── jobs/
 │   │   └── subscribers.ts        # creates stream consumers for all streams
 │   ├── core/loaders/
@@ -232,7 +211,7 @@ Socket.io attaches to the same server — single port, single process.
 export function resolveRooms(type: string, payload: Record<string, unknown>): string[]
 ```
 
-Takes the event type (for policy lookup) and the payload (for workCenterId). Returns the list of Socket.io rooms to emit to — empty array means the event is dropped. No side effects, no dependencies.
+Derives the entity prefix from `type` and checks payload for routing keys (`workCenterId`, `previousWorkCenterId`, future: `tagId`). Returns the list of Socket.io rooms to emit to. No side effects, no dependencies, no configuration — the entire routing logic is ~5 lines.
 
 ---
 
