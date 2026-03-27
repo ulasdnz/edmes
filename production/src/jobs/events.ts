@@ -60,8 +60,11 @@ export const emitProductionPlanDeleted = (planId: string) =>
 
 export const emitJobOrderCreated = (jobOrderId: string, workCenterId: string) =>
   emit('job_order.created', { jobOrderId, workCenterId })
-export const emitJobOrderUpdated = (jobOrderId: string, workCenterId: string) =>
-  emit('job_order.updated', { jobOrderId, workCenterId })
+export const emitJobOrderUpdated = (
+  jobOrderId: string,
+  workCenterId: string,
+  previousWorkCenterId?: string,
+) => emit('job_order.updated', { jobOrderId, workCenterId, previousWorkCenterId })
 export const emitJobOrderStarted = (jobOrderId: string, workCenterId: string) =>
   emit('job_order.started', { jobOrderId, workCenterId })
 export const emitJobOrderEnded = (jobOrderId: string, workCenterId: string) =>

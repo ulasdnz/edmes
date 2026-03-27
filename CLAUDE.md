@@ -80,6 +80,22 @@ Redis Streams via `@mes/events`. Publisher injects `traceId` from ALS context in
 
 Streams: `events.user` (published by user-service), `events.work_center` (consumed by user-service).
 
+### Event Design
+
+**Payload rule:** Events carry only the IDs needed for routing and identification — not full documents. Consumers fetch full state via REST if needed. This prevents stale-data issues and keeps event size minimal.
+
+**Routing key rule (critical):** The `realtime` gateway routes events to Socket.io rooms based on `workCenterId`. When an update event can change a routing key field, the emit function MUST include both new and previous values so both the old and new room owners receive the event:
+
+```typescript
+// workCenterId changed: both rooms must be notified
+emitJobOrderUpdated(jobOrderId, workCenterId, previousWorkCenterId?: string)
+// payload: { jobOrderId, workCenterId, previousWorkCenterId }
+```
+
+- Only include `previousWorkCenterId` in the payload when the work center actually changed. If present, gateway emits to BOTH `workCenter:{workCenterId}` AND `workCenter:{previousWorkCenterId}` rooms.
+- Currently `workCenterId` is the only routing key. If future entities introduce other routing keys (e.g. `departmentId`), the same `previous{Field}` convention applies.
+- The service emitting the event always knows both old and new values at write time — do not rely on consumers fetching previous state.
+
 ## Adding a New Service
 
 1. Create `<service-name>/` in the root following `user/` directory structure
