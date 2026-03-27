@@ -118,15 +118,25 @@ When a new service is added, its event type prefixes must be added to `event-pol
 
 The existing `@mes/events` consumer dispatches events by exact type match (`handlers[parsed.type]`). The gateway cannot register a handler per event type — it must receive all events from each stream and apply the policy at runtime.
 
-**Required change to `@mes/events` consumer (`packages/events/src/consumer.ts`):**
-Add `'*'` fallback: if no exact handler is found for `parsed.type`, fall back to `handlers['*']` if it exists. Existing services are unaffected — they do not register a `'*'` handler.
+**Required changes to `@mes/events` (`packages/events/`):**
 
+Two backward-compatible changes to the shared package:
+
+**1. `types.ts` — extend `EventHandler` signature to include `type`:**
 ```typescript
-// consumer.ts — handler lookup change
+// was: (data: any) => Promise<void>
+export type EventHandler = (data: any, type: string) => Promise<void>
+```
+TypeScript allows a function with fewer parameters to be assigned to a type with more, so existing handlers `(data) => {}` remain valid without modification.
+
+**2. `consumer.ts` — pass `type` to handler and add `'*'` fallback:**
+```typescript
 const handler = handlers[parsed.type] ?? handlers['*']
+// ...
+const execute = () => handler(data, parsed.type)  // was: handler(data)
 ```
 
-The gateway registers a single `'*'` handler per stream. That handler calls `resolveRooms(type, payload)` and emits to the resolved rooms. No per-type handler registration in the gateway.
+The gateway registers a single `'*'` handler per stream. That handler receives both `data` and `type`, calls `resolveRooms(type, data)`, and emits to the resolved rooms. No per-type handler registration in the gateway.
 
 ---
 
