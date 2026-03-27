@@ -85,7 +85,6 @@ describe('system admin bootstrap', () => {
     expect(role).toBeTruthy()
     expect(role?.permissions).toHaveLength(PRIVILEGES.length)
     expect(role?.permissions).toEqual(expect.arrayContaining(PRIVILEGES.map(p => p.code)))
-    expect(role?.isDefault).toBe(false)
 
     expect(user).toBeTruthy()
     expect(user?.username).toBe(systemUsername)
@@ -111,7 +110,6 @@ describe('system admin bootstrap', () => {
       {
         $set: {
           permissions: ['readUsers'],
-          isDefault: true,
           description: 'stale',
         },
       },
@@ -123,7 +121,6 @@ describe('system admin bootstrap', () => {
 
     expect(syncedRole?.permissions).toHaveLength(PRIVILEGES.length)
     expect(syncedRole?.permissions).toEqual(expect.arrayContaining(PRIVILEGES.map(p => p.code)))
-    expect(syncedRole?.isDefault).toBe(false)
     expect(syncedRole?.description).toBe('Bootstrapped full-access system administrator role')
   })
 

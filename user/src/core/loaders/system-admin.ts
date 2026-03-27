@@ -37,7 +37,6 @@ const ensureSystemAdminRole = async (permissions: string[]): Promise<IRole> => {
       name: SYSTEM_ADMIN_ROLE_NAME,
       description: SYSTEM_ADMIN_ROLE_DESCRIPTION,
       permissions,
-      isDefault: false,
     })
 
     await emitRoleCreated(role._id.toString())
@@ -54,8 +53,7 @@ const ensureSystemAdminRole = async (permissions: string[]): Promise<IRole> => {
   const nextPermissions = [...permissions]
   const shouldUpdate =
     !sameStringSet((existingRole.permissions ?? []) as string[], nextPermissions) ||
-    existingRole.description !== SYSTEM_ADMIN_ROLE_DESCRIPTION ||
-    existingRole.isDefault !== false
+    existingRole.description !== SYSTEM_ADMIN_ROLE_DESCRIPTION
 
   if (!shouldUpdate) {
     return existingRole
@@ -67,7 +65,6 @@ const ensureSystemAdminRole = async (permissions: string[]): Promise<IRole> => {
       $set: {
         description: SYSTEM_ADMIN_ROLE_DESCRIPTION,
         permissions: nextPermissions,
-        isDefault: false,
       },
     },
     { returnDocument: 'after', runValidators: true },

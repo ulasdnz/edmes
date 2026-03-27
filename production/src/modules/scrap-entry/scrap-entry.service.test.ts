@@ -102,6 +102,56 @@ describe('ScrapEntryService', () => {
         ),
       ).rejects.toThrow('error.job_order_time_before_start')
     })
+
+    it('allows creation for a finished job order', async () => {
+      const jo = await createStartedJobOrder({
+        endTime: new Date('2026-03-02T16:00:00Z'),
+        endedBy: new Types.ObjectId(),
+      })
+
+      const doc = await scrapService.create(buildInput(jo._id.toString()), userId)
+
+      expect(doc._id).toBeDefined()
+      expect(doc.amount).toBe(3)
+    })
+
+    it('throws 400 if amount is zero', async () => {
+      const jo = await createStartedJobOrder()
+      await expect(
+        scrapService.create(buildInput(jo._id.toString(), { amount: 0 }), userId),
+      ).rejects.toThrow('error.amount_not_positive')
+    })
+
+    it('throws 400 if amount is negative', async () => {
+      const jo = await createStartedJobOrder()
+      await expect(
+        scrapService.create(buildInput(jo._id.toString(), { amount: -1 }), userId),
+      ).rejects.toThrow('error.amount_not_positive')
+    })
+
+    it('throws 400 if endTime equals startTime (strict: endTime > startTime required)', async () => {
+      const jo = await createStartedJobOrder()
+      const sameTime = new Date('2026-03-01T09:00:00Z')
+      await expect(
+        scrapService.create(
+          buildInput(jo._id.toString(), { startTime: sameTime, endTime: sameTime }),
+          userId,
+        ),
+      ).rejects.toThrow('error.scrap_end_before_start')
+    })
+
+    it('allows startTime exactly at job order startTime (boundary)', async () => {
+      const jo = await createStartedJobOrder()
+      const doc = await scrapService.create(
+        buildInput(jo._id.toString(), {
+          startTime: joStart,
+          endTime: new Date('2026-03-01T10:00:00Z'),
+        }),
+        userId,
+      )
+
+      expect(doc.startTime.getTime()).toBe(joStart.getTime())
+    })
   })
 
   describe('getById', () => {

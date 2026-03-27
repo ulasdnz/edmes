@@ -10,14 +10,12 @@ const createSystemAdminFixture = async () => {
     name: SYSTEM_ADMIN_ROLE_NAME,
     description: 'System admin role',
     permissions: ['readUsers', 'writeUsers'],
-    isDefault: false,
   })
 
   const otherRole = await Role.create({
     name: 'Operator',
     description: 'Operator role',
     permissions: ['readUsers'],
-    isDefault: false,
   })
 
   const user = await User.create({

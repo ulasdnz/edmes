@@ -8,7 +8,6 @@ const createSystemAdminRoleFixture = async () => {
     name: SYSTEM_ADMIN_ROLE_NAME,
     description: 'Bootstrapped full-access system administrator role',
     permissions: ['readUsers', 'writeUsers', 'deleteUsers'],
-    isDefault: false,
   })
   return role
 }

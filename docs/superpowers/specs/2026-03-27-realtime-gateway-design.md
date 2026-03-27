@@ -26,7 +26,7 @@ Redis Streams                  realtime service              Frontend
 ──────────────                 ────────────────              ────────
 events.user        ──┐
 events.work_center ──┤  consumer group   ┌──────────────┐  Socket.io
-events.production  ──┘  "realtime"       │   realtime   │ ─────────► React (tablet)
+events.production  ──┘  "realtime"       │   realtime   │ ─────────► React frontend
 (future streams)                         └──────────────┘
 ```
 
@@ -220,7 +220,7 @@ Derives the entity prefix from `type` and checks payload for routing keys (`work
 **Docker Compose additions:**
 - New `realtime` service block
 - `depends_on: redis` only (no MongoDB dependency)
-- Internal port: `3000` (same convention as all services)
+- Internal port: `3003` (user: 3000, work-center: 3001, production: 3002)
 - Healthcheck: `GET /health`
 
 **Traefik routing:**

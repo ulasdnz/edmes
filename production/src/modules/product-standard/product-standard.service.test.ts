@@ -1,5 +1,6 @@
-import mongoose, { Types } from 'mongoose'
+import { Types } from 'mongoose'
 import { describe, expect, it, vi } from 'vitest'
+import { JobOrder } from '../job-order/job-order.model.js'
 import { Product } from '../product/product.model.js'
 import { Uom } from '../uom/uom.model.js'
 import { ProductStandard } from './product-standard.model.js'
@@ -114,6 +115,25 @@ describe('ProductStandardService', () => {
         service.create(buildInput({ productId: fakeProductId, counterMultiplier: 2 }), userId),
       ).rejects.toThrow('error.not_found')
     })
+
+    it('accepts a future validFrom date', async () => {
+      const futureDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+      const doc = await service.create(
+        buildInput({ counterMultiplier: 2, validFrom: futureDate }),
+        userId,
+      )
+
+      expect(doc.validFrom.getTime()).toBe(futureDate.getTime())
+    })
+
+    it('rejects duplicate productId + workCenterId + validFrom combination', async () => {
+      const validFrom = new Date('2026-06-01')
+      await service.create(buildInput({ counterMultiplier: 2, validFrom }), userId)
+
+      await expect(
+        service.create(buildInput({ counterMultiplier: 3, validFrom }), userId),
+      ).rejects.toThrow()
+    })
   })
 
   describe('getById', () => {
@@ -215,6 +235,26 @@ describe('ProductStandardService', () => {
         'error.not_found',
       )
     })
+
+    it('blocks update of an applied standard', async () => {
+      const validFrom = new Date('2026-01-01')
+      const standard = await service.create(buildInput({ counterMultiplier: 2, validFrom }), userId)
+
+      // Insert a started job order that makes this standard the applicable one
+      await JobOrder.create({
+        code: `JO-APPLIED-${Date.now()}`,
+        productId: defaultProductId,
+        workCenterId,
+        targetQuantity: 10,
+        startTime: new Date('2026-02-01T08:00:00Z'),
+        startedBy: userId,
+        createdBy: userId,
+      })
+
+      await expect(
+        service.update(standard._id.toString(), { idealOutputPerMinute: 99 }, userId),
+      ).rejects.toThrow('error.product_standard_applied')
+    })
   })
 
   describe('remove', () => {
@@ -243,33 +283,42 @@ describe('ProductStandardService', () => {
     it('blocks delete of last revision when job orders exist', async () => {
       const s1 = await service.create(buildInput({ counterMultiplier: 2 }), userId)
 
-      // Register a minimal JobOrder model for this test
-      const joSchema = new mongoose.Schema({
-        productId: { type: mongoose.Schema.Types.ObjectId },
-        workCenterId: { type: mongoose.Schema.Types.ObjectId },
-      })
-      let JobOrder: mongoose.Model<unknown>
-      try {
-        JobOrder = mongoose.model('JobOrder')
-      } catch {
-        JobOrder = mongoose.model('JobOrder', joSchema)
-      }
       await JobOrder.create({
+        code: `JO-LAST-REV-${Date.now()}`,
         productId: defaultProductId,
         workCenterId,
+        targetQuantity: 10,
+        createdBy: userId,
       })
 
       await expect(service.remove(s1._id.toString())).rejects.toThrow(
         'error.product_standard_last_revision',
       )
-
-      // Cleanup: delete the temp model registration
-      await JobOrder.deleteMany({})
     })
 
     it('throws 404 for non-existent id', async () => {
       const fakeId = new Types.ObjectId().toString()
       await expect(service.remove(fakeId)).rejects.toThrow('error.not_found')
+    })
+
+    it('blocks delete of an applied standard', async () => {
+      const validFrom = new Date('2026-01-01')
+      const standard = await service.create(buildInput({ counterMultiplier: 2, validFrom }), userId)
+
+      // Insert a started job order that makes this standard the applicable one
+      await JobOrder.create({
+        code: `JO-DEL-APPLIED-${Date.now()}`,
+        productId: defaultProductId,
+        workCenterId,
+        targetQuantity: 10,
+        startTime: new Date('2026-02-01T08:00:00Z'),
+        startedBy: userId,
+        createdBy: userId,
+      })
+
+      await expect(service.remove(standard._id.toString())).rejects.toThrow(
+        'error.product_standard_applied',
+      )
     })
   })
 })

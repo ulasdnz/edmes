@@ -34,10 +34,6 @@ export const createRoleSchema = z
         example: ['readUsers', 'writeUsers'],
         description: 'List of privilege codes assigned to this role',
       }),
-    isDefault: z.boolean().default(false).meta({
-      example: false,
-      description: 'Whether this role is assigned to new users by default',
-    }),
   })
   .strict()
 
@@ -46,7 +42,6 @@ export const updateRoleSchema = z
     name: nameSchema.optional(),
     description: z.string().nullable().optional(),
     permissions: z.array(permissionCodeSchema).min(1).optional(),
-    isDefault: z.boolean().optional(),
   })
   .strict()
 

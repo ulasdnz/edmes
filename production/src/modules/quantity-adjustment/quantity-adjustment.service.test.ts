@@ -95,6 +95,25 @@ describe('QuantityAdjustmentService', () => {
         qaService.create(buildInput(jo._id.toString(), { time: earlyTime }), userId),
       ).rejects.toThrow('error.job_order_time_before_start')
     })
+
+    it('allows creation for a finished job order', async () => {
+      const jo = await createStartedJobOrder({
+        endTime: new Date('2026-03-02T16:00:00Z'),
+        endedBy: new Types.ObjectId(),
+      })
+
+      const doc = await qaService.create(buildInput(jo._id.toString()), userId)
+
+      expect(doc._id).toBeDefined()
+      expect(doc.amount).toBe(5)
+    })
+
+    it('allows time exactly at job order startTime (boundary)', async () => {
+      const jo = await createStartedJobOrder()
+      const doc = await qaService.create(buildInput(jo._id.toString(), { time: joStart }), userId)
+
+      expect(doc.time.getTime()).toBe(joStart.getTime())
+    })
   })
 
   describe('getById', () => {

@@ -19,10 +19,6 @@ const roleSchema = new Schema(
       type: [String],
       default: [],
     },
-    isDefault: {
-      type: Boolean,
-      default: false,
-    },
   },
   {
     timestamps: true,
