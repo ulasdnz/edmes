@@ -89,24 +89,44 @@ socket.on('work_center.operator.checked_in', (data) => { ... })
 
 ## Event Policy Table
 
-Defined in `gateway/event-policy.ts`. Every event type consumed by the gateway must have an explicit policy entry. Unknown event types are treated as `none`.
+Defined in `gateway/event-policy.ts` as a `getEventPolicy(type: string)` function using prefix matching. The table below is documentation — the implementation uses `type.startsWith(prefix)` checks, not a Record keyed on exact type strings.
 
-| Stream | Event type pattern | Policy | Room |
-|--------|--------------------|--------|------|
-| events.production | `job_order.*` | workCenter | `workCenter:{workCenterId}` |
-| events.production | `scrap_entry.*` | workCenter | `workCenter:{workCenterId}` |
-| events.production | `quantity_adjustment.*` | workCenter | `workCenter:{workCenterId}` |
-| events.production | `production_plan.*` | global | `global` |
-| events.production | `product.*` | global | `global` |
-| events.production | `product_category.*` | global | `global` |
-| events.production | `product_standard.*` | global | `global` |
-| events.production | `uom.*` | admin | `admin` |
-| events.work_center | `work_center.*` | workCenter | `workCenter:{workCenterId}` |
-| events.user | `user.*` | admin | `admin` |
-| events.user | `role.*` | admin | `admin` |
-| events.user | `speciality.*` | admin | `admin` |
+Unknown event types (no matching prefix) return `'none'` and are silently discarded.
 
-When a new service is added, its event types must be added to this table before the gateway is deployed.
+| Event type prefix | Policy | Room |
+|-------------------|--------|------|
+| `job_order.` | workCenter | `workCenter:{workCenterId}` |
+| `scrap_entry.` | workCenter | `workCenter:{workCenterId}` |
+| `quantity_adjustment.` | workCenter | `workCenter:{workCenterId}` |
+| `work_center.` | workCenter | `workCenter:{workCenterId}` |
+| `production_plan.` | global | `global` |
+| `product.` | global | `global` |
+| `product_category.` | global | `global` |
+| `product_standard.` | global | `global` |
+| `uom.` | admin | `admin` |
+| `user.` | admin | `admin` |
+| `role.` | admin | `admin` |
+| `speciality.` | admin | `admin` |
+
+When a new service is added, its event type prefixes must be added to `event-policy.ts`.
+
+**Admin event payload constraint:** Admin room events (`user.*`, `role.*`, `speciality.*`, `uom.*`) must carry only IDs — no names, emails, or config values. This is consistent with the general payload rule but is explicitly enforced for admin events because the admin room is unauthenticated. A rogue LAN subscriber on the admin room must gain nothing beyond the fact that something changed.
+
+---
+
+## Consumer API — Catch-All Handler
+
+The existing `@mes/events` consumer dispatches events by exact type match (`handlers[parsed.type]`). The gateway cannot register a handler per event type — it must receive all events from each stream and apply the policy at runtime.
+
+**Required change to `@mes/events` consumer (`packages/events/src/consumer.ts`):**
+Add `'*'` fallback: if no exact handler is found for `parsed.type`, fall back to `handlers['*']` if it exists. Existing services are unaffected — they do not register a `'*'` handler.
+
+```typescript
+// consumer.ts — handler lookup change
+const handler = handlers[parsed.type] ?? handlers['*']
+```
+
+The gateway registers a single `'*'` handler per stream. That handler calls `resolveRooms(type, payload)` and emits to the resolved rooms. No per-type handler registration in the gateway.
 
 ---
 
@@ -147,7 +167,16 @@ The gateway never enriches events. Routing keys must be present in the payload a
 
 **Affected emit function updates (production service):**
 
-`emitJobOrderUpdated` — add `previousWorkCenterId?: string` parameter (job order can be reassigned to a different work center).
+`emitJobOrderUpdated` — signature already updated with `previousWorkCenterId?: string`. The real fix is in `job-order.service.ts`: the `update()` function fetches `jo` (old document) at line 123 before calling `findOneAndUpdate`. After the update, compare `jo.workCenterId` with `data.workCenterId` — if changed, pass the old value as `previousWorkCenterId`. Without this service-layer fix, `previousWorkCenterId` is always `undefined` and old-room routing never fires.
+
+```typescript
+// job-order.service.ts — update() function, after findOneAndUpdate
+const previousWorkCenterId =
+  data.workCenterId && data.workCenterId !== jo.workCenterId.toString()
+    ? jo.workCenterId.toString()
+    : undefined
+emitJobOrderUpdated(id, doc.workCenterId.toString(), previousWorkCenterId)
+```
 
 `emitScrapEntryCreated/Updated/Deleted` — add `jobOrderId` and `workCenterId` parameters (already stored in schema, just not emitted).
 
