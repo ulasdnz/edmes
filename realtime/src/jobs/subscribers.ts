@@ -12,11 +12,8 @@ const catchAll = async (data: Record<string, unknown>, type: string): Promise<vo
   const rooms = resolveRooms(type, data)
   const io = getIO()
 
-  let target = io
-  for (const room of rooms) {
-    target = target.to(room) as typeof io
-  }
-  target.emit(type, data)
+  const emitter = rooms.length > 0 ? io.to(rooms) : io
+  emitter.emit(type, data)
 
   logger.debug('Event forwarded', {
     event: 'gateway.event.forwarded',
