@@ -14,7 +14,7 @@ export const createJobOrderSchema = z.object({
   dueAt: z.coerce.date().nullable().optional(),
   description: z.string().max(500).nullable().optional(),
   props: z.record(z.string(), z.string()).optional(),
-})
+}).strict()
 
 export const patchJobOrderSchema = z
   .object({
@@ -28,17 +28,18 @@ export const patchJobOrderSchema = z
     description: z.string().max(500).nullable().optional(),
     props: z.record(z.string(), z.string()).optional(),
   })
+  .strict()
   .refine(data => Object.keys(data).length > 0, { message: 'error.empty_patch' })
 
 export const jobOrderIdParamSchema = z.object({ id: objectIdSchema })
 
 export const startJobOrderSchema = z.object({
   startTime: z.coerce.date().optional(),
-})
+}).strict()
 
 export const endJobOrderSchema = z.object({
   endTime: z.coerce.date().optional(),
-})
+}).strict()
 
 export const jobOrderListSchema = paginationSchema.extend({
   _id: objectIdSchema.optional(),

@@ -13,7 +13,7 @@ export const createProductSchema = z.object({
   kind: z.enum(['finished', 'semi_finished']),
   uomId: objectIdSchema,
   props: z.record(z.string(), z.string()).optional(),
-})
+}).strict()
 
 export const patchProductSchema = z
   .object({
@@ -25,6 +25,7 @@ export const patchProductSchema = z
     uomId: objectIdSchema.optional(),
     props: z.record(z.string(), z.string()).optional(),
   })
+  .strict()
   .refine(data => Object.keys(data).length > 0, { message: 'error.empty_patch' })
 
 export const productIdParamSchema = z.object({ id: objectIdSchema })

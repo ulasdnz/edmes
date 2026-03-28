@@ -11,7 +11,7 @@ export const createScrapEntrySchema = z.object({
   causeId: objectIdSchema.nullable().optional(),
   description: z.string().max(500).nullable().optional(),
   props: z.record(z.string(), z.string()).optional(),
-})
+}).strict()
 
 export const patchScrapEntrySchema = z
   .object({
@@ -23,6 +23,7 @@ export const patchScrapEntrySchema = z
     description: z.string().max(500).nullable().optional(),
     props: z.record(z.string(), z.string()).optional(),
   })
+  .strict()
   .refine(data => Object.keys(data).length > 0, { message: 'error.empty_patch' })
 
 export const scrapEntryIdParamSchema = z.object({ id: objectIdSchema })

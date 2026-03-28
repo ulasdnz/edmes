@@ -10,7 +10,7 @@ export const createUomSchema = z.object({
   code: codeSchema,
   name: nameSchema,
   symbol: symbolSchema,
-})
+}).strict()
 
 export const patchUomSchema = z
   .object({
@@ -18,6 +18,7 @@ export const patchUomSchema = z
     name: nameSchema.optional(),
     symbol: symbolSchema.optional(),
   })
+  .strict()
   .refine(data => Object.keys(data).length > 0, { message: 'error.empty_patch' })
 
 export const uomIdParamSchema = z.object({ id: objectIdSchema })

@@ -170,6 +170,49 @@ describe('createStreamConsumer — catch-all handler', () => {
     expect(mockLogger.warn).toHaveBeenCalled()
   })
 
+  it("'*' only called for types without a specific handler when registered alongside multiple specific handlers", async () => {
+    const redis = makeMockRedis()
+    const handlerA = vi.fn().mockResolvedValue(undefined)
+    const handlerB = vi.fn().mockResolvedValue(undefined)
+    const catchAll = vi.fn().mockResolvedValue(undefined)
+    let consumer: ReturnType<typeof createStreamConsumer>
+
+    redis.xreadgroup
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce([
+        [
+          'events.test',
+          [
+            makeMessage('1-0', 'type.a', { a: 1 }),
+            makeMessage('1-1', 'type.b', { b: 1 }),
+            makeMessage('1-2', 'type.c', { c: 1 }),
+          ],
+        ],
+      ])
+      .mockImplementationOnce(() => {
+        consumer.stop()
+        return Promise.resolve(null)
+      })
+
+    consumer = createStreamConsumer({
+      redis: redis as any,
+      group: 'test-group',
+      consumer: 'test-consumer',
+      streams: {
+        'events.test': { 'type.a': handlerA, 'type.b': handlerB, '*': catchAll },
+      },
+      logger: mockLogger,
+      pollIntervalMs: 0,
+    })
+
+    await consumer.start()
+
+    expect(handlerA).toHaveBeenCalledOnce()
+    expect(handlerB).toHaveBeenCalledOnce()
+    expect(catchAll).toHaveBeenCalledOnce()
+    expect(catchAll).toHaveBeenCalledWith(expect.objectContaining({ c: 1 }), 'type.c')
+  })
+
   it("'*' handler catches multiple different event types from the same stream", async () => {
     const redis = makeMockRedis()
     const receivedTypes: string[] = []

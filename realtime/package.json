@@ -8,13 +8,15 @@
     "build": "tsc",
     "start": "node dist/app.js",
     "dev": "tsx watch src/app.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
     "@types/node": "^25.3.5",
     "tsx": "^4.21.0",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.1"
   },
   "dependencies": {
     "@mes/core": "workspace:*",

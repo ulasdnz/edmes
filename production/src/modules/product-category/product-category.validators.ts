@@ -9,7 +9,7 @@ export const createProductCategorySchema = z.object({
   code: codeSchema,
   name: nameSchema,
   description: z.string().max(500).nullable().optional(),
-})
+}).strict()
 
 export const patchProductCategorySchema = z
   .object({
@@ -17,6 +17,7 @@ export const patchProductCategorySchema = z
     name: nameSchema.optional(),
     description: z.string().max(500).nullable().optional(),
   })
+  .strict()
   .refine(data => Object.keys(data).length > 0, { message: 'error.empty_patch' })
 
 export const productCategoryIdParamSchema = z.object({ id: objectIdSchema })

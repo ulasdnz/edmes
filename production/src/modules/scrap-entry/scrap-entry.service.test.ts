@@ -3,6 +3,11 @@ import { describe, expect, it, vi } from 'vitest'
 import { JobOrder } from '../job-order/job-order.model.js'
 import { ScrapEntry } from './scrap-entry.model.js'
 import * as scrapService from './scrap-entry.service.js'
+import {
+  emitScrapEntryCreated,
+  emitScrapEntryUpdated,
+  emitScrapEntryDeleted,
+} from '../../jobs/events.js'
 
 vi.mock('../../jobs/events.js', () => ({
   emitScrapEntryCreated: vi.fn(),
@@ -302,6 +307,88 @@ describe('ScrapEntryService', () => {
     it('throws 404 for non-existent id', async () => {
       const fakeId = new Types.ObjectId().toString()
       await expect(scrapService.remove(fakeId)).rejects.toThrow('error.not_found')
+    })
+  })
+
+  // ── Emit verification ────────────────────────────────────────────────
+
+  describe('ScrapEntryEmit.create', () => {
+    it('calls emitScrapEntryCreated with id, jobOrderId, workCenterId as strings', async () => {
+      const jo = await createStartedJobOrder()
+      const doc = await scrapService.create(buildInput(jo._id.toString()), userId)
+
+      expect(emitScrapEntryCreated).toHaveBeenCalledWith(
+        doc._id.toString(),
+        doc.jobOrderId.toString(),
+        doc.workCenterId.toString(),
+      )
+    })
+
+    it('passes all three params as strings via .toString()', async () => {
+      const jo = await createStartedJobOrder()
+      const doc = await scrapService.create(buildInput(jo._id.toString()), userId)
+      const args = vi.mocked(emitScrapEntryCreated).mock.calls[0]
+
+      expect(typeof args[0]).toBe('string')
+      expect(typeof args[1]).toBe('string')
+      expect(typeof args[2]).toBe('string')
+    })
+  })
+
+  describe('ScrapEntryEmit.update', () => {
+    it('calls emitScrapEntryUpdated with id and pre-update routing fields', async () => {
+      const jo = await createStartedJobOrder()
+      const created = await scrapService.create(buildInput(jo._id.toString()), userId)
+      vi.mocked(emitScrapEntryUpdated).mockClear()
+
+      await scrapService.update(created._id.toString(), { amount: 10 }, userId)
+
+      expect(emitScrapEntryUpdated).toHaveBeenCalledWith(
+        created._id.toString(),
+        created.jobOrderId.toString(),
+        created.workCenterId.toString(),
+      )
+    })
+
+    it('uses pre-update document for routing fields, not post-update', async () => {
+      const jo = await createStartedJobOrder()
+      const created = await scrapService.create(buildInput(jo._id.toString()), userId)
+      vi.mocked(emitScrapEntryUpdated).mockClear()
+
+      await scrapService.update(created._id.toString(), { amount: 99 }, userId)
+
+      const args = vi.mocked(emitScrapEntryUpdated).mock.calls[0]
+      expect(args[1]).toBe(created.jobOrderId.toString())
+      expect(args[2]).toBe(created.workCenterId.toString())
+    })
+  })
+
+  describe('ScrapEntryEmit.remove', () => {
+    it('calls emitScrapEntryDeleted with id and routing fields from fetched doc', async () => {
+      const jo = await createStartedJobOrder()
+      const created = await scrapService.create(buildInput(jo._id.toString()), userId)
+      vi.mocked(emitScrapEntryDeleted).mockClear()
+
+      await scrapService.remove(created._id.toString())
+
+      expect(emitScrapEntryDeleted).toHaveBeenCalledWith(
+        created._id.toString(),
+        created.jobOrderId.toString(),
+        created.workCenterId.toString(),
+      )
+    })
+
+    it('reads routing fields from the document fetched before deletion', async () => {
+      const jo = await createStartedJobOrder()
+      const created = await scrapService.create(buildInput(jo._id.toString()), userId)
+      vi.mocked(emitScrapEntryDeleted).mockClear()
+
+      await scrapService.remove(created._id.toString())
+
+      expect(emitScrapEntryDeleted).toHaveBeenCalledOnce()
+      const args = vi.mocked(emitScrapEntryDeleted).mock.calls[0]
+      expect(args[1]).toBe(jo._id.toString())
+      expect(args[2]).toBe(wcId.toString())
     })
   })
 })

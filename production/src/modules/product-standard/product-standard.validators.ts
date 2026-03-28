@@ -9,7 +9,7 @@ export const createProductStandardSchema = z.object({
   idealOutputPerMinute: z.number().positive(),
   counterMultiplier: z.number().positive().nullable().optional(),
   idealSpeed: z.number().positive().nullable().optional(),
-})
+}).strict()
 
 export const patchProductStandardSchema = z
   .object({
@@ -17,6 +17,7 @@ export const patchProductStandardSchema = z
     counterMultiplier: z.number().positive().nullable().optional(),
     idealSpeed: z.number().positive().nullable().optional(),
   })
+  .strict()
   .refine(data => Object.keys(data).length > 0, { message: 'error.empty_patch' })
 
 export const productStandardIdParamSchema = z.object({ id: objectIdSchema })

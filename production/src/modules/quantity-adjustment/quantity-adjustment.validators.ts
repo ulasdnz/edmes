@@ -9,7 +9,7 @@ export const createQuantityAdjustmentSchema = z.object({
   time: z.coerce.date(),
   reason: z.string().max(200).nullable().optional(),
   description: z.string().max(500).nullable().optional(),
-})
+}).strict()
 
 export const patchQuantityAdjustmentSchema = z
   .object({
@@ -19,6 +19,7 @@ export const patchQuantityAdjustmentSchema = z
     reason: z.string().max(200).nullable().optional(),
     description: z.string().max(500).nullable().optional(),
   })
+  .strict()
   .refine(data => Object.keys(data).length > 0, { message: 'error.empty_patch' })
 
 export const quantityAdjustmentIdParamSchema = z.object({ id: objectIdSchema })

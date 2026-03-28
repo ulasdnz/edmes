@@ -3,7 +3,7 @@ import { objectIdSchema } from '../../utils/validators.js'
 
 export const ingestActionStateSchema = z.object({
   activeActions: z.array(z.enum(['downtime', 'operator', 'jobOrder', 'service'])).default([]),
-})
+}).strict()
 
 export const actionStateParamSchema = z.object({
   workCenterId: objectIdSchema,

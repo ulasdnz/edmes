@@ -9,7 +9,7 @@ const shiftSchema = z.object({
   startMinute: z.number().int().min(0).max(59),
   endHour: z.number().int().min(0).max(23),
   endMinute: z.number().int().min(0).max(59),
-})
+}).strict()
 
 // ── Weekly pattern ──────────────────────────────────────────────────────────
 
@@ -21,7 +21,7 @@ const weeklyPatternSchema = z.object({
   friday: z.array(shiftSchema).default([]),
   saturday: z.array(shiftSchema).default([]),
   sunday: z.array(shiftSchema).default([]),
-})
+}).strict()
 
 // ── Calendar schemas ────────────────────────────────────────────────────────
 
@@ -31,6 +31,7 @@ export const createCalendarSchema = z
     validTo: z.coerce.date(),
     weeklyPattern: weeklyPatternSchema,
   })
+  .strict()
   .refine(d => d.validFrom < d.validTo, {
     message: 'schedule.valid_from_before_valid_to',
     path: ['validTo'],
@@ -45,6 +46,7 @@ export const patchCalendarSchema = z
     status: z.enum(['active', 'retired']).optional(),
     weeklyPattern: weeklyPatternSchema.optional(),
   })
+  .strict()
   .refine(data => Object.keys(data).length > 0, {
     message: 'error.empty_patch',
   })
@@ -53,7 +55,7 @@ export const patchCalendarSchema = z
 
 export const upsertExceptionSchema = z.object({
   intervals: z.array(shiftSchema).default([]),
-})
+}).strict()
 
 // ── Param schemas ───────────────────────────────────────────────────────────
 

@@ -57,7 +57,7 @@ export const registerSchema = z
 export const loginSchema = z.object({
   email: emailSchema,
   password: passwordInputSchema,
-})
+}).strict()
 
 export const updateMeSchema = z
   .object({

@@ -11,7 +11,7 @@ export const createProductionPlanSchema = z.object({
   dueAt: z.coerce.date().nullable().optional(),
   description: z.string().max(500).nullable().optional(),
   props: z.record(z.string(), z.string()).optional(),
-})
+}).strict()
 
 export const patchProductionPlanSchema = z
   .object({
@@ -22,6 +22,7 @@ export const patchProductionPlanSchema = z
     description: z.string().max(500).nullable().optional(),
     props: z.record(z.string(), z.string()).optional(),
   })
+  .strict()
   .refine(data => Object.keys(data).length > 0, { message: 'error.empty_patch' })
 
 export const productionPlanIdParamSchema = z.object({ id: objectIdSchema })

@@ -8,6 +8,7 @@ import { ScrapEntry } from '../scrap-entry/scrap-entry.model.js'
 import { Uom } from '../uom/uom.model.js'
 import { JobOrder } from './job-order.model.js'
 import * as service from './job-order.service.js'
+import { emitJobOrderUpdated } from '../../jobs/events.js'
 
 vi.mock('../../jobs/events.js', () => ({
   emitJobOrderCreated: vi.fn(),
@@ -714,6 +715,137 @@ describe('JobOrderService', () => {
       expect(codes).toContain('JO-WIN-1')
       expect(codes).toContain('JO-WIN-2')
       expect(codes).not.toContain('JO-WIN-3')
+    })
+  })
+
+  // ── Emit verification ────────────────────────────────────────────────
+
+  describe('JobOrderEmit.updateWithPreviousWorkCenterId', () => {
+    it('passes previousWorkCenterId when workCenterId changes', async () => {
+      const newWcId = new Types.ObjectId()
+      await ProductStandard.create({
+        productId: defaultProductId,
+        workCenterId: newWcId,
+        validFrom: new Date('2020-01-01'),
+        idealOutputPerMinute: 10,
+        counterMultiplier: 2,
+        createdBy: userId,
+      })
+      mockGetWorkCenterInfo.mockResolvedValueOnce({ type: 'physical', productivityMode: 'count_based' })
+      const jo = await service.create(buildInput(), userId)
+      vi.mocked(emitJobOrderUpdated).mockClear()
+
+      mockGetWorkCenterInfo.mockResolvedValueOnce({ type: 'physical', productivityMode: 'count_based' })
+      await service.update(jo._id.toString(), { workCenterId: newWcId.toString() }, userId)
+
+      expect(emitJobOrderUpdated).toHaveBeenCalledWith(
+        jo._id.toString(),
+        newWcId.toString(),
+        workCenterId.toString(),
+      )
+    })
+
+    it('passes undefined previousWorkCenterId when update omits workCenterId', async () => {
+      const jo = await service.create(buildInput(), userId)
+      vi.mocked(emitJobOrderUpdated).mockClear()
+
+      await service.update(jo._id.toString(), { description: 'new desc' }, userId)
+
+      expect(emitJobOrderUpdated).toHaveBeenCalledWith(
+        jo._id.toString(),
+        workCenterId.toString(),
+        undefined,
+      )
+    })
+
+    it('only sets previousWorkCenterId when data.workCenterId is truthy AND differs', async () => {
+      const newWcId = new Types.ObjectId()
+      await ProductStandard.create({
+        productId: defaultProductId,
+        workCenterId: newWcId,
+        validFrom: new Date('2020-01-01'),
+        idealOutputPerMinute: 10,
+        counterMultiplier: 2,
+        createdBy: userId,
+      })
+      mockGetWorkCenterInfo.mockResolvedValueOnce({ type: 'physical', productivityMode: 'count_based' })
+      const jo = await service.create(buildInput(), userId)
+      vi.mocked(emitJobOrderUpdated).mockClear()
+
+      mockGetWorkCenterInfo.mockResolvedValueOnce({ type: 'physical', productivityMode: 'count_based' })
+      await service.update(jo._id.toString(), { workCenterId: newWcId.toString() }, userId)
+
+      const args = vi.mocked(emitJobOrderUpdated).mock.calls[0]
+      expect(args[2]).toBe(workCenterId.toString())
+    })
+
+    it('uses string-based comparison for workCenterId change detection', async () => {
+      const jo = await service.create(buildInput(), userId)
+      vi.mocked(emitJobOrderUpdated).mockClear()
+
+      // Same value as string → no previousWorkCenterId
+      await service.update(jo._id.toString(), { workCenterId: workCenterId.toString() }, userId)
+
+      const args = vi.mocked(emitJobOrderUpdated).mock.calls[0]
+      expect(args[2]).toBeUndefined()
+    })
+
+    it('still includes current workCenterId in emit even when PATCH omits workCenterId', async () => {
+      const jo = await service.create(buildInput(), userId)
+      vi.mocked(emitJobOrderUpdated).mockClear()
+
+      await service.update(jo._id.toString(), { targetQuantity: 200 }, userId)
+
+      const args = vi.mocked(emitJobOrderUpdated).mock.calls[0]
+      expect(args[1]).toBe(workCenterId.toString())
+    })
+
+    it('passes undefined previousWorkCenterId when same workCenterId is sent', async () => {
+      const jo = await service.create(buildInput(), userId)
+      vi.mocked(emitJobOrderUpdated).mockClear()
+
+      await service.update(
+        jo._id.toString(),
+        { workCenterId: workCenterId.toString() },
+        userId,
+      )
+
+      expect(emitJobOrderUpdated).toHaveBeenCalledWith(
+        jo._id.toString(),
+        workCenterId.toString(),
+        undefined,
+      )
+    })
+
+    it('passes undefined previousWorkCenterId when workCenterId is undefined in payload', async () => {
+      const jo = await service.create(buildInput(), userId)
+      vi.mocked(emitJobOrderUpdated).mockClear()
+
+      await service.update(jo._id.toString(), { description: 'test' }, userId)
+
+      const args = vi.mocked(emitJobOrderUpdated).mock.calls[0]
+      expect(args[2]).toBeUndefined()
+    })
+
+    it('passes old workCenterId as previousWorkCenterId when new valid ObjectId string is sent', async () => {
+      const newWcId = new Types.ObjectId()
+      await ProductStandard.create({
+        productId: defaultProductId,
+        workCenterId: newWcId,
+        validFrom: new Date('2020-01-01'),
+        idealOutputPerMinute: 10,
+        counterMultiplier: 2,
+        createdBy: userId,
+      })
+      mockGetWorkCenterInfo.mockResolvedValueOnce({ type: 'physical', productivityMode: 'count_based' })
+      const jo = await service.create(buildInput(), userId)
+      vi.mocked(emitJobOrderUpdated).mockClear()
+
+      mockGetWorkCenterInfo.mockResolvedValueOnce({ type: 'physical', productivityMode: 'count_based' })
+      await service.update(jo._id.toString(), { workCenterId: newWcId.toString() }, userId)
+
+      const args = vi.mocked(emitJobOrderUpdated).mock.calls[0]
+      expect(args[2]).toBe(workCenterId.toString())
     })
   })
 })
