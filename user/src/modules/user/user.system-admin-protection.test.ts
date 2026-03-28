@@ -23,7 +23,7 @@ const createSystemAdminFixture = async () => {
     email: 'system@factory.local',
     name: 'System',
     surname: 'Admin',
-    password: await bcrypt.hash('Test123456', 10),
+    password: await bcrypt.hash('Test123456', 1),
     roles: [role._id.toString()],
     isActivated: true,
   })
