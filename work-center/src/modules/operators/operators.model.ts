@@ -16,8 +16,11 @@ const operatorCheckInSchema = new Schema(
   { timestamps: true, strict: true },
 )
 
-// Compound index for duplicate active check-in prevention + querying
-operatorCheckInSchema.index({ workCenterId: 1, operatorId: 1, checkedOutAt: 1 })
+// Partial unique index: only one active (checkedOutAt: null) check-in per operator per work center
+operatorCheckInSchema.index(
+  { workCenterId: 1, operatorId: 1 },
+  { unique: true, partialFilterExpression: { checkedOutAt: null } },
+)
 
 operatorCheckInSchema.set('toObject', {
   virtuals: true,

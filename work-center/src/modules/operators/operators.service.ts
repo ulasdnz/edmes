@@ -41,7 +41,16 @@ export async function checkIn(
     updatedBy: new Types.ObjectId(userId),
   })
 
-  const saved = await doc.save()
+  let saved: IOperatorCheckIn
+  try {
+    saved = await doc.save()
+  } catch (err: unknown) {
+    if (err instanceof Error && 'code' in err && (err as { code: number }).code === 11000) {
+      throw new CustomError(409, 'operators.duplicate_active_checkin')
+    }
+    throw err
+  }
+
   await emitOperatorCheckedIn(workCenterId, data.operatorId, String(saved._id))
   return saved
 }

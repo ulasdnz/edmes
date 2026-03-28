@@ -14,59 +14,75 @@ const shiftIdsSchema = z.array(objectIdSchema)
 
 // ── Tag bindings (physical) ──────────────────────────────────────────────────
 
-const tagBindingsSchema = z.object({
-  productionCounterTagId: objectIdSchema,
-  runModeTagId: objectIdSchema,
-  speedTagId: objectIdSchema.nullable().optional(),
-}).strict()
+const tagBindingsSchema = z
+  .object({
+    productionCounterTagId: objectIdSchema,
+    runModeTagId: objectIdSchema,
+    speedTagId: objectIdSchema.nullable().optional(),
+  })
+  .strict()
 
 // ── Action settings (physical, requires attentionSignalTagId) ────────────────
 
-const actionSettingsSchema = z.object({
-  jobOrderMissingThresholdMs: z.number().int().min(0),
-  operatorMissingThresholdMs: z.number().int().min(0),
-  uncausedDowntimeThresholdMs: z.number().int().min(0),
-  downtimeConfirmationDeadlineMs: z.number().int().min(0),
-  serviceOverrunThresholdMs: z.number().int().min(0),
-}).strict()
+const actionSettingsSchema = z
+  .object({
+    jobOrderMissingThresholdMs: z.number().int().min(0),
+    operatorMissingThresholdMs: z.number().int().min(0),
+    uncausedDowntimeThresholdMs: z.number().int().min(0),
+    downtimeConfirmationDeadlineMs: z.number().int().min(0),
+    serviceOverrunThresholdMs: z.number().int().min(0),
+  })
+  .strict()
 
 // ── Metric composition (virtual) ─────────────────────────────────────────────
 
-const contributorSchema = z.object({
-  workCenterId: objectIdSchema,
-  weight: z.number().min(0).max(1).optional(),
-}).strict()
+const contributorSchema = z
+  .object({
+    workCenterId: objectIdSchema,
+    weight: z.number().min(0).max(1).optional(),
+  })
+  .strict()
 
 const compositionRuleSchema = z.discriminatedUnion('rule', [
-  z.object({
-    rule: z.literal('primary_work_center'),
-    contributors: z.array(contributorSchema).length(1),
-  }).strict(),
-  z.object({
-    rule: z.literal('average'),
-    contributors: z.array(contributorSchema).min(2),
-  }).strict(),
-  z.object({
-    rule: z.literal('weighted'),
-    contributors: z
-      .array(
-        z.object({
-          workCenterId: objectIdSchema,
-          weight: z.number().min(0).max(1),
-        }).strict(),
-      )
-      .min(2)
-      .refine(cs => Math.abs(cs.reduce((sum, c) => sum + c.weight, 0) - 1) <= 0.001, {
-        message: 'work_center.composition_weights_must_sum_to_one',
-      }),
-  }).strict(),
+  z
+    .object({
+      rule: z.literal('primary_work_center'),
+      contributors: z.array(contributorSchema).length(1),
+    })
+    .strict(),
+  z
+    .object({
+      rule: z.literal('average'),
+      contributors: z.array(contributorSchema).min(2),
+    })
+    .strict(),
+  z
+    .object({
+      rule: z.literal('weighted'),
+      contributors: z
+        .array(
+          z
+            .object({
+              workCenterId: objectIdSchema,
+              weight: z.number().min(0).max(1),
+            })
+            .strict(),
+        )
+        .min(2)
+        .refine(cs => Math.abs(cs.reduce((sum, c) => sum + c.weight, 0) - 1) <= 0.001, {
+          message: 'work_center.composition_weights_must_sum_to_one',
+        }),
+    })
+    .strict(),
 ])
 
-const metricCompositionSchema = z.object({
-  availability: compositionRuleSchema,
-  productivity: compositionRuleSchema,
-  quality: compositionRuleSchema,
-}).strict()
+const metricCompositionSchema = z
+  .object({
+    availability: compositionRuleSchema,
+    productivity: compositionRuleSchema,
+    quality: compositionRuleSchema,
+  })
+  .strict()
 
 // ── Partial composition (for PATCH per-family merge) ─────────────────────────
 
@@ -102,7 +118,6 @@ const physicalCreateSchema = z
     actionSettings: actionSettingsSchema.optional(),
     microStopThresholdMs: z.number().int().min(0).optional(),
   })
-  .strict()
   .refine(
     data => {
       if (data.productivityMode === 'speed_based') {
@@ -129,7 +144,7 @@ const virtualCreateSchema = z.object({
   ...baseCreateFields,
   type: z.literal('virtual'),
   metricComposition: metricCompositionSchema.nullable().optional(),
-}).strict()
+})
 
 export const createWorkCenterSchema = z.discriminatedUnion('type', [
   physicalCreateSchema,
@@ -176,15 +191,17 @@ const physicalReplaceSchema = z
     },
   )
 
-const virtualReplaceSchema = z.object({
-  code: codeSchema,
-  name: nameSchema,
-  description: descriptionSchema.optional(),
-  parentWorkCenterId: objectIdSchema.nullable().optional(),
-  props: propsSchema.optional(),
-  shiftIds: shiftIdsSchema.optional(),
-  metricComposition: metricCompositionSchema.nullable().optional(),
-}).strict()
+const virtualReplaceSchema = z
+  .object({
+    code: codeSchema,
+    name: nameSchema,
+    description: descriptionSchema.optional(),
+    parentWorkCenterId: objectIdSchema.nullable().optional(),
+    props: propsSchema.optional(),
+    shiftIds: shiftIdsSchema.optional(),
+    metricComposition: metricCompositionSchema.nullable().optional(),
+  })
+  .strict()
 
 export { physicalReplaceSchema, virtualReplaceSchema }
 
