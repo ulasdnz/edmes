@@ -77,6 +77,30 @@ services:
       timeout: 5s
       retries: 5
 
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: mosquitto_dev
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:1883:1883"
+    volumes:
+      - ./infra/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./infra/mosquitto/password_file:/mosquitto/config/password_file:ro
+      - mosquitto_data:/mosquitto/data
+    networks:
+      - mes_network
+    healthcheck:
+      test: ["CMD", "mosquitto_pub", "-h", "localhost", "-u", "health", "-P", "health", "-t", "_healthcheck", "-m", "ok", "-q", "1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
+
   user:
     build:
       context: .
@@ -373,3 +397,4 @@ volumes:
   loki_data:
   grafana_data:
   promtail_positions:
+  mosquitto_data:
