@@ -82,7 +82,7 @@ services:
     container_name: mosquitto_dev
     restart: unless-stopped
     ports:
-      - "127.0.0.1:1883:1883"
+      - "1883:1883"
     volumes:
       - ./infra/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
       - ./infra/mosquitto/password_file:/mosquitto/config/password_file:ro

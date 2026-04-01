@@ -26,7 +26,7 @@ mosquitto:
   container_name: mosquitto_dev
   restart: unless-stopped
   ports:
-    - "127.0.0.1:1883:1883"
+    - "1883:1883"
   volumes:
     - ./infra/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
     - ./infra/mosquitto/password_file:/mosquitto/config/password_file:ro
@@ -52,7 +52,7 @@ volumes:
   mosquitto_data:
 ```
 
-Port `127.0.0.1` ile sinirli — sadece localhost'tan erisim. Fabrika cihazlari dogrudan baglanacaksa `0.0.0.0:1883:1883` yapilir.
+Port tum interface'lere acik — fabrika agindaki cihazlar (PLC gateway, Fledge, SCADA) dogrudan sunucu IP'si uzerinden baglanabilir.
 
 ## Mosquitto Config
 
