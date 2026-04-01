@@ -90,7 +90,7 @@ services:
     networks:
       - mes_network
     healthcheck:
-      test: ["CMD", "mosquitto_pub", "-h", "localhost", "-u", "health", "-P", "health", "-t", "_healthcheck", "-m", "ok", "-q", "1"]
+      test: ["CMD", "mosquitto_pub", "-h", "127.0.0.1", "-u", "health", "-P", "dev123", "-t", "_healthcheck", "-m", "ok", "-q", "1"]
       interval: 10s
       timeout: 5s
       retries: 5
