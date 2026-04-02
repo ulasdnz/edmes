@@ -1,0 +1,23 @@
+import { defineConfig } from 'vitest/config'
+
+export default defineConfig({
+  test: {
+    globals: true,
+    environment: 'node',
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'json', 'html'],
+    },
+    include: ['src/**/*.{test,spec}.ts'],
+    env: {
+      NODE_ENV: 'test',
+      MONGO_URI: 'mongodb://localhost:27017/test',
+      JWT_SECRET: 'test_secret',
+      REDIS_URL: 'redis://localhost:6379',
+      INTERNAL_API_USER: 'http://localhost:3000',
+      MQTT_URL: 'mqtt://localhost:1883',
+      MQTT_USERNAME: 'test',
+      MQTT_PASSWORD: 'test',
+    },
+  },
+})

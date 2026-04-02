@@ -1,0 +1,13 @@
+{
+  "success": {
+    "create": "Created successfully",
+    "update": "Updated successfully",
+    "delete": "Deleted successfully"
+  },
+  "error": {
+    "unexpected": "An unexpected error occurred.",
+    "validation_failed": "Validation failed.",
+    "duplicate_entry": "This {{field}} is already in use.",
+    "invalid_id": "Invalid identifier."
+  }
+}

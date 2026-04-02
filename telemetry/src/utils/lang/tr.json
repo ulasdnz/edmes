@@ -1,0 +1,13 @@
+{
+  "success": {
+    "create": "Basariyla olusturuldu",
+    "update": "Basariyla guncellendi",
+    "delete": "Basariyla silindi"
+  },
+  "error": {
+    "unexpected": "Beklenmeyen bir hata olustu.",
+    "validation_failed": "Dogrulama hatasi.",
+    "duplicate_entry": "Bu {{field}} zaten kullanimda.",
+    "invalid_id": "Gecersiz kimlik."
+  }
+}

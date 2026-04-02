@@ -5,6 +5,7 @@ packages:
   - work-center
   - production
   - realtime
+  - telemetry
 
 ignoredBuiltDependencies:
   - '@scarf/scarf'
