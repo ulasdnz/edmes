@@ -17,7 +17,7 @@
 - `Node`: Ayri bir entity degil — tag binding'deki `nodeId` string'idir. Kullanilabilir node listesi MQTT discovery'den in-memory cache'e alinir ve API uzerinden sunulur.
 - `TagType`: Tekrar kullanilabilen ortak tag metadata sablonudur. unit, displayColor ve manualEntryMode gibi alanlar icerir.
 - `Tag`: Gercek saha sinyalidir. Adi, davranisi, bagli oldugu node, hassasiyet, retention ve historian politikasi burada tanimlanir.
-- `Binding`: Tag'in hangi dis kaynaktan beslendigini tanimlar. `deviceId` ve `nodeId` icerir; her ikisi de opsiyoneldir (binding'siz tag'ler REST uzerinden deger alir).
+- `Binding`: Tag'in hangi MQTT kaynagina baglandigini tanimlar. `deviceKey` (EdgeDevice'in external MQTT kimlik anahtari) ve opsiyonel `nodeId` icerir. Binding'siz tag'ler REST uzerinden deger alir.
 - `HistorianSample`: Tarihsel olcum kaydidir. Per-tag collection'da saklanir.
 - `CurrentState`: History tutulmayan tag'ler icin son durum kaydidir. Shared collection'da saklanir.
 
@@ -55,7 +55,7 @@ Her tag en az su alanlari tasir:
 - `writable` (cihaza yazma komutu gonderilip gonderilemeyecegi, default false)
 - `showOnGraph`
 - `retentionPolicy`
-- `binding` ({ deviceId, nodeId })
+- `binding` ({ deviceKey, nodeId? }) — deviceKey = EdgeDevice.deviceKey, nodeId opsiyonel
 - `props` (serbest metadata)
 
 ## 6. Historian Sample Schema
@@ -115,8 +115,8 @@ Bir tag'in ilk sample'inda predecessor yoktur. `prevValue`, `prevTs` (ve counter
 
 ### Binding Lookup Cache
 
-- MQTT subscriber her mesajda `deviceId + nodeId` → `Tag` eslesmesi yapar. Bu lookup saniyede yuzlerce kez olacagi icin in-process cache gerekir.
-- Cache yapisi: `Map<"deviceId:nodeId", Tag>`
+- MQTT subscriber her mesajda `deviceKey + nodeId` → `Tag` eslesmesi yapar. Bu lookup saniyede yuzlerce kez olacagi icin in-process cache gerekir.
+- Cache yapisi: `Map<"deviceKey:nodeId", Tag>`
 - Tag CRUD islemlerinde (create/update/delete binding) cache senkron guncellenir.
 - Eslesmesi olmayan mesajlar sessizce drop edilir (log yazilmaz — yuksek throughput'ta log spam'i onlenir).
 
@@ -153,13 +153,31 @@ Bir tag'in ilk sample'inda predecessor yoktur. `prevValue`, `prevTs` (ve counter
 
 ## 8. Query Capabilities
 
-- Ham range sorgusu desteklenir.
-- Compact short-values sorgusu desteklenir.
-- Tag count sorgusu desteklenir.
-- Numeric arithmetic statistics desteklenir: `min`, `max`, `mean`, `variance`, `stddev`.
-- Bucketed time-series sorgusu desteklenir.
-- Desteklenen aggregation turleri: `average`, `last`, `first`, `sum`, `min`, `max`.
-- Bos bucket'larda carry-forward son bilinen deger kurali uygulanir.
+### Endpoints
+
+| Endpoint | Amac | Onceki deger davranisi |
+|---|---|---|
+| `GET /historian/:tagId/compact-values` | Compact timeline `[{ t, v }]` | Her zaman prepend (stateful timeline) |
+| `GET /historian/:tagId/samples` | Ham range sorgusu (paginated) | Opsiyonel: `?previous=true` |
+| `GET /historian/:tagId/count` | Aralik icindeki sample sayisi | Yok |
+| `GET /historian/:tagId/stats` | min, max, mean, variance, stddev | Yok |
+| `GET /historian/:tagId/produced` | Reset-aware kumulatif hesap | Hesapta kullanilir, response'a eklenmez |
+| `GET /historian/:tagId/speed-avg` | Stepwise-hold agirlikli ort. | Hesapta kullanilir, response'a eklenmez |
+| `GET /historian/:tagId/state-durations` | Durum gecis timeline'i | Hesapta kullanilir (initial state), ayri item dondurulmez |
+| `GET /historian/:tagId/rollup` | Bucketed time-series | Carry-forward icin kullanilir, ayri item dondurulmez |
+
+Tum range endpoint'leri `from` ve `to` query parametreleri alir. Rollup ek olarak `interval` (bucket boyutu, orn: `5m`, `1h`) ve `fn` (aggregation fonksiyonu) alir.
+
+### Onceki Deger Kurali
+
+Timeline veren endpoint'ler (compact-values, samples w/ opt-in) range baslangicinin oncesindeki son sample'i response'a prepend eder. Grafik cizerken veya dis servislerden cagrildiginda baslangic state'i dogrudan response'ta olur — ayrica sorgu gerekmez.
+
+Hesap yapan endpoint'ler (produced, speed-avg, state-durations) onceki degeri icsel olarak kullanir ama response'a ayri item olarak eklemez. Rollup endpoint'i onceki degeri bos bucket'larda carry-forward icin kullanir.
+
+### Diger Kurallar
+
+- Desteklenen rollup fonksiyonlari (`fn`): `average`, `last`, `first`, `sum`, `min`, `max`.
+- Bos bucket'larda carry-forward: son bilinen deger kurali uygulanir.
 
 ## 9. Counter Calculation Rules
 
@@ -245,6 +263,7 @@ weighted avg speed = 1520 / 16sn = 95
 ## 12. Historian Integrity Rules
 
 - Period closure lock oncesindeki historian verisi degistirilemez.
+- Period closure enforcement: Ingestion pipeline (hem MQTT hem REST write path), sample'in `time` degeri locked period icindeyse yazimi reddeder. Lock state, period closure event'leri uzerinden (`events.production` veya ilgili stream) consume edilir ve in-memory tutulur.
 - Historian iceren tag'lerde silme islemi historian butunlugunu bozmayacak sekilde yonetilmelidir.
 - Tag behavior, veri toplama basladiktan sonra fiilen sabit kabul edilmelidir.
 - Ayni tag icin binding degisse bile gecmis historian kimligi bozulmamalidir.
@@ -261,8 +280,9 @@ weighted avg speed = 1520 / 16sn = 95
 
 - Saha agindaki bir Node-RED instance'ini temsil eder.
 - **Authoritative olarak admin tarafindan olusturulur** — MQTT discovery EdgeDevice auto-create etmez.
-- Alanlar: isim, IP adresi, aciklama, durum.
-- MQTT uzerinden online/offline durumu izlenir (LWT).
+- Alanlar: isim, IP adresi, aciklama, durum, `deviceKey`.
+- `deviceKey`: Unique, immutable, slug-format external identifier. MQTT topic'lerinde ve binding'lerde EdgeDevice'i tanimlamak icin kullanilir. Format: `^[a-z0-9][a-z0-9-]*[a-z0-9]$` (ornek: `press-line-1`, `cnc-03`). Olusturulduktan sonra degistirilemez.
+- MQTT uzerinden online/offline durumu izlenir (LWT). LWT status degisiklikleri EdgeDevice kaydinda `status` alanina persist edilir (sadece in-memory degil).
 - Node-RED'in kendi web UI'ina erisim icin IP bilgisi sunulur.
 - `createdBy`, `updatedBy`, `createdAt`, `updatedAt` standart audit alanlari.
 
@@ -278,8 +298,8 @@ weighted avg speed = 1520 / 16sn = 95
 
 | Topic | Amac | Yon |
 |-------|------|-----|
-| `discovery/{edgeNodeId}/manifest` | Device ve node listesi (retained) | Subscribe |
-| `discovery/{edgeNodeId}/status` | Online/offline (LWT ile otomatik) | Subscribe |
+| `discovery/{deviceKey}/manifest` | Device ve node listesi (retained) | Subscribe |
+| `discovery/{deviceKey}/status` | Online/offline (LWT ile otomatik) | Subscribe |
 
 Node-RED startup'ta manifest publish eder, graceful shutdown veya baglanti kopmasinda LWT ile offline status yayinlanir. Discovery verileri UI'da gosterilir ancak otomatik entity olusturmaz.
 
@@ -287,14 +307,14 @@ Node-RED startup'ta manifest publish eder, graceful shutdown veya baglanti kopma
 
 | Topic | Amac | Yon |
 |-------|------|-----|
-| `devices/{deviceId}/nodes/{nodeId}` | Ham tag verileri | Subscribe |
+| `devices/{deviceKey}/nodes/{nodeId}` | Ham tag verileri | Subscribe |
 
 **Payload:**
 ```json
 { "time": "2026-04-01T10:00:00.000Z", "value": 421 }
 ```
 
-Servis `devices/+/nodes/+` wildcard subscribe yapar. Gelen mesajdaki `deviceId + nodeId` ile eslesen tag'i binding lookup cache'ten bulur ve ingestion pipeline'a sokar. Eslesmesi olmayan mesajlar sessizce drop edilir.
+Servis `devices/+/nodes/+` wildcard subscribe yapar. Gelen mesajdaki `deviceKey + nodeId` ile eslesen tag'i binding lookup cache'ten bulur ve ingestion pipeline'a sokar. Eslesmesi olmayan mesajlar sessizce drop edilir.
 
 ### MQTT Connection Requirements
 
@@ -317,10 +337,10 @@ Servis `devices/+/nodes/+` wildcard subscribe yapar. Gelen mesajdaki `deviceId +
 
 - Endpoint: `POST /tags/:id/command` — `{ value }` payload.
 - Validasyon: tag var mi, `writable: true` mi, value tipi uygun mu (number | boolean). Ingestion seviyesinde validasyon yapilmaz.
-- Tag'in binding'indeki `deviceId` uzerinden EdgeDevice registry'den IP adresi alinir.
+- Tag'in binding'indeki `deviceKey` uzerinden `EdgeDevice.findOne({ deviceKey })` ile IP adresi alinir.
 - Node-RED uzerindeki HTTP endpoint'e senkron istek atilir (ornek: `POST http://{edgeDeviceIp}:1880/api/nodes/{nodeId}/write`).
 - Node-RED gelen istegi OPC-UA/Modbus uzerinden PLC'ye yazar. Basari/hata senkron doner.
-- Historian kaydi **burada olusmaz**. Cihaz degeri degistirip normal telemetry yoluyla (`devices/{deviceId}/nodes/{nodeId}` MQTT topic) publish ederse, standart ingestion pipeline ile kaydedilir.
+- Historian kaydi **burada olusmaz**. Cihaz degeri degistirip normal telemetry yoluyla (`devices/{deviceKey}/nodes/{nodeId}` MQTT topic) publish ederse, standart ingestion pipeline ile kaydedilir.
 
 ## 17. Redis Streams Events
 
