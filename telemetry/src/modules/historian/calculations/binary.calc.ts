@@ -21,12 +21,12 @@ export const calculateStateDurations = async (
   const collection = mongoose.connection.db!.collection(collectionName)
 
   const baseline = await collection.findOne<BinaryDoc>(
-    { occurredAt: { $lte: rangeStart } },
+    { occurredAt: { $lt: rangeStart } },
     { sort: { occurredAt: -1 } },
   )
 
   const docs = await collection
-    .find<BinaryDoc>({ occurredAt: { $gt: rangeStart, $lte: rangeEnd } })
+    .find<BinaryDoc>({ occurredAt: { $gte: rangeStart, $lte: rangeEnd } })
     .sort({ occurredAt: 1 })
     .toArray()
 

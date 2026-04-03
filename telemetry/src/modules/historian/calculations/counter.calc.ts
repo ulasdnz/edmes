@@ -4,6 +4,7 @@ interface CounterDoc {
   occurredAt: Date
   value: number
   prevValue: number | null
+  prevTs: Date | null
   prev2Value: number | null
   reset: boolean
 }
@@ -17,12 +18,12 @@ export const calculateProduced = async (
   const collection = mongoose.connection.db!.collection(collectionName)
 
   const baseline = await collection.findOne<CounterDoc>(
-    { occurredAt: { $lte: rangeStart } },
+    { occurredAt: { $lt: rangeStart } },
     { sort: { occurredAt: -1 } },
   )
 
   const docs = await collection
-    .find<CounterDoc>({ occurredAt: { $gt: rangeStart, $lte: rangeEnd } })
+    .find<CounterDoc>({ occurredAt: { $gte: rangeStart, $lte: rangeEnd } })
     .sort({ occurredAt: 1 })
     .toArray()
 
@@ -41,7 +42,7 @@ export const calculateProduced = async (
   }
 
   const peakSum = docs
-    .filter(d => d.reset && d.prev2Value != null)
+    .filter(d => d.reset && d.prev2Value != null && d.prevTs != null && d.prevTs >= rangeStart)
     .reduce((sum, d) => sum + d.prev2Value!, 0)
 
   return normalDelta + peakSum

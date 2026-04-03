@@ -14,12 +14,12 @@ export const calculateSpeedAvg = async (
   const collection = mongoose.connection.db!.collection(collectionName)
 
   const baseline = await collection.findOne<SpeedDoc>(
-    { occurredAt: { $lte: rangeStart } },
+    { occurredAt: { $lt: rangeStart } },
     { sort: { occurredAt: -1 } },
   )
 
   const docs = await collection
-    .find<SpeedDoc>({ occurredAt: { $gt: rangeStart, $lte: rangeEnd } })
+    .find<SpeedDoc>({ occurredAt: { $gte: rangeStart, $lte: rangeEnd } })
     .sort({ occurredAt: 1 })
     .toArray()
 
