@@ -198,6 +198,19 @@ Types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`
 - **Contract tests**: Vitest + `testcontainers` (real MongoDB in Docker). Config: `vitest.contract.config.ts`.
 - `@mes/testing` provides shared utilities (source-only, no build needed).
 
+### Test Philosophy (CRITICAL — READ THIS FIRST)
+
+**The purpose of testing is to catch bugs that would happen in production.** Tests must replicate production conditions as closely as possible. When a test passes but production would fail, the test is lying — and a lying test is worse than no test at all.
+
+**Target: zero production errors.** Every test should ask: "Would this catch a real production bug?" If the answer is no, the test is wasting time. If a test hides a real problem, it is actively harmful.
+
+**Rules:**
+- **Write tests the way production behaves.** Use real infrastructure (testcontainers) over mocks wherever possible. Test edge cases that production will encounter. Never simplify away the conditions that would cause production failures.
+- **Never mock infrastructure to hide connection/config issues.** If a service function calls Redis/MQTT/etc. and tests hang because the dependency isn't available, the fix is to configure the dependency properly (e.g., ioredis `enableOfflineQueue: false` so commands fail fast) — not to mock the module away. Mocking hides the bug, the bug ships to production, production crashes.
+- **Never use `passWithNoTests`** or similar flags to skip test failures. If there are no tests, the test command should fail.
+- **Never change test expectations to match broken implementations.** If the test matches the spec and the implementation fails, that is an implementation bug — report it, don't hide it.
+- **A green CI that hides problems is worse than a red CI that exposes them.** The goal is production reliability, not green checkmarks.
+
 ## Docker
 
 - Two-phase build: `tsc -b` for packages, then service-level `tsc`.

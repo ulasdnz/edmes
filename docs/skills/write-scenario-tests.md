@@ -6,6 +6,12 @@ type: workflow
 
 # write-scenario-tests
 
+## Test Philosophy (CRITICAL — READ BEFORE WRITING ANY TEST)
+
+**The purpose of testing is to catch bugs that would happen in production. Target: zero production errors.**
+
+Tests must replicate production conditions as closely as possible. Every test should ask: "Would this catch a real production bug?" If a test passes but production would fail, the test is lying — and a lying test is actively harmful. Never mock infrastructure to hide real issues, never change expectations to match broken implementations, never use flags to suppress failures. Use real infrastructure (testcontainers), test real edge cases, and let failures expose real bugs. A red test that finds a real bug is infinitely more valuable than a green test that hides one.
+
 ## Purpose
 
 Write tests that verify the implementation against the spec — not against what the code happens to do.
@@ -145,6 +151,27 @@ Missing scenarios (not in scenarios file — add to scenarios file if needed):
 (none)
 
 Next step: Fix the 2 bugs in the implementation, then run pnpm --filter <service> test
+```
+
+## Test Integrity — ABSOLUTE RULE
+
+**Never paper over bugs to make tests pass.** This is the single most important rule in this skill. Violations of this rule cause production outages.
+
+- **Do NOT mock infrastructure to hide connection/config issues.** If a service function calls Redis/MQTT/etc. and tests hang because the dependency isn't available, the fix is to configure the dependency properly (e.g., `enableOfflineQueue: false` so ioredis commands fail fast instead of hanging) — not to mock the module and pretend the problem doesn't exist.
+- **Do NOT use `passWithNoTests`, `--bail false`, or any flag that turns failures into passes.**
+- **Do NOT change test expectations to match broken implementations.** If the test matches the spec and the implementation fails, that is an implementation bug — file it, don't hide it.
+- **Every test failure is a signal.** Diagnose the root cause. If the root cause is in infrastructure config, fix the config. If it's in the implementation, report it as a bug. If it's in test setup, fix the setup. Never suppress the signal.
+
+**Example of what NOT to do:**
+```typescript
+// ❌ WRONG — hides the fact that Redis hangs when unavailable
+vi.mock('../../jobs/events.js', () => ({
+  emitRoleUpdated: vi.fn(),
+}))
+
+// ✅ RIGHT — fix the Redis client config so commands fail fast
+// In redis.ts: new Redis({ ...opts, enableOfflineQueue: false })
+// Now the try/catch in emit() actually catches the error
 ```
 
 ## What This Skill Does NOT Do
