@@ -614,5 +614,12 @@ export async function hardDeleteWorkCenter(id: string): Promise<void> {
 
 function addToCreatorVisibility(userId: string, workCenterId: string): void {
   // Best-effort, fire-and-forget — don't await
-  addWorkCenterToUser(userId, workCenterId).catch(() => {})
+  addWorkCenterToUser(userId, workCenterId).catch(err => {
+    logger.warn('Failed to add work center to creator visibility', {
+      event: 'work_center.visibility.sync_failed',
+      userId,
+      workCenterId,
+      error: err instanceof Error ? err.message : err,
+    })
+  })
 }

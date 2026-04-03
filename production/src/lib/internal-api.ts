@@ -8,7 +8,7 @@ async function fetchInternal(
   path: string,
   options?: RequestInit,
 ): Promise<Response> {
-  return fetch(`${baseUrl}${path}`, {
+  return fetch(`${baseUrl}/internal/v1${path}`, {
     ...options,
     headers: { 'Content-Type': 'application/json', ...options?.headers },
   })

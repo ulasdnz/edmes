@@ -1,5 +1,6 @@
 import { CustomError } from '@mes/core'
 import { emitProductCreated, emitProductDeleted, emitProductUpdated } from '../../jobs/events.js'
+import { logger } from '../../lib/logger.js'
 import { type PaginatedResult, paginate } from '../../utils/pagination.js'
 import { ProductCategory } from '../product-category/product-category.model.js'
 import { Uom } from '../uom/uom.model.js'
@@ -66,7 +67,12 @@ export async function update(id: string, data: PatchProductInput): Promise<IProd
 function safeCountDocuments(modelName: string, filter: Record<string, unknown>): Promise<number> {
   try {
     return mongoose.model(modelName).countDocuments(filter) as Promise<number>
-  } catch {
+  } catch (err) {
+    logger.error(`Reference check failed: model "${modelName}" not registered`, {
+      event: 'product.reference_check_failed',
+      modelName,
+      error: err instanceof Error ? err.message : err,
+    })
     return Promise.resolve(0)
   }
 }

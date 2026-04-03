@@ -20,6 +20,7 @@
 import type { Schema } from 'mongoose'
 import { SYSTEM_IDENTITY } from '../../constants/identity.js'
 import { getContext } from '../../core/middleware/request-context.js'
+import { logger } from '../logger.js'
 import AuditLog from './audit-log.model.js'
 
 const SENSITIVE_FIELDS = new Set(['password', 'secret', 'token', 'accessToken'])
@@ -70,9 +71,13 @@ const writeAuditLog = async (entry: {
       ...ctx,
       timestamp: new Date(),
     })
-  } catch {
-    // Audit log failure must never crash the main operation.
-    // In production, this would go to a structured logger.
+  } catch (err) {
+    logger.warn('Audit log write failed', {
+      event: 'audit_log.write_failed',
+      model: entry.model,
+      operation: entry.operation,
+      error: err instanceof Error ? err.message : err,
+    })
   }
 }
 
@@ -105,7 +110,11 @@ const auditLogPlugin = (schema: Schema): void => {
         this,
         oldDoc ? maskSensitiveFields(oldDoc as Record<string, unknown>) : null,
       )
-    } catch {
+    } catch (err) {
+      logger.warn('Audit log pre-update snapshot failed', {
+        event: 'audit_log.snapshot_failed',
+        error: err instanceof Error ? err.message : err,
+      })
       preUpdateSnapshots.set(this, null)
     }
   })

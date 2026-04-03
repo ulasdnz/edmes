@@ -11,6 +11,7 @@ if (!REDIS_URL) {
 const baseOptions: Omit<RedisOptions, 'keyPrefix'> = {
   maxRetriesPerRequest: null,
   enableReadyCheck: false,
+  enableOfflineQueue: false,
   lazyConnect: true,
   connectTimeout: 10000,
   retryStrategy: (times: number) => {

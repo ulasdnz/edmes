@@ -5,6 +5,7 @@ import {
   emitProductionPlanDeleted,
   emitProductionPlanUpdated,
 } from '../../jobs/events.js'
+import { logger } from '../../lib/logger.js'
 import { type PaginatedResult, paginate } from '../../utils/pagination.js'
 import { Product } from '../product/product.model.js'
 import { type IProductionPlan, ProductionPlan } from './production-plan.model.js'
@@ -17,7 +18,11 @@ import type {
 function getJobOrderModel(): mongoose.Model<any> | null {
   try {
     return mongoose.model('JobOrder')
-  } catch {
+  } catch (err) {
+    logger.error('JobOrder model not registered', {
+      event: 'production_plan.model_not_registered',
+      error: err instanceof Error ? err.message : err,
+    })
     return null
   }
 }

@@ -4,7 +4,7 @@ import { logger } from './logger.js'
 const USER_API = config.INTERNAL_API_USER
 
 async function fetchInternal(path: string, options?: RequestInit): Promise<Response> {
-  return fetch(`${USER_API}${path}`, {
+  return fetch(`${USER_API}/internal/v1${path}`, {
     ...options,
     headers: { 'Content-Type': 'application/json', ...options?.headers },
   })
@@ -97,7 +97,12 @@ export async function validateOperatorExists(operatorId: string): Promise<boolea
   try {
     const res = await fetchInternal(`/users/${operatorId}`)
     return res.ok
-  } catch {
+  } catch (err) {
+    logger.warn('Cannot reach user-service for operator validation', {
+      event: 'internal_api.user.operator_validation_unreachable',
+      operatorId,
+      error: err instanceof Error ? err.message : err,
+    })
     return false
   }
 }

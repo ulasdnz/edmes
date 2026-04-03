@@ -7,6 +7,7 @@ import {
   emitJobOrderUpdated,
 } from '../../jobs/events.js'
 import { getWorkCenterInfo } from '../../lib/internal-api.js'
+import { logger } from '../../lib/logger.js'
 import { type PaginatedResult, paginate } from '../../utils/pagination.js'
 import { Product } from '../product/product.model.js'
 import { ProductStandard } from '../product-standard/product-standard.model.js'
@@ -27,7 +28,12 @@ function safeCountDocuments(modelName: string, filter: Record<string, unknown>):
   try {
     const mongoose = require('mongoose')
     return mongoose.model(modelName).countDocuments(filter) as Promise<number>
-  } catch {
+  } catch (err) {
+    logger.error(`Reference check failed: model "${modelName}" not registered`, {
+      event: 'job_order.reference_check_failed',
+      modelName,
+      error: err instanceof Error ? err.message : err,
+    })
     return Promise.resolve(0)
   }
 }

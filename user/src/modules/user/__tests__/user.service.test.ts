@@ -89,6 +89,8 @@ describe('UserService', () => {
         password: 'hashedpassword',
         email: 'test@example.com',
         deleted: false,
+        failedLoginAttempts: 0,
+        lastFailedLoginAt: null,
         toObject: () => ({
           _id: '123',
           email: 'test@example.com',
@@ -121,6 +123,8 @@ describe('UserService', () => {
       const mockUser = {
         _id: '123',
         password: 'hashedpassword',
+        failedLoginAttempts: 0,
+        lastFailedLoginAt: null,
       }
       const mockSelect = { select: vi.fn().mockResolvedValue(mockUser) }
       vi.mocked(User.findOne).mockReturnValue(mockSelect as never)

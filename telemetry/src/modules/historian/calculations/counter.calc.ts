@@ -30,13 +30,12 @@ export const calculateProduced = async (
 
   const firstDoc = docs[0]
   const lastDoc = docs[docs.length - 1]
+  const openingValue = firstDoc.prevValue ?? baseline?.value ?? 0
 
   let normalDelta: number
   if (docs.length === 1) {
-    const openingValue = firstDoc.prevValue ?? baseline?.value ?? 0
     normalDelta = firstDoc.value - openingValue
   } else {
-    const openingValue = firstDoc.prevValue ?? baseline?.value ?? 0
     const closingValue = Math.max(lastDoc.value, lastDoc.prevValue ?? lastDoc.value)
     normalDelta = closingValue - openingValue
   }

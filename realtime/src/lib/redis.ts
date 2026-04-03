@@ -5,6 +5,7 @@ import { logger } from './logger.js'
 const baseOptions: RedisOptions = {
   maxRetriesPerRequest: null,
   enableReadyCheck: false,
+  enableOfflineQueue: false,
   lazyConnect: true,
   connectTimeout: 10000,
   retryStrategy: (times: number) => {

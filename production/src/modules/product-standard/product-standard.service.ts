@@ -6,6 +6,7 @@ import {
   emitProductStandardUpdated,
 } from '../../jobs/events.js'
 import { getWorkCenterInfo } from '../../lib/internal-api.js'
+import { logger } from '../../lib/logger.js'
 import { type PaginatedResult, paginate } from '../../utils/pagination.js'
 import { Product } from '../product/product.model.js'
 import { type IProductStandard, ProductStandard } from './product-standard.model.js'
@@ -39,7 +40,12 @@ async function isApplied(standardId: string): Promise<boolean> {
   let JobOrder: mongoose.Model<any>
   try {
     JobOrder = mongoose.model('JobOrder')
-  } catch {
+  } catch (err) {
+    logger.error('JobOrder model not registered during isApplied check', {
+      event: 'product_standard.model_not_registered',
+      standardId,
+      error: err instanceof Error ? err.message : err,
+    })
     return false
   }
 
@@ -161,8 +167,12 @@ export async function remove(id: string): Promise<IProductStandard> {
         productId: standard.productId,
         workCenterId: standard.workCenterId,
       })
-    } catch {
-      // JobOrder model not registered yet
+    } catch (err) {
+      logger.error('JobOrder model not registered during delete check', {
+        event: 'product_standard.model_not_registered',
+        standardId: id,
+        error: err instanceof Error ? err.message : err,
+      })
     }
     if (joCount > 0) throw new CustomError(409, 'error.product_standard_last_revision')
   }

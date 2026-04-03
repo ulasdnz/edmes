@@ -46,7 +46,10 @@ export const initLoaders = async () => {
             const data = JSON.parse(payload.toString())
             discoverySetManifest(deviceKey, data.nodes ?? [])
           } catch {
-            /* ignore malformed */
+            logger.debug('Malformed discovery manifest', {
+              event: 'discovery.manifest.malformed',
+              deviceKey,
+            })
           }
         } else if (type === 'status') {
           const status = payload.toString()
