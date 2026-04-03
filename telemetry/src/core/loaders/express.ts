@@ -11,12 +11,21 @@ import { SYSTEM_IDENTITY } from '../../constants/identity.js'
 import { sharedCacheWrapDedup } from '../../lib/cache.js'
 import { httpLoggerMiddleware, logger, morganMiddleware } from '../../lib/logger.js'
 import { redisClient } from '../../lib/redis.js'
+import discoveryRoutes from '../../modules/discovery/discovery.routes.js'
+import edgeDeviceRoutes from '../../modules/edge-device/edge-device.routes.js'
+import historianRoutes from '../../modules/historian/historian.routes.js'
+import tagRoutes from '../../modules/tag/tag.routes.js'
+import tagTypeRoutes from '../../modules/tag-type/tag-type.routes.js'
 import { errorHandler } from '../middleware/error-handler.js'
 import { contextMiddleware, setUserId } from '../middleware/request-context.js'
 import { initI18n } from './i18n.js'
 
 const mountSharedRoutes = (router: ReturnType<typeof Router>) => {
-  // Module routes will be added in subsequent tasks
+  router.use(tagTypeRoutes)
+  router.use(edgeDeviceRoutes)
+  router.use(tagRoutes)
+  router.use(historianRoutes)
+  router.use(discoveryRoutes)
 }
 
 export const initExpress = async () => {

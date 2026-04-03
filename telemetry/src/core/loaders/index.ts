@@ -1,5 +1,12 @@
+import { CustomError } from '../../core/errors/index.js'
+import { initSubscribers } from '../../jobs/subscribers.js'
 import { logger } from '../../lib/logger.js'
+import { initMqtt, onMqttMessage } from '../../lib/mqtt.js'
 import { initRedis } from '../../lib/redis.js'
+import { discoverySetManifest } from '../../modules/discovery/discovery.cache.js'
+import EdgeDevice from '../../modules/edge-device/edge-device.model.js'
+import { bindingCacheInit } from '../../modules/ingestion/binding-cache.js'
+import { processMessage } from '../../modules/ingestion/ingestion.pipeline.js'
 import { initExpress } from './express.js'
 import { initMongoose } from './mongoose.js'
 
@@ -9,6 +16,50 @@ export const initLoaders = async () => {
 
     await initMongoose()
     await initRedis()
+    initSubscribers()
+    await bindingCacheInit()
+    await initMqtt()
+
+    onMqttMessage((topic, payload) => {
+      if (topic.startsWith('devices/')) {
+        processMessage(topic, payload).catch(err => {
+          if (err instanceof CustomError && err.message === 'historian.period_locked') {
+            logger.debug('Ingestion rejected: period locked', {
+              event: 'ingestion.period_locked',
+              topic,
+            })
+            return
+          }
+          logger.error('Ingestion error', {
+            event: 'ingestion.error',
+            topic,
+            error: err instanceof Error ? err.message : err,
+          })
+        })
+      } else if (topic.startsWith('discovery/')) {
+        const parts = topic.split('/')
+        const deviceKey = parts[1]
+        const type = parts[2]
+
+        if (type === 'manifest') {
+          try {
+            const data = JSON.parse(payload.toString())
+            discoverySetManifest(deviceKey, data.nodes ?? [])
+          } catch {
+            /* ignore malformed */
+          }
+        } else if (type === 'status') {
+          const status = payload.toString()
+          EdgeDevice.findOneAndUpdate({ deviceKey }, { status }).catch(err => {
+            logger.warn('EdgeDevice status update failed', {
+              event: 'discovery.status.update_failed',
+              deviceKey,
+              error: err instanceof Error ? err.message : err,
+            })
+          })
+        }
+      }
+    })
 
     const app = await initExpress()
 
