@@ -337,55 +337,80 @@ export const getRollup = async (
   await ensureTagExists(tagId)
   const collection = getHistorianCollection(tagId)
 
-  const baseline = await collection.findOne(
-    { occurredAt: { $lte: from } },
-    { sort: { occurredAt: -1 }, projection: { value: 1, _id: 0 } },
-  )
+  const rangeQuery = { occurredAt: { $gt: from, $lte: to } }
+  const fromMs = from.getTime()
+  const toMs = to.getTime()
 
-  const docs = await collection
-    .find(
-      { occurredAt: { $gt: from, $lte: to } },
-      { projection: { occurredAt: 1, value: 1, _id: 0 } },
-    )
-    .sort({ occurredAt: 1 })
-    .toArray()
+  const aggValue = (() => {
+    switch (fn) {
+      case 'avg':
+        return { $avg: '$value' }
+      case 'min':
+        return { $min: '$value' }
+      case 'max':
+        return { $max: '$value' }
+      case 'sum':
+        return { $sum: '$value' }
+      case 'count':
+        return { $sum: 1 }
+    }
+  })()
+
+  const [baseline, docs] = await Promise.all([
+    collection.findOne(
+      { occurredAt: { $lte: from } },
+      { sort: { occurredAt: -1 }, projection: { value: 1, _id: 0 } },
+    ),
+    collection
+      .aggregate<{ bucketStart: number; value: number | null; lastValue: number | null }>([
+        { $match: rangeQuery },
+        { $sort: { occurredAt: 1 } },
+        {
+          $group: {
+            // Subtract 1ms so values that land exactly on a bucket boundary stay in the previous bucket.
+            _id: {
+              $add: [
+                fromMs,
+                {
+                  $multiply: [
+                    {
+                      $floor: {
+                        $divide: [
+                          {
+                            $subtract: [{ $subtract: [{ $toLong: '$occurredAt' }, fromMs] }, 1],
+                          },
+                          intervalMs,
+                        ],
+                      },
+                    },
+                    intervalMs,
+                  ],
+                },
+              ],
+            },
+            value: aggValue,
+            lastValue: { $last: '$value' },
+          },
+        },
+        { $sort: { _id: 1 } },
+        { $project: { _id: 0, bucketStart: '$_id', value: 1, lastValue: 1 } },
+      ])
+      .toArray(),
+  ])
 
   const buckets = []
-  let bucketStart = from.getTime()
+  let bucketStart = fromMs
   let docIndex = 0
   let carryValue = (baseline?.value as number | null) ?? null
 
-  while (bucketStart < to.getTime()) {
-    const bucketEnd = Math.min(bucketStart + intervalMs, to.getTime())
-    const values: number[] = []
+  while (bucketStart < toMs) {
+    const bucketEnd = Math.min(bucketStart + intervalMs, toMs)
+    let result = carryValue
 
-    while (docIndex < docs.length && (docs[docIndex].occurredAt as Date).getTime() <= bucketEnd) {
-      values.push(docs[docIndex].value as number)
-      carryValue = docs[docIndex].value as number
+    if (docIndex < docs.length && docs[docIndex].bucketStart === bucketStart) {
+      result = docs[docIndex].value
+      carryValue = docs[docIndex].lastValue
       docIndex++
-    }
-
-    let result: number | null = null
-    if (values.length > 0) {
-      switch (fn) {
-        case 'avg':
-          result = values.reduce((a, b) => a + b, 0) / values.length
-          break
-        case 'min':
-          result = Math.min(...values)
-          break
-        case 'max':
-          result = Math.max(...values)
-          break
-        case 'sum':
-          result = values.reduce((a, b) => a + b, 0)
-          break
-        case 'count':
-          result = values.length
-          break
-      }
-    } else {
-      result = carryValue
     }
 
     buckets.push({

@@ -33,7 +33,7 @@ vi.mock('../ingestion/historian.repository.js', () => ({
   })),
 }))
 
-import { getSeries } from './historian.service.js'
+import { getRollup, getSeries } from './historian.service.js'
 
 describe('historian.service.getSeries', () => {
   beforeEach(() => {
@@ -113,5 +113,56 @@ describe('historian.service.getSeries', () => {
       { t: new Date('2026-04-01T12:00:00.000Z'), v: 22 },
     ])
     expect(rawToArrayMock).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('historian.service.getRollup', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    findByIdMock.mockReturnValue({
+      select: vi.fn().mockReturnValue({
+        lean: vi.fn().mockResolvedValue({ behavior: 'speed' }),
+      }),
+    })
+  })
+
+  it('fills empty buckets with the previous sample value while using aggregated bucket values', async () => {
+    const from = new Date('2026-04-01T00:00:00.000Z')
+    const to = new Date('2026-04-01T00:30:00.000Z')
+
+    findOneMock.mockResolvedValue({ value: 5 })
+    aggregateToArrayMock.mockResolvedValue([
+      {
+        bucketStart: from.getTime(),
+        value: 10,
+        lastValue: 12,
+      },
+      {
+        bucketStart: new Date('2026-04-01T00:20:00.000Z').getTime(),
+        value: 20,
+        lastValue: 21,
+      },
+    ])
+
+    const result = await getRollup('tag-1', from, to, 10 * 60_000, 'avg')
+
+    expect(result).toEqual([
+      {
+        start: new Date('2026-04-01T00:00:00.000Z'),
+        end: new Date('2026-04-01T00:10:00.000Z'),
+        value: 10,
+      },
+      {
+        start: new Date('2026-04-01T00:10:00.000Z'),
+        end: new Date('2026-04-01T00:20:00.000Z'),
+        value: 12,
+      },
+      {
+        start: new Date('2026-04-01T00:20:00.000Z'),
+        end: new Date('2026-04-01T00:30:00.000Z'),
+        value: 20,
+      },
+    ])
+    expect(rawToArrayMock).not.toHaveBeenCalled()
   })
 })
