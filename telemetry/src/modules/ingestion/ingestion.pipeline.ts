@@ -1,8 +1,8 @@
 import { parseUtcZonedDateTime } from '@mes/core'
 import { CustomError } from '../../core/errors/index.js'
+import { emitTagValueUpdated } from '../../jobs/events.js'
 import { getPeriodLock } from '../../jobs/subscribers.js'
 import { logger } from '../../lib/logger.js'
-import { pubClient } from '../../lib/redis.js'
 import type { ITag } from '../tag/tag.model.js'
 import { bindingCacheResolve } from './binding-cache.js'
 import { upsertCurrentState } from './current-state.repository.js'
@@ -96,7 +96,7 @@ export const ingestValue = async (
 
   if (tag.storageMode === 'stateOnly') {
     await upsertCurrentState(tagId, value, occurredAt)
-    await publishRealtimeValue(tagId, value, occurredAt)
+    await emitTagValueUpdated(tagId, value, occurredAt)
     predecessorSet(tagId, {
       value,
       occurredAt,
@@ -124,7 +124,7 @@ export const ingestValue = async (
   }
   predecessorSet(tagId, newPred)
 
-  await publishRealtimeValue(tagId, value, occurredAt)
+  await emitTagValueUpdated(tagId, value, occurredAt)
   return { applied: true, reason: 'history_inserted' }
 }
 
@@ -160,12 +160,4 @@ function buildSample(
   }
 
   return { occurredAt, value, prevValue, prevTs }
-}
-
-async function publishRealtimeValue(tagId: string, value: number, occurredAt: Date): Promise<void> {
-  try {
-    await pubClient.publish(`tag:${tagId}:value`, JSON.stringify({ tagId, value, occurredAt }))
-  } catch {
-    logger.debug('Redis pub/sub publish failed', { event: 'ingestion.pubsub.failed', tagId })
-  }
 }

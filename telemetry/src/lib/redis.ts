@@ -63,13 +63,6 @@ streamClient.on('error', err => {
   logger.error('Redis Stream Client Error:', { error: err.message })
 })
 
-// Pub/Sub client for realtime value notifications (fire-and-forget)
-export const pubClient = new Redis(REDIS_URL, baseOptions)
-
-pubClient.on('error', err => {
-  logger.error('Redis Pub Client Error:', { error: err.message })
-})
-
 export const initRedis = async () => {
   try {
     await redisClient.connect()
@@ -83,10 +76,6 @@ export const initRedis = async () => {
     await streamClient.connect()
     await streamClient.ping()
     logger.info('Redis Stream Client: Connection verified')
-
-    await pubClient.connect()
-    await pubClient.ping()
-    logger.info('Redis Pub Client: Connection verified')
   } catch (error) {
     logger.error('Redis: Initial connection failed')
     throw error
@@ -94,10 +83,5 @@ export const initRedis = async () => {
 }
 
 export const closeRedis = async () => {
-  await Promise.all([
-    redisClient.quit(),
-    sharedClient.quit(),
-    streamClient.quit(),
-    pubClient.quit(),
-  ])
+  await Promise.all([redisClient.quit(), sharedClient.quit(), streamClient.quit()])
 }

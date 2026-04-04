@@ -83,10 +83,11 @@ describe('Subscribers.catchAllForwarding', () => {
     expect(streams).toContain('events.user')
     expect(streams).toContain('events.work_center')
     expect(streams).toContain('events.production')
+    expect(streams).toContain('events.telemetry')
   })
 
   it("uses '*' handler for all streams", () => {
-    for (const stream of ['events.user', 'events.work_center', 'events.production']) {
+    for (const stream of ['events.user', 'events.work_center', 'events.production', 'events.telemetry']) {
       const handlers = capturedConfig.streams[stream]
       expect(handlers['*']).toBeDefined()
       expect(Object.keys(handlers)).toEqual(['*'])

@@ -97,6 +97,17 @@ export type ITag = InferSchemaType<typeof tagSchema> & {
   updatedAt: Date
 }
 
+tagSchema.index(
+  { 'binding.deviceKey': 1, 'binding.nodeId': 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      'binding.deviceKey': { $type: 'string' },
+      'binding.nodeId': { $type: 'string' },
+    },
+  },
+)
+
 tagSchema.plugin(auditLogPlugin)
 
 const Tag = model<ITag>('Tag', tagSchema)

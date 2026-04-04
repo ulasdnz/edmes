@@ -43,3 +43,12 @@ export const emitEdgeDeviceUpdated = (edgeDeviceId: string) =>
 
 export const emitEdgeDeviceDeleted = (edgeDeviceId: string) =>
   emit('edge_device.deleted', { edgeDeviceId })
+
+// Realtime telemetry events
+
+export const emitTagValueUpdated = (tagId: string, value: number, occurredAt: Date) =>
+  emit('tag.value.updated', {
+    tagId,
+    value,
+    occurredAt: occurredAt.toISOString(),
+  })

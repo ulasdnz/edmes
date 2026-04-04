@@ -56,6 +56,11 @@ describe('resolveRooms', () => {
     expect(rooms).not.toContain('jo:jo1')
   })
 
+  it('adds tag:{id} room when tagId is in payload', () => {
+    const rooms = resolveRooms('tag.value.updated', { tagId: 'tag-1' })
+    expect(rooms).toEqual(['tag', 'tag:tag-1'])
+  })
+
   // ── boundaries ────────────────────────────────────────────────────────
 
   it("uses entire string as prefix for type with no dot (e.g. 'heartbeat')", () => {

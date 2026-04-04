@@ -1,14 +1,11 @@
-import mongoose from 'mongoose'
-
-const COLLECTION = 'current_states'
+import CurrentState from './current-state.model.js'
 
 export const upsertCurrentState = async (
   tagId: string,
   value: number,
   occurredAt: Date,
 ): Promise<void> => {
-  const collection = mongoose.connection.db!.collection(COLLECTION)
-  await collection.updateOne(
+  await CurrentState.updateOne(
     { tagId },
     { $set: { tagId, value, occurredAt, updatedAt: new Date() } },
     { upsert: true },
