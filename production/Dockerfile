@@ -31,9 +31,9 @@ RUN echo "node-linker=hoisted" > .npmrc && pnpm install --frozen-lockfile
 COPY packages/ ./packages/
 COPY production/ ./production/
 
-# 1. Build shared packages via project references (tsc -b handles order)
-# 2. Build production service (resolves @mes/* from packages/*/dist/)
-RUN pnpm build:packages && pnpm --filter production-service run build
+# Build the production service through its own TS project graph.
+# This pulls in only the referenced workspace packages instead of the root graph.
+RUN pnpm --filter production-service exec tsc -b tsconfig.json
 
 # Magically deploy the exact dependencies (including workspace dependencies)
 # into a clean "/prod/production" folder. This completely isolates the service.

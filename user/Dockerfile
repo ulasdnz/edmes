@@ -31,9 +31,9 @@ RUN echo "node-linker=hoisted" > .npmrc && pnpm install --frozen-lockfile
 COPY packages/ ./packages/
 COPY user/ ./user/
 
-# 1. Build shared packages via project references (tsc -b handles order)
-# 2. Build user service (resolves @mes/* from packages/*/dist/)
-RUN pnpm build
+# Build the user service through its own TS project graph.
+# This avoids unrelated root-level project references during image builds.
+RUN pnpm --filter user-service exec tsc -b tsconfig.json
 
 # Copy i18n JSON translation files to dist since tsc does not bundle them
 RUN mkdir -p user/dist/utils/lang && cp -r user/src/utils/lang/* user/dist/utils/lang/

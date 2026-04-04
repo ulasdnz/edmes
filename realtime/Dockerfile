@@ -26,7 +26,7 @@ RUN echo "node-linker=hoisted" > .npmrc && pnpm install --frozen-lockfile
 COPY packages/ ./packages/
 COPY realtime/ ./realtime/
 
-RUN pnpm build:packages && pnpm --filter realtime-service run build
+RUN pnpm --filter realtime-service exec tsc -b tsconfig.json
 
 RUN pnpm --filter=realtime-service --prod deploy --legacy /prod/realtime
 

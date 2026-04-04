@@ -31,9 +31,9 @@ RUN echo "node-linker=hoisted" > .npmrc && pnpm install --frozen-lockfile
 COPY packages/ ./packages/
 COPY work-center/ ./work-center/
 
-# 1. Build shared packages via project references (tsc -b handles order)
-# 2. Build work-center service (resolves @mes/* from packages/*/dist/)
-RUN pnpm build:packages && pnpm --filter work-center-service run build
+# Build the work-center service through its own TS project graph.
+# This pulls in only the referenced workspace packages instead of the root graph.
+RUN pnpm --filter work-center-service exec tsc -b tsconfig.json
 
 # Copy i18n JSON translation files to dist since tsc does not bundle them
 RUN mkdir -p work-center/dist/utils/lang && cp -r work-center/src/utils/lang/* work-center/dist/utils/lang/
