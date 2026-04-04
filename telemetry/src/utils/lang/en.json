@@ -9,5 +9,10 @@
     "validation_failed": "Validation failed.",
     "duplicate_entry": "This {{field}} is already in use.",
     "invalid_id": "Invalid identifier."
+  },
+  "tag": {
+    "same_value": "The incoming value matches the latest stored value.",
+    "out_of_order": "The incoming timestamp is older than or equal to the latest stored timestamp.",
+    "within_tolerance": "The incoming value is within the configured tolerance of the latest stored value."
   }
 }

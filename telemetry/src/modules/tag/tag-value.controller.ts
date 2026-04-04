@@ -3,20 +3,50 @@ import { CustomError } from '../../core/errors/index.js'
 import type { SuccessResponse } from '../../core/types/index.js'
 import { logger } from '../../lib/logger.js'
 import EdgeDevice from '../edge-device/edge-device.model.js'
-import { ingestValue } from '../ingestion/ingestion.pipeline.js'
+import { ingestValue, type IngestValueResult } from '../ingestion/ingestion.pipeline.js'
+import { predecessorLoad } from '../ingestion/predecessor-cache.js'
 import Tag from './tag.model.js'
 import type { WriteCommandInput, WriteValueInput } from './tag-value.validators.js'
 
+interface WriteValueResponseData {
+  inserted: boolean
+  reason: IngestValueResult['reason']
+}
+
 export const writeValue = async (
   req: Request<{ id: string }, unknown, WriteValueInput>,
-  res: Response<SuccessResponse>,
+  res: Response<SuccessResponse<WriteValueResponseData>>,
 ) => {
   const tag = await Tag.findById(req.params.id)
   if (!tag) throw new CustomError(404, 'tag.not_found')
 
-  await ingestValue(tag, req.body.value, req.body.time)
+  let incomingValue = req.body.value
+  if (tag.behavior !== 'binary' && tag.digit != null) {
+    const factor = 10 ** tag.digit
+    incomingValue = Math.round(incomingValue * factor) / factor
+  }
 
-  res.status(201).json({ data: undefined, message: req.t('success.create') })
+  const pred = await predecessorLoad(tag._id.toString(), tag.behavior)
+  if (pred && pred.value === incomingValue) {
+    throw new CustomError(409, 'tag.same_value')
+  }
+
+  const result = await ingestValue(tag, req.body.value, req.body.time)
+
+  if (!result.applied) {
+    const errorCode =
+      result.reason === 'out_of_order'
+        ? 'tag.out_of_order'
+        : result.reason === 'within_tolerance'
+          ? 'tag.within_tolerance'
+          : 'tag.same_value'
+    throw new CustomError(409, errorCode)
+  }
+
+  res.status(201).json({
+    data: { inserted: true, reason: result.reason },
+    message: req.t('success.create'),
+  })
 }
 
 export const writeCommand = async (

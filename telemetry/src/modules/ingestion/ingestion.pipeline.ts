@@ -14,6 +14,13 @@ interface IncomingMessage {
   value: number
 }
 
+export type IngestValueResult =
+  | { applied: true; reason: 'history_inserted' | 'state_updated' }
+  | {
+      applied: false
+      reason: 'out_of_order' | 'same_value' | 'within_tolerance'
+    }
+
 export const processMessage = async (topic: string, payload: Buffer): Promise<void> => {
   const parts = topic.split('/')
   if (parts.length !== 4 || parts[0] !== 'devices' || parts[2] !== 'nodes') return
@@ -34,10 +41,24 @@ export const processMessage = async (topic: string, payload: Buffer): Promise<vo
   const occurredAt = parseUtcZonedDateTime(msg.time)
   if (!occurredAt) return
 
-  await ingestValue(tag, msg.value, occurredAt)
+  const result = await ingestValue(tag, msg.value, occurredAt)
+  if (!result.applied && result.reason === 'out_of_order') {
+    logger.warn('Out-of-order MQTT telemetry sample dropped', {
+      event: 'ingestion.sample.out_of_order',
+      topic,
+      tagId: tag._id.toString(),
+      deviceKey,
+      nodeId,
+      occurredAt: occurredAt.toISOString(),
+    })
+  }
 }
 
-export const ingestValue = async (tag: ITag, rawValue: number, occurredAt: Date): Promise<void> => {
+export const ingestValue = async (
+  tag: ITag,
+  rawValue: number,
+  occurredAt: Date,
+): Promise<IngestValueResult> => {
   const tagId = tag._id.toString()
 
   const lock = getPeriodLock()
@@ -47,7 +68,9 @@ export const ingestValue = async (tag: ITag, rawValue: number, occurredAt: Date)
 
   const pred = await predecessorLoad(tagId, tag.behavior)
 
-  if (pred && occurredAt.getTime() <= pred.occurredAt.getTime()) return
+  if (pred && occurredAt.getTime() <= pred.occurredAt.getTime()) {
+    return { applied: false, reason: 'out_of_order' }
+  }
 
   let value = rawValue
   if (tag.behavior !== 'binary' && tag.digit != null) {
@@ -55,10 +78,12 @@ export const ingestValue = async (tag: ITag, rawValue: number, occurredAt: Date)
     value = Math.round(rawValue * factor) / factor
   }
 
-  if (pred && value === pred.value) return
+  if (pred && value === pred.value) return { applied: false, reason: 'same_value' }
 
   if (tag.behavior !== 'binary' && tag.tolerance > 0 && pred) {
-    if (Math.abs(value - pred.value) < tag.tolerance) return
+    if (Math.abs(value - pred.value) < tag.tolerance) {
+      return { applied: false, reason: 'within_tolerance' }
+    }
   }
 
   if (tag.storageMode === 'stateOnly') {
@@ -70,7 +95,7 @@ export const ingestValue = async (tag: ITag, rawValue: number, occurredAt: Date)
       prevValue: pred?.value ?? null,
       prevTs: pred?.occurredAt ?? null,
     })
-    return
+    return { applied: true, reason: 'state_updated' }
   }
 
   const sample = buildSample(tag.behavior, value, occurredAt, pred)
@@ -92,6 +117,7 @@ export const ingestValue = async (tag: ITag, rawValue: number, occurredAt: Date)
   predecessorSet(tagId, newPred)
 
   await publishRealtimeValue(tagId, value, occurredAt)
+  return { applied: true, reason: 'history_inserted' }
 }
 
 function buildSample(

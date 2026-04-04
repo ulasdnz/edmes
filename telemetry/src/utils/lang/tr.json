@@ -9,5 +9,10 @@
     "validation_failed": "Dogrulama hatasi.",
     "duplicate_entry": "Bu {{field}} zaten kullanimda.",
     "invalid_id": "Gecersiz kimlik."
+  },
+  "tag": {
+    "same_value": "Gelen deger son kayitli degerle ayni.",
+    "out_of_order": "Gelen zaman damgasi son kayitli zaman damgasindan eski veya esit.",
+    "within_tolerance": "Gelen deger son kayitli degerin tolerans araligi icinde."
   }
 }
