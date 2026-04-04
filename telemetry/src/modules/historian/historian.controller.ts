@@ -8,6 +8,16 @@ export const getCompactValues = async (req: Request<{ tagId: string }>, res: Res
   res.json({ data })
 }
 
+export const getSeries = async (req: Request<{ tagId: string }>, res: Response) => {
+  const { from, to, targetPoints } = req.query as unknown as {
+    from: Date
+    to: Date
+    targetPoints: number
+  }
+  const result = await historianService.getSeries(req.params.tagId, from, to, targetPoints)
+  res.json({ data: result.points, meta: result.meta })
+}
+
 export const getSamples = async (req: Request<{ tagId: string }>, res: Response) => {
   const { from, to, page, limit, previous } = req.query as unknown as {
     from: Date

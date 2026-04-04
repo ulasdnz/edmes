@@ -6,6 +6,7 @@ import {
   rangeQuerySchema,
   rollupQuerySchema,
   samplesQuerySchema,
+  seriesQuerySchema,
   tagIdParamSchema,
 } from './historian.validators.js'
 
@@ -17,6 +18,14 @@ router.get(
   validateParams(tagIdParamSchema),
   validateQuery(rangeQuerySchema),
   historianController.getCompactValues,
+)
+
+router.get(
+  '/historian/:tagId/series',
+  requirePermission('readHistorian'),
+  validateParams(tagIdParamSchema),
+  validateQuery(seriesQuerySchema),
+  historianController.getSeries,
 )
 
 router.get(

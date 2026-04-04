@@ -17,6 +17,10 @@ export const samplesQuerySchema = rangeQuerySchema.extend({
   previous: z.enum(['true', 'false']).default('false'),
 })
 
+export const seriesQuerySchema = rangeQuerySchema.extend({
+  targetPoints: z.coerce.number().int().min(10).max(5000).default(1000),
+})
+
 const INTERVAL_MAP: Record<string, number> = {
   '1m': 60_000,
   '5m': 300_000,
@@ -39,4 +43,5 @@ export const parseInterval = (interval: string): number => INTERVAL_MAP[interval
 
 export type RangeQuery = z.infer<typeof rangeQuerySchema>
 export type SamplesQuery = z.infer<typeof samplesQuerySchema>
+export type SeriesQuery = z.infer<typeof seriesQuerySchema>
 export type RollupQuery = z.infer<typeof rollupQuerySchema>

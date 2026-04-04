@@ -5,10 +5,66 @@ import { calculateStateDurations } from './calculations/binary.calc.js'
 import { calculateProduced } from './calculations/counter.calc.js'
 import { calculateSpeedAvg } from './calculations/speed.calc.js'
 
+const SERIES_INTERVAL_CANDIDATES_MS = [
+  1_000,
+  5_000,
+  10_000,
+  30_000,
+  60_000,
+  300_000,
+  600_000,
+  900_000,
+  1_800_000,
+  3_600_000,
+  14_400_000,
+  28_800_000,
+  43_200_000,
+  86_400_000,
+  604_800_000,
+  2_592_000_000,
+] as const
+
+type SeriesFilterType = 'raw' | 'last_value_bucket'
+
+export interface HistorianSeriesPoint {
+  t: Date
+  v: number
+}
+
+export interface HistorianSeriesResult {
+  points: HistorianSeriesPoint[]
+  meta: {
+    filterType: SeriesFilterType
+    targetPoints: number
+    returnedPoints: number
+    truncated: boolean
+    intervalMs: number | null
+  }
+}
+
 const ensureTagExists = async (tagId: string) => {
   const tag = await Tag.findById(tagId).select('behavior').lean()
   if (!tag) throw new CustomError(404, 'tag.not_found')
   return tag
+}
+
+const appendBaselinePoint = (
+  points: HistorianSeriesPoint[],
+  from: Date,
+  baselineValue: number | null,
+): HistorianSeriesPoint[] => {
+  if (baselineValue == null) return points
+  return [{ t: from, v: baselineValue }, ...points]
+}
+
+const pickSeriesIntervalMs = (from: Date, to: Date, targetPoints: number): number => {
+  const rangeMs = Math.max(to.getTime() - from.getTime(), 1)
+  for (const intervalMs of SERIES_INTERVAL_CANDIDATES_MS) {
+    if (Math.ceil(rangeMs / intervalMs) <= targetPoints) {
+      return intervalMs
+    }
+  }
+  return Math.max(Math.ceil(rangeMs / targetPoints), 1)
 }
 
 export const getCompactValues = async (tagId: string, from: Date, to: Date) => {
@@ -33,6 +89,82 @@ export const getCompactValues = async (tagId: string, from: Date, to: Date) => {
   }
 
   return [{ t: from, v: baseline.v }, ...docs]
+}
+
+export const getSeries = async (
+  tagId: string,
+  from: Date,
+  to: Date,
+  targetPoints: number,
+): Promise<HistorianSeriesResult> => {
+  await ensureTagExists(tagId)
+  const collection = getHistorianCollection(tagId)
+  const rangeQuery = { occurredAt: { $gt: from, $lte: to } }
+
+  const [baseline, probeDocs] = await Promise.all([
+    collection.findOne<{ value?: number }>(
+      { occurredAt: { $lte: from } },
+      { sort: { occurredAt: -1 }, projection: { _id: 0, value: 1 } },
+    ),
+    collection
+      .find<{ t: Date; v: number }>(rangeQuery, {
+        projection: { _id: 0, t: '$occurredAt', v: '$value' },
+      })
+      .sort({ occurredAt: 1 })
+      .limit(targetPoints + 1)
+      .toArray(),
+  ])
+
+  if (probeDocs.length <= targetPoints) {
+    const points = appendBaselinePoint(probeDocs, from, baseline?.value ?? null)
+    return {
+      points,
+      meta: {
+        filterType: 'raw',
+        targetPoints,
+        returnedPoints: points.length,
+        truncated: false,
+        intervalMs: null,
+      },
+    }
+  }
+
+  const intervalMs = pickSeriesIntervalMs(from, to, targetPoints)
+  const fromMs = from.getTime()
+
+  const docs = await collection
+    .aggregate<{ t: Date; v: number }>([
+      { $match: rangeQuery },
+      { $sort: { occurredAt: 1 } },
+      {
+        $group: {
+          _id: {
+            $subtract: [
+              { $toLong: '$occurredAt' },
+              {
+                $mod: [{ $subtract: [{ $toLong: '$occurredAt' }, fromMs] }, intervalMs],
+              },
+            ],
+          },
+          t: { $last: '$occurredAt' },
+          v: { $last: '$value' },
+        },
+      },
+      { $sort: { _id: 1 } },
+      { $project: { _id: 0, t: 1, v: 1 } },
+    ])
+    .toArray()
+
+  return {
+    points: appendBaselinePoint(docs, from, baseline?.value ?? null),
+    meta: {
+      filterType: 'last_value_bucket',
+      targetPoints,
+      returnedPoints: docs.length + (baseline?.value != null ? 1 : 0),
+      truncated: true,
+      intervalMs,
+    },
+  }
 }
 
 export const getSamples = async (
