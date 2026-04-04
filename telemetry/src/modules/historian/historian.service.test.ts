@@ -63,6 +63,14 @@ describe('historian.service.getSeries', () => {
       returnedPoints: 3,
       truncated: false,
       intervalMs: null,
+      stats: {
+        min: 10,
+        max: 13,
+        avg: 35 / 3,
+        variance: 14 / 9,
+        stddev: Math.sqrt(14 / 9),
+        count: 3,
+      },
     })
     expect(result.points).toEqual([
       { t: from, v: 10 },
@@ -93,6 +101,12 @@ describe('historian.service.getSeries', () => {
     expect(result.meta.returnedPoints).toBe(3)
     expect(result.meta.truncated).toBe(true)
     expect(result.meta.intervalMs).not.toBeNull()
+    expect(result.meta.stats.min).toBe(10)
+    expect(result.meta.stats.max).toBe(22)
+    expect(result.meta.stats.avg).toBeCloseTo(50 / 3)
+    expect(result.meta.stats.variance).toBeCloseTo(224 / 9)
+    expect(result.meta.stats.stddev).toBeCloseTo(Math.sqrt(224 / 9))
+    expect(result.meta.stats.count).toBe(3)
     expect(result.points).toEqual([
       { t: from, v: 10 },
       { t: new Date('2026-04-01T06:00:00.000Z'), v: 18 },

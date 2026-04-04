@@ -31,6 +31,15 @@ export interface HistorianSeriesPoint {
   v: number
 }
 
+export interface HistorianSeriesStats {
+  min: number | null
+  max: number | null
+  avg: number | null
+  variance: number | null
+  stddev: number | null
+  count: number
+}
+
 export interface HistorianSeriesResult {
   points: HistorianSeriesPoint[]
   meta: {
@@ -39,6 +48,7 @@ export interface HistorianSeriesResult {
     returnedPoints: number
     truncated: boolean
     intervalMs: number | null
+    stats: HistorianSeriesStats
   }
 }
 
@@ -65,6 +75,51 @@ const pickSeriesIntervalMs = (from: Date, to: Date, targetPoints: number): numbe
     }
   }
   return Math.max(Math.ceil(rangeMs / targetPoints), 1)
+}
+
+const calculateSeriesStats = (points: HistorianSeriesPoint[]): HistorianSeriesStats => {
+  if (points.length === 0) {
+    return {
+      min: null,
+      max: null,
+      avg: null,
+      variance: null,
+      stddev: null,
+      count: 0,
+    }
+  }
+
+  let min = points[0].v
+  let max = points[0].v
+  let sum = 0
+
+  for (const point of points) {
+    const value = point.v
+    if (value < min) min = value
+    if (value > max) max = value
+    sum += value
+  }
+
+  const count = points.length
+  const avg = sum / count
+
+  let squaredDiffSum = 0
+  for (const point of points) {
+    const diff = point.v - avg
+    squaredDiffSum += diff * diff
+  }
+
+  const variance = squaredDiffSum / count
+  const stddev = Math.sqrt(variance)
+
+  return {
+    min,
+    max,
+    avg,
+    variance,
+    stddev,
+    count,
+  }
 }
 
 export const getCompactValues = async (tagId: string, from: Date, to: Date) => {
@@ -125,6 +180,7 @@ export const getSeries = async (
         returnedPoints: points.length,
         truncated: false,
         intervalMs: null,
+        stats: calculateSeriesStats(points),
       },
     }
   }
@@ -155,14 +211,16 @@ export const getSeries = async (
     ])
     .toArray()
 
+  const points = appendBaselinePoint(docs, from, baseline?.value ?? null)
   return {
-    points: appendBaselinePoint(docs, from, baseline?.value ?? null),
+    points,
     meta: {
       filterType: 'last_value_bucket',
       targetPoints,
-      returnedPoints: docs.length + (baseline?.value != null ? 1 : 0),
+      returnedPoints: points.length,
       truncated: true,
       intervalMs,
+      stats: calculateSeriesStats(points),
     },
   }
 }

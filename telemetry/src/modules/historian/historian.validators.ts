@@ -13,7 +13,7 @@ export const rangeQuerySchema = z.object({
 
 export const samplesQuerySchema = rangeQuerySchema.extend({
   page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(1000).default(100),
+  limit: z.coerce.number().int().min(1).max(250_000).default(100),
   previous: z.enum(['true', 'false']).default('false'),
 })
 
