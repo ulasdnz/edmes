@@ -21,12 +21,31 @@ const consoleFormat = winston.format.combine(
   winston.format.colorize(),
   winston.format.timestamp({ format: () => new Date().toISOString() }),
   winston.format.printf(info => {
-    const { level, message, timestamp, traceId, event, stack } = info
+    const splat = info[Symbol.for('splat')] as unknown[] | undefined
+    const splatMeta = Object.assign(
+      {},
+      ...(splat ?? []).filter(
+        (item): item is Record<string, unknown> =>
+          typeof item === 'object' && item !== null && !Array.isArray(item),
+      ),
+    )
+
+    const {
+      level,
+      message,
+      timestamp,
+      traceId,
+      event,
+      stack,
+      service,
+      ...rest
+    } = { ...info, ...splatMeta }
 
     const logMessage = stack || message || 'No message provided'
     const eventTag = event ? ` [${event}]` : ''
+    const meta = Object.keys(rest).length > 0 ? ` ${JSON.stringify(rest)}` : ''
 
-    return `[${timestamp}] ${level} [traceId=${traceId || 'no-trace'}]${eventTag} ${logMessage}`
+    return `[${timestamp}] ${level} [traceId=${traceId || 'no-trace'}]${eventTag} ${logMessage}${meta}`
   }),
 )
 

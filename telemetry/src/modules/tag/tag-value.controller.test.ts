@@ -1,16 +1,25 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CustomError } from '../../core/errors/index.js'
-import { writeValue } from './tag-value.controller.js'
+import { writeCommand, writeValue } from './tag-value.controller.js'
 
-const { findByIdMock, ingestValueMock, predecessorLoadMock } = vi.hoisted(() => ({
+const { findByIdMock, edgeDeviceFindOneMock, ingestValueMock, predecessorLoadMock } = vi.hoisted(
+  () => ({
   findByIdMock: vi.fn(),
+  edgeDeviceFindOneMock: vi.fn(),
   ingestValueMock: vi.fn(),
   predecessorLoadMock: vi.fn(),
-}))
+}),
+)
 
 vi.mock('./tag.model.js', () => ({
   default: {
     findById: findByIdMock,
+  },
+}))
+
+vi.mock('../edge-device/edge-device.model.js', () => ({
+  default: {
+    findOne: edgeDeviceFindOneMock,
   },
 }))
 
@@ -106,5 +115,85 @@ describe('tag-value.controller.writeValue', () => {
     ).rejects.toEqual(new CustomError(409, 'tag.same_value'))
 
     expect(ingestValueMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('tag-value.controller.writeCommand', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('maps downstream unsupported node to a 400-level command error', async () => {
+    findByIdMock.mockResolvedValue({
+      _id: 'tag-1',
+      writable: true,
+      binding: { deviceKey: 'press-line-1', nodeId: 'counter01' },
+    })
+    edgeDeviceFindOneMock.mockReturnValue({
+      lean: vi.fn().mockResolvedValue({ ipAddress: 'telemetry_node_red_stock' }),
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 400,
+        json: vi.fn().mockResolvedValue({ ok: false, error: 'unsupported_node' }),
+      }),
+    )
+
+    await expect(
+      writeCommand(
+        {
+          params: { id: 'tag-1' },
+          body: { value: 1 },
+          t: vi.fn(),
+        } as never,
+        {} as never,
+      ),
+    ).rejects.toEqual(
+      new CustomError(400, 'tag.command_unsupported', {
+        status: 400,
+        downstreamError: 'unsupported_node',
+      }),
+    )
+  })
+
+  it('maps downstream server errors to tag.command_failed', async () => {
+    findByIdMock.mockResolvedValue({
+      _id: 'tag-1',
+      writable: true,
+      binding: { deviceKey: 'press-line-1', nodeId: 'run01' },
+    })
+    edgeDeviceFindOneMock.mockReturnValue({
+      lean: vi.fn().mockResolvedValue({ ipAddress: 'telemetry_node_red_stock' }),
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 502,
+        json: vi.fn().mockResolvedValue({ ok: false }),
+      }),
+    )
+
+    await expect(
+      writeCommand(
+        {
+          params: { id: 'tag-1' },
+          body: { value: 1 },
+          t: vi.fn(),
+        } as never,
+        {} as never,
+      ),
+    ).rejects.toEqual(
+      new CustomError(502, 'tag.command_failed', {
+        status: 502,
+        downstreamError: null,
+      }),
+    )
   })
 })

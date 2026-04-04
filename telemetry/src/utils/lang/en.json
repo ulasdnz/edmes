@@ -13,6 +13,9 @@
   "tag": {
     "same_value": "The incoming value matches the latest stored value.",
     "out_of_order": "The incoming timestamp is older than or equal to the latest stored timestamp.",
-    "within_tolerance": "The incoming value is within the configured tolerance of the latest stored value."
+    "within_tolerance": "The incoming value is within the configured tolerance of the latest stored value.",
+    "command_failed": "The edge device rejected or failed to process the write command.",
+    "command_invalid": "The edge device rejected the write command request.",
+    "command_unsupported": "The bound edge node does not support write commands."
   }
 }

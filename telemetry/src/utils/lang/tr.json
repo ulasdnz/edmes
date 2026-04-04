@@ -13,6 +13,9 @@
   "tag": {
     "same_value": "Gelen deger son kayitli degerle ayni.",
     "out_of_order": "Gelen zaman damgasi son kayitli zaman damgasindan eski veya esit.",
-    "within_tolerance": "Gelen deger son kayitli degerin tolerans araligi icinde."
+    "within_tolerance": "Gelen deger son kayitli degerin tolerans araligi icinde.",
+    "command_failed": "Edge cihazi yazma komutunu isleyemedi veya basarisiz oldu.",
+    "command_invalid": "Edge cihazi yazma komutu istegini reddetti.",
+    "command_unsupported": "Bagli edge node yazma komutunu desteklemiyor."
   }
 }

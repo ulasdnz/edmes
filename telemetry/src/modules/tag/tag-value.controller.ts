@@ -70,12 +70,37 @@ export const writeCommand = async (
   })
 
   if (!response.ok) {
+    let downstreamPayload: unknown = null
+    try {
+      downstreamPayload = await response.json()
+    } catch {
+      downstreamPayload = null
+    }
+
+    const downstreamError =
+      downstreamPayload &&
+      typeof downstreamPayload === 'object' &&
+      'error' in downstreamPayload &&
+      typeof downstreamPayload.error === 'string'
+        ? downstreamPayload.error
+        : null
+
     logger.warn('Node-RED write failed', {
       event: 'tag.command.failed',
       tagId: req.params.id,
       status: response.status,
+      nodeId: tag.binding.nodeId,
+      deviceKey: tag.binding.deviceKey,
+      downstreamError,
     })
-    throw new CustomError(502, 'tag.command_failed')
+
+    if (response.status >= 400 && response.status < 500) {
+      const errorCode =
+        downstreamError === 'unsupported_node' ? 'tag.command_unsupported' : 'tag.command_invalid'
+      throw new CustomError(400, errorCode, { status: response.status, downstreamError })
+    }
+
+    throw new CustomError(502, 'tag.command_failed', { status: response.status, downstreamError })
   }
 
   res.json({ data: undefined, message: req.t('success.update') })
