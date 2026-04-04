@@ -26,8 +26,38 @@ export interface BinarySample {
 
 export type HistorianSample = CounterSample | SpeedSample | BinarySample
 
-export const insertSample = async (tagId: string, sample: HistorianSample): Promise<void> => {
-  const collectionName = `tag_samples_${tagId}`
+const getCollectionName = (tagId: string) => `tag_samples_${tagId}`
+
+const historianCollectionInit = new Map<string, Promise<void>>()
+
+const initializeHistorianCollection = async (tagId: string): Promise<void> => {
+  const collectionName = getCollectionName(tagId)
   const collection = mongoose.connection.db!.collection(collectionName)
+  await collection.createIndex({ occurredAt: 1 }, { name: 'occurredAt_1' })
+}
+
+const ensureHistorianCollectionInitialized = async (tagId: string): Promise<void> => {
+  const existing = historianCollectionInit.get(tagId)
+  if (existing) {
+    await existing
+    return
+  }
+
+  const initPromise = initializeHistorianCollection(tagId).catch(error => {
+    historianCollectionInit.delete(tagId)
+    throw error
+  })
+
+  historianCollectionInit.set(tagId, initPromise)
+  await initPromise
+}
+
+export const getHistorianCollection = (tagId: string) => {
+  return mongoose.connection.db!.collection(getCollectionName(tagId))
+}
+
+export const insertSample = async (tagId: string, sample: HistorianSample): Promise<void> => {
+  await ensureHistorianCollectionInitialized(tagId)
+  const collection = getHistorianCollection(tagId)
   await collection.insertOne(sample)
 }

@@ -1,4 +1,4 @@
-import mongoose from 'mongoose'
+import { getHistorianCollection } from '../../ingestion/historian.repository.js'
 
 interface SpeedDoc {
   occurredAt: Date
@@ -10,8 +10,7 @@ export const calculateSpeedAvg = async (
   rangeStart: Date,
   rangeEnd: Date,
 ): Promise<{ totalArea: number; weightedAvg: number; durationSec: number }> => {
-  const collectionName = `tag_samples_${tagId}`
-  const collection = mongoose.connection.db!.collection(collectionName)
+  const collection = getHistorianCollection(tagId)
 
   const baseline = await collection.findOne<SpeedDoc>(
     { occurredAt: { $lt: rangeStart } },

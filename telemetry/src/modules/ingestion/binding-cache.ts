@@ -12,6 +12,25 @@ export const bindingCacheSet = (tag: ITag): void => {
 export const bindingCacheGet = (deviceKey: string, nodeId: string): ITag | undefined =>
   cache.get(key(deviceKey, nodeId))
 
+export const bindingCacheResolve = async (
+  deviceKey: string,
+  nodeId: string,
+): Promise<ITag | undefined> => {
+  const existing = bindingCacheGet(deviceKey, nodeId)
+  if (existing) return existing
+
+  const Tag = (await import('../tag/tag.model.js')).default
+  const tag = await Tag.findOne({
+    'binding.deviceKey': deviceKey,
+    'binding.nodeId': nodeId,
+  }).lean()
+
+  if (!tag) return undefined
+
+  bindingCacheSet(tag as ITag)
+  return tag as ITag
+}
+
 export const bindingCacheDelete = (deviceKey: string, nodeId: string): void => {
   cache.delete(key(deviceKey, nodeId))
 }

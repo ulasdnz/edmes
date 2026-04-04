@@ -1,4 +1,4 @@
-import mongoose from 'mongoose'
+import { getHistorianCollection } from '../../ingestion/historian.repository.js'
 
 interface CounterDoc {
   occurredAt: Date
@@ -14,8 +14,7 @@ export const calculateProduced = async (
   rangeStart: Date,
   rangeEnd: Date,
 ): Promise<number> => {
-  const collectionName = `tag_samples_${tagId}`
-  const collection = mongoose.connection.db!.collection(collectionName)
+  const collection = getHistorianCollection(tagId)
 
   const baseline = await collection.findOne<CounterDoc>(
     { occurredAt: { $lt: rangeStart } },

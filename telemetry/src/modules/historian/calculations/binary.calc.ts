@@ -1,4 +1,4 @@
-import mongoose from 'mongoose'
+import { getHistorianCollection } from '../../ingestion/historian.repository.js'
 
 interface BinaryDoc {
   occurredAt: Date
@@ -17,8 +17,7 @@ export const calculateStateDurations = async (
   rangeStart: Date,
   rangeEnd: Date,
 ): Promise<StateSegment[]> => {
-  const collectionName = `tag_samples_${tagId}`
-  const collection = mongoose.connection.db!.collection(collectionName)
+  const collection = getHistorianCollection(tagId)
 
   const baseline = await collection.findOne<BinaryDoc>(
     { occurredAt: { $lt: rangeStart } },

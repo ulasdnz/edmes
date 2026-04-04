@@ -4,7 +4,7 @@ import { getPeriodLock } from '../../jobs/subscribers.js'
 import { logger } from '../../lib/logger.js'
 import { pubClient } from '../../lib/redis.js'
 import type { ITag } from '../tag/tag.model.js'
-import { bindingCacheGet } from './binding-cache.js'
+import { bindingCacheResolve } from './binding-cache.js'
 import { upsertCurrentState } from './current-state.repository.js'
 import { type HistorianSample, insertSample } from './historian.repository.js'
 import { predecessorLoad, predecessorSet } from './predecessor-cache.js'
@@ -28,8 +28,16 @@ export const processMessage = async (topic: string, payload: Buffer): Promise<vo
   const deviceKey = parts[1]
   const nodeId = parts[3]
 
-  const tag = bindingCacheGet(deviceKey, nodeId)
-  if (!tag) return
+  const tag = await bindingCacheResolve(deviceKey, nodeId)
+  if (!tag) {
+    logger.debug('MQTT sample dropped: no bound tag found', {
+      event: 'ingestion.binding.not_found',
+      topic,
+      deviceKey,
+      nodeId,
+    })
+    return
+  }
 
   let msg: IncomingMessage
   try {

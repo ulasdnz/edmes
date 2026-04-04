@@ -1,14 +1,9 @@
-import mongoose from 'mongoose'
 import { CustomError } from '../../core/errors/index.js'
+import { getHistorianCollection } from '../ingestion/historian.repository.js'
 import Tag from '../tag/tag.model.js'
 import { calculateStateDurations } from './calculations/binary.calc.js'
 import { calculateProduced } from './calculations/counter.calc.js'
 import { calculateSpeedAvg } from './calculations/speed.calc.js'
-
-const getCollection = (tagId: string) => {
-  const collectionName = `tag_samples_${tagId}`
-  return mongoose.connection.db!.collection(collectionName)
-}
 
 const ensureTagExists = async (tagId: string) => {
   const tag = await Tag.findById(tagId).select('behavior').lean()
@@ -18,29 +13,26 @@ const ensureTagExists = async (tagId: string) => {
 
 export const getCompactValues = async (tagId: string, from: Date, to: Date) => {
   await ensureTagExists(tagId)
-  const collection = getCollection(tagId)
+  const collection = getHistorianCollection(tagId)
 
   const baseline = await collection.findOne(
     { occurredAt: { $lte: from } },
-    { sort: { occurredAt: -1 }, projection: { occurredAt: 1, value: 1, _id: 0 } },
+    { sort: { occurredAt: -1 }, projection: { _id: 0, v: '$value' } },
   )
 
   const docs = await collection
     .find(
       { occurredAt: { $gt: from, $lte: to } },
-      { projection: { occurredAt: 1, value: 1, _id: 0 } },
+      { projection: { _id: 0, t: '$occurredAt', v: '$value' } },
     )
     .sort({ occurredAt: 1 })
     .toArray()
 
-  const result = []
-  if (baseline) {
-    result.push({ t: from, v: baseline.value })
+  if (!baseline) {
+    return docs
   }
-  for (const doc of docs) {
-    result.push({ t: doc.occurredAt, v: doc.value })
-  }
-  return result
+
+  return [{ t: from, v: baseline.v }, ...docs]
 }
 
 export const getSamples = async (
@@ -52,7 +44,7 @@ export const getSamples = async (
   previous: boolean,
 ) => {
   await ensureTagExists(tagId)
-  const collection = getCollection(tagId)
+  const collection = getHistorianCollection(tagId)
 
   const query = { occurredAt: { $gt: from, $lte: to } }
   const total = await collection.countDocuments(query)
@@ -82,13 +74,13 @@ export const getSamples = async (
 
 export const getSampleCount = async (tagId: string, from: Date, to: Date) => {
   await ensureTagExists(tagId)
-  const collection = getCollection(tagId)
+  const collection = getHistorianCollection(tagId)
   return collection.countDocuments({ occurredAt: { $gt: from, $lte: to } })
 }
 
 export const getStats = async (tagId: string, from: Date, to: Date) => {
   await ensureTagExists(tagId)
-  const collection = getCollection(tagId)
+  const collection = getHistorianCollection(tagId)
 
   const result = await collection
     .aggregate([
@@ -153,7 +145,7 @@ export const getRollup = async (
   fn: 'avg' | 'min' | 'max' | 'sum' | 'count',
 ) => {
   await ensureTagExists(tagId)
-  const collection = getCollection(tagId)
+  const collection = getHistorianCollection(tagId)
 
   const baseline = await collection.findOne(
     { occurredAt: { $lte: from } },

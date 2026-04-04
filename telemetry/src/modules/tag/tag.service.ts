@@ -1,6 +1,7 @@
 import mongoose from 'mongoose'
 import CustomError from '../../core/errors/index.js'
 import { emitTagCreated, emitTagDeleted, emitTagUpdated } from '../../jobs/events.js'
+import { bindingCacheDelete, bindingCacheSet } from '../ingestion/binding-cache.js'
 import Tag from './tag.model.js'
 import type { CreateTagInput, UpdateTagInput } from './tag.validators.js'
 
@@ -16,6 +17,9 @@ export const createTag = async (data: CreateTagInput) => {
   }
 
   const tag = await Tag.create(data)
+  if (tag.binding?.nodeId) {
+    bindingCacheSet(tag)
+  }
   await emitTagCreated(tag._id.toString())
   return tag
 }
@@ -31,6 +35,11 @@ export const getTagById = async (id: string) => {
 }
 
 export const updateTag = async (id: string, data: UpdateTagInput) => {
+  const existingTag = await Tag.findById(id)
+  if (!existingTag) {
+    throw new CustomError(404, 'tag.not_found')
+  }
+
   if (data.binding?.nodeId) {
     const existing = await Tag.findOne({
       'binding.deviceKey': data.binding.deviceKey,
@@ -51,6 +60,13 @@ export const updateTag = async (id: string, data: UpdateTagInput) => {
     throw new CustomError(404, 'tag.not_found')
   }
 
+  if (existingTag.binding?.nodeId) {
+    bindingCacheDelete(existingTag.binding.deviceKey, existingTag.binding.nodeId)
+  }
+  if (tag.binding?.nodeId) {
+    bindingCacheSet(tag)
+  }
+
   await emitTagUpdated(tag._id.toString())
   return tag
 }
@@ -59,6 +75,10 @@ export const deleteTag = async (id: string, forceDelete = false) => {
   const tag = await Tag.findById(id)
   if (!tag) {
     throw new CustomError(404, 'tag.not_found')
+  }
+
+  if (tag.binding?.nodeId) {
+    bindingCacheDelete(tag.binding.deviceKey, tag.binding.nodeId)
   }
 
   if (tag.storageMode === 'history') {
