@@ -3,23 +3,25 @@ import * as historianService from './historian.service.js'
 import { parseInterval } from './historian.validators.js'
 
 export const getCompactValues = async (req: Request<{ tagId: string }>, res: Response) => {
-  const { from, to } = req.query as { from: string; to: string }
-  const data = await historianService.getCompactValues(
-    req.params.tagId,
-    new Date(from),
-    new Date(to),
-  )
+  const { from, to } = req.query as unknown as { from: Date; to: Date }
+  const data = await historianService.getCompactValues(req.params.tagId, from, to)
   res.json({ data })
 }
 
 export const getSamples = async (req: Request<{ tagId: string }>, res: Response) => {
-  const { from, to, page, limit, previous } = req.query as Record<string, string>
+  const { from, to, page, limit, previous } = req.query as unknown as {
+    from: Date
+    to: Date
+    page: number
+    limit: number
+    previous: 'true' | 'false'
+  }
   const result = await historianService.getSamples(
     req.params.tagId,
-    new Date(from),
-    new Date(to),
-    Number(page) || 1,
-    Number(limit) || 100,
+    from,
+    to,
+    page || 1,
+    limit || 100,
     previous === 'true',
   )
   res.json({
@@ -30,61 +32,43 @@ export const getSamples = async (req: Request<{ tagId: string }>, res: Response)
 }
 
 export const getSampleCount = async (req: Request<{ tagId: string }>, res: Response) => {
-  const { from, to } = req.query as { from: string; to: string }
-  const count = await historianService.getSampleCount(
-    req.params.tagId,
-    new Date(from),
-    new Date(to),
-  )
+  const { from, to } = req.query as unknown as { from: Date; to: Date }
+  const count = await historianService.getSampleCount(req.params.tagId, from, to)
   res.json({ data: { count } })
 }
 
 export const getStats = async (req: Request<{ tagId: string }>, res: Response) => {
-  const { from, to } = req.query as { from: string; to: string }
-  const stats = await historianService.getStats(req.params.tagId, new Date(from), new Date(to))
+  const { from, to } = req.query as unknown as { from: Date; to: Date }
+  const stats = await historianService.getStats(req.params.tagId, from, to)
   res.json({ data: stats })
 }
 
 export const getProduced = async (req: Request<{ tagId: string }>, res: Response) => {
-  const { from, to } = req.query as { from: string; to: string }
-  const produced = await historianService.getProduced(
-    req.params.tagId,
-    new Date(from),
-    new Date(to),
-  )
+  const { from, to } = req.query as unknown as { from: Date; to: Date }
+  const produced = await historianService.getProduced(req.params.tagId, from, to)
   res.json({ data: { produced } })
 }
 
 export const getSpeedAvg = async (req: Request<{ tagId: string }>, res: Response) => {
-  const { from, to } = req.query as { from: string; to: string }
-  const result = await historianService.getSpeedAvg(req.params.tagId, new Date(from), new Date(to))
+  const { from, to } = req.query as unknown as { from: Date; to: Date }
+  const result = await historianService.getSpeedAvg(req.params.tagId, from, to)
   res.json({ data: result })
 }
 
 export const getStateDurations = async (req: Request<{ tagId: string }>, res: Response) => {
-  const { from, to } = req.query as { from: string; to: string }
-  const segments = await historianService.getStateDurations(
-    req.params.tagId,
-    new Date(from),
-    new Date(to),
-  )
+  const { from, to } = req.query as unknown as { from: Date; to: Date }
+  const segments = await historianService.getStateDurations(req.params.tagId, from, to)
   res.json({ data: segments })
 }
 
 export const getRollup = async (req: Request<{ tagId: string }>, res: Response) => {
-  const { from, to, interval, fn } = req.query as {
-    from: string
-    to: string
+  const { from, to, interval, fn } = req.query as unknown as {
+    from: Date
+    to: Date
     interval: string
     fn: 'avg' | 'min' | 'max' | 'sum' | 'count'
   }
   const intervalMs = parseInterval(interval)
-  const buckets = await historianService.getRollup(
-    req.params.tagId,
-    new Date(from),
-    new Date(to),
-    intervalMs,
-    fn,
-  )
+  const buckets = await historianService.getRollup(req.params.tagId, from, to, intervalMs, fn)
   res.json({ data: buckets })
 }

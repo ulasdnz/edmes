@@ -1,3 +1,4 @@
+import { utcDateSchema } from '@mes/core'
 import { z } from 'zod'
 import { objectIdSchema } from '../../utils/validators.js'
 
@@ -6,8 +7,8 @@ export const tagIdParamSchema = z.object({
 })
 
 export const rangeQuerySchema = z.object({
-  from: z.string().datetime(),
-  to: z.string().datetime(),
+  from: utcDateSchema,
+  to: utcDateSchema,
 })
 
 export const samplesQuerySchema = rangeQuerySchema.extend({

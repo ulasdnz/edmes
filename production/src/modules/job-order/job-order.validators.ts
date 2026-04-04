@@ -1,3 +1,4 @@
+import { utcDateSchema } from '@mes/core'
 import { z } from 'zod'
 import { paginationSchema } from '../../utils/pagination.js'
 import { objectIdSchema } from '../../utils/validators.js'
@@ -10,8 +11,8 @@ export const createJobOrderSchema = z.object({
   workCenterId: objectIdSchema,
   productionPlanId: objectIdSchema.nullable().optional(),
   targetQuantity: z.number().positive(),
-  plannedStartAt: z.coerce.date().nullable().optional(),
-  dueAt: z.coerce.date().nullable().optional(),
+  plannedStartAt: utcDateSchema.nullable().optional(),
+  dueAt: utcDateSchema.nullable().optional(),
   description: z.string().max(500).nullable().optional(),
   props: z.record(z.string(), z.string()).optional(),
 }).strict()
@@ -23,8 +24,8 @@ export const patchJobOrderSchema = z
     workCenterId: objectIdSchema.optional(),
     productionPlanId: objectIdSchema.nullable().optional(),
     targetQuantity: z.number().positive().optional(),
-    plannedStartAt: z.coerce.date().nullable().optional(),
-    dueAt: z.coerce.date().nullable().optional(),
+    plannedStartAt: utcDateSchema.nullable().optional(),
+    dueAt: utcDateSchema.nullable().optional(),
     description: z.string().max(500).nullable().optional(),
     props: z.record(z.string(), z.string()).optional(),
   })
@@ -34,11 +35,11 @@ export const patchJobOrderSchema = z
 export const jobOrderIdParamSchema = z.object({ id: objectIdSchema })
 
 export const startJobOrderSchema = z.object({
-  startTime: z.coerce.date().optional(),
+  startTime: utcDateSchema.optional(),
 }).strict()
 
 export const endJobOrderSchema = z.object({
-  endTime: z.coerce.date().optional(),
+  endTime: utcDateSchema.optional(),
 }).strict()
 
 export const jobOrderListSchema = paginationSchema.extend({
@@ -53,18 +54,18 @@ export const jobOrderListSchema = paginationSchema.extend({
   workCenterIds: z.string().optional(),
   productIds: z.string().optional(),
   runtimeState: z.enum(['pending', 'running', 'finished']).optional(),
-  activeFrom: z.coerce.date().optional(),
-  activeTo: z.coerce.date().optional(),
-  plannedStartAtFrom: z.coerce.date().optional(),
-  plannedStartAtTo: z.coerce.date().optional(),
-  startTimeFrom: z.coerce.date().optional(),
-  startTimeTo: z.coerce.date().optional(),
-  endTimeFrom: z.coerce.date().optional(),
-  endTimeTo: z.coerce.date().optional(),
-  dueAtFrom: z.coerce.date().optional(),
-  dueAtTo: z.coerce.date().optional(),
-  createdAtFrom: z.coerce.date().optional(),
-  createdAtTo: z.coerce.date().optional(),
+  activeFrom: utcDateSchema.optional(),
+  activeTo: utcDateSchema.optional(),
+  plannedStartAtFrom: utcDateSchema.optional(),
+  plannedStartAtTo: utcDateSchema.optional(),
+  startTimeFrom: utcDateSchema.optional(),
+  startTimeTo: utcDateSchema.optional(),
+  endTimeFrom: utcDateSchema.optional(),
+  endTimeTo: utcDateSchema.optional(),
+  dueAtFrom: utcDateSchema.optional(),
+  dueAtTo: utcDateSchema.optional(),
+  createdAtFrom: utcDateSchema.optional(),
+  createdAtTo: utcDateSchema.optional(),
 })
 
 export type CreateJobOrderInput = z.infer<typeof createJobOrderSchema>

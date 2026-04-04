@@ -1,3 +1,4 @@
+import { parseUtcZonedDateTime } from '@mes/core'
 import { CustomError } from '../../core/errors/index.js'
 import { getPeriodLock } from '../../jobs/subscribers.js'
 import { logger } from '../../lib/logger.js'
@@ -30,8 +31,8 @@ export const processMessage = async (topic: string, payload: Buffer): Promise<vo
     return
   }
 
-  const occurredAt = new Date(msg.time)
-  if (Number.isNaN(occurredAt.getTime())) return
+  const occurredAt = parseUtcZonedDateTime(msg.time)
+  if (!occurredAt) return
 
   await ingestValue(tag, msg.value, occurredAt)
 }

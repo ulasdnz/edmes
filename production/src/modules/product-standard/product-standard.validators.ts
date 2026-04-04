@@ -1,3 +1,4 @@
+import { utcDateSchema } from '@mes/core'
 import { z } from 'zod'
 import { paginationSchema } from '../../utils/pagination.js'
 import { objectIdSchema } from '../../utils/validators.js'
@@ -5,7 +6,7 @@ import { objectIdSchema } from '../../utils/validators.js'
 export const createProductStandardSchema = z.object({
   productId: objectIdSchema,
   workCenterId: objectIdSchema,
-  validFrom: z.coerce.date().optional(),
+  validFrom: utcDateSchema.optional(),
   idealOutputPerMinute: z.number().positive(),
   counterMultiplier: z.number().positive().nullable().optional(),
   idealSpeed: z.number().positive().nullable().optional(),
@@ -27,10 +28,10 @@ export const productStandardListSchema = paginationSchema.extend({
   productId: objectIdSchema.optional(),
   workCenterId: objectIdSchema.optional(),
   createdBy: objectIdSchema.optional(),
-  validFromFrom: z.coerce.date().optional(),
-  validFromTo: z.coerce.date().optional(),
-  createdAtFrom: z.coerce.date().optional(),
-  createdAtTo: z.coerce.date().optional(),
+  validFromFrom: utcDateSchema.optional(),
+  validFromTo: utcDateSchema.optional(),
+  createdAtFrom: utcDateSchema.optional(),
+  createdAtTo: utcDateSchema.optional(),
 })
 
 export type CreateProductStandardInput = z.infer<typeof createProductStandardSchema>

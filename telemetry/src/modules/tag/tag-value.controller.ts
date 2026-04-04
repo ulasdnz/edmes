@@ -14,7 +14,7 @@ export const writeValue = async (
   const tag = await Tag.findById(req.params.id)
   if (!tag) throw new CustomError(404, 'tag.not_found')
 
-  await ingestValue(tag, req.body.value, new Date(req.body.time))
+  await ingestValue(tag, req.body.value, req.body.time)
 
   res.status(201).json({ data: undefined, message: req.t('success.create') })
 }

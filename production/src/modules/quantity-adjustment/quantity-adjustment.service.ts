@@ -22,7 +22,7 @@ export async function create(
   if (!jo.startTime) throw new CustomError(400, 'error.job_order_not_started_for_adjustment')
 
   if (data.amount === 0) throw new CustomError(400, 'error.amount_zero')
-  if (new Date(data.time) < jo.startTime) {
+  if (data.time < jo.startTime) {
     throw new CustomError(400, 'error.job_order_time_before_start')
   }
 
@@ -100,7 +100,7 @@ export async function update(
 
   if (data.time) {
     const jo = await JobOrder.findById(qa.jobOrderId)
-    if (jo && jo.startTime && new Date(data.time) < jo.startTime) {
+    if (jo && jo.startTime && data.time < jo.startTime) {
       throw new CustomError(400, 'error.job_order_time_before_start')
     }
   }

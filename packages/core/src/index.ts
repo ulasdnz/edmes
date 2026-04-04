@@ -18,6 +18,13 @@ export {
 export { validateBody, validateParams, validateQuery } from './middleware/validate.js'
 // Shutdown
 export { isShuttingDown, setShuttingDown } from './shutdown.js'
+export {
+  isUtcZonedDateTimeString,
+  parseUtcZonedDateTime,
+  utcDateSchema,
+  utcDateTimeStringSchema,
+  UTC_ZONED_DATETIME_REGEX,
+} from './time.js'
 // Types
 export type {
   ErrorDetail,

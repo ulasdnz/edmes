@@ -1,3 +1,4 @@
+import { utcDateSchema } from '@mes/core'
 import { z } from 'zod'
 import { objectIdSchema } from '../../utils/validators.js'
 
@@ -27,8 +28,8 @@ const weeklyPatternSchema = z.object({
 
 export const createCalendarSchema = z
   .object({
-    validFrom: z.coerce.date(),
-    validTo: z.coerce.date(),
+    validFrom: utcDateSchema,
+    validTo: utcDateSchema,
     weeklyPattern: weeklyPatternSchema,
   })
   .strict()
@@ -41,8 +42,8 @@ export const replaceCalendarSchema = createCalendarSchema
 
 export const patchCalendarSchema = z
   .object({
-    validFrom: z.coerce.date().optional(),
-    validTo: z.coerce.date().optional(),
+    validFrom: utcDateSchema.optional(),
+    validTo: utcDateSchema.optional(),
     status: z.enum(['active', 'retired']).optional(),
     weeklyPattern: weeklyPatternSchema.optional(),
   })

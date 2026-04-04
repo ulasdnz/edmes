@@ -59,6 +59,7 @@ testing → source-only (no build, vitest transpiles directly)
 | `@mes/events` | Redis Streams publish/consume with consumer groups, auto-ACK, pending recovery, traceId propagation |
 | `@mes/health` | Health/readiness endpoints with dependency-injected probes |
 | `@mes/openapi` | Zod-OpenAPI document generation |
+| `@mes/privileges` | Central RBAC privilege registry shared by all services and system-admin bootstrap |
 | `@mes/testing` | Shared test utilities (source-only, exports `src/index.ts` directly) |
 
 ### Service Apps
@@ -136,12 +137,23 @@ Standard REST: POST (create), PUT (full replace), PATCH (partial update), DELETE
 
 ### Permissions (RBAC)
 
-- `PRIVILEGES` in `user/src/constants/privileges.ts` is the **single source of truth** for all assignable permission codes. Every permission used in `requirePermission()` calls must exist here.
-- When adding a new module or feature, add its permission codes to `PRIVILEGES` **first**. The system admin role auto-syncs to include all `PRIVILEGES` on startup.
+- `PRIVILEGES` in `@mes/privileges` is the **single source of truth** for all assignable permission codes. Every permission used in `requirePermission()` calls must exist there.
+- When adding a new module or feature, add its permission codes to `@mes/privileges` **first**. The system admin role auto-syncs to include all `PRIVILEGES` on startup.
 - Naming convention: camelCase verb+entity — `readEntity`, `writeEntity`, `createEntity`, `deleteEntity`, `accessEntityScreen`.
 - `requirePermission('code')` from `@mes/auth` enforces permissions at route level; it checks string inclusion against the user's resolved permission array.
 - `SYSTEM_IDENTITY` (`'ffffffffffffffffffffffff'`) gets wildcard `['*']` for internal service-to-service calls. Real users (including the bootstrapped system admin) receive explicit permission codes.
 - The system admin role and user are protected from deletion and renaming via API guards.
+
+### Date / Time
+
+- Distinguish **instants** from **date-only business values**.
+- Instants exchanged via APIs, MQTT, Redis events, historian queries, and cross-service payloads must use ISO 8601 UTC with a trailing `Z`.
+- Canonical instant example: `2026-04-04T12:30:00.000Z`
+- Reject offset-less or local datetime strings such as `2026-04-04T12:30:00` or `2026-04-04 12:30:00`.
+- Keep the wire format canonical as `...Z`; do not rely on local server timezone or implicit offsets.
+- Persist instants in MongoDB as `Date`, not strings.
+- Convert timestamps to local timezone only in the frontend or explicit presentation layers.
+- If a domain concept is truly date-only or plant-local (for example `birthDate` or `localDate`), model it explicitly as a date-only value instead of pretending it is a UTC instant.
 
 ### Logging
 

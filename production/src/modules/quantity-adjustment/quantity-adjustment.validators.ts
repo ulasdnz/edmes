@@ -1,3 +1,4 @@
+import { utcDateSchema } from '@mes/core'
 import { z } from 'zod'
 import { paginationSchema } from '../../utils/pagination.js'
 import { objectIdSchema } from '../../utils/validators.js'
@@ -6,7 +7,7 @@ export const createQuantityAdjustmentSchema = z.object({
   jobOrderId: objectIdSchema,
   shiftId: objectIdSchema,
   amount: z.number(),
-  time: z.coerce.date(),
+  time: utcDateSchema,
   reason: z.string().max(200).nullable().optional(),
   description: z.string().max(500).nullable().optional(),
 }).strict()
@@ -15,7 +16,7 @@ export const patchQuantityAdjustmentSchema = z
   .object({
     shiftId: objectIdSchema.optional(),
     amount: z.number().optional(),
-    time: z.coerce.date().optional(),
+    time: utcDateSchema.optional(),
     reason: z.string().max(200).nullable().optional(),
     description: z.string().max(500).nullable().optional(),
   })
@@ -31,10 +32,10 @@ export const quantityAdjustmentListSchema = paginationSchema.extend({
   productId: objectIdSchema.optional(),
   shiftId: objectIdSchema.optional(),
   createdBy: objectIdSchema.optional(),
-  timeFrom: z.coerce.date().optional(),
-  timeTo: z.coerce.date().optional(),
-  createdAtFrom: z.coerce.date().optional(),
-  createdAtTo: z.coerce.date().optional(),
+  timeFrom: utcDateSchema.optional(),
+  timeTo: utcDateSchema.optional(),
+  createdAtFrom: utcDateSchema.optional(),
+  createdAtTo: utcDateSchema.optional(),
 })
 
 export type CreateQuantityAdjustmentInput = z.infer<typeof createQuantityAdjustmentSchema>

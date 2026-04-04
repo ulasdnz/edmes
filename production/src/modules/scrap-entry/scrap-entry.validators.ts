@@ -1,3 +1,4 @@
+import { utcDateSchema } from '@mes/core'
 import { z } from 'zod'
 import { paginationSchema } from '../../utils/pagination.js'
 import { objectIdSchema } from '../../utils/validators.js'
@@ -6,8 +7,8 @@ export const createScrapEntrySchema = z.object({
   jobOrderId: objectIdSchema,
   shiftId: objectIdSchema,
   amount: z.number().positive(),
-  startTime: z.coerce.date(),
-  endTime: z.coerce.date(),
+  startTime: utcDateSchema,
+  endTime: utcDateSchema,
   causeId: objectIdSchema.nullable().optional(),
   description: z.string().max(500).nullable().optional(),
   props: z.record(z.string(), z.string()).optional(),
@@ -17,8 +18,8 @@ export const patchScrapEntrySchema = z
   .object({
     shiftId: objectIdSchema.optional(),
     amount: z.number().positive().optional(),
-    startTime: z.coerce.date().optional(),
-    endTime: z.coerce.date().optional(),
+    startTime: utcDateSchema.optional(),
+    endTime: utcDateSchema.optional(),
     causeId: objectIdSchema.nullable().optional(),
     description: z.string().max(500).nullable().optional(),
     props: z.record(z.string(), z.string()).optional(),
@@ -36,12 +37,12 @@ export const scrapEntryListSchema = paginationSchema.extend({
   shiftId: objectIdSchema.optional(),
   causeId: objectIdSchema.optional(),
   createdBy: objectIdSchema.optional(),
-  startTimeFrom: z.coerce.date().optional(),
-  startTimeTo: z.coerce.date().optional(),
-  endTimeFrom: z.coerce.date().optional(),
-  endTimeTo: z.coerce.date().optional(),
-  createdAtFrom: z.coerce.date().optional(),
-  createdAtTo: z.coerce.date().optional(),
+  startTimeFrom: utcDateSchema.optional(),
+  startTimeTo: utcDateSchema.optional(),
+  endTimeFrom: utcDateSchema.optional(),
+  endTimeTo: utcDateSchema.optional(),
+  createdAtFrom: utcDateSchema.optional(),
+  createdAtTo: utcDateSchema.optional(),
 })
 
 export type CreateScrapEntryInput = z.infer<typeof createScrapEntrySchema>

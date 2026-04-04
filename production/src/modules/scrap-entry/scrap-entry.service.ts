@@ -20,10 +20,10 @@ export async function create(data: CreateScrapEntryInput, userId: string): Promi
 
   if (data.amount <= 0) throw new CustomError(400, 'error.amount_not_positive')
 
-  if (new Date(data.endTime) <= new Date(data.startTime)) {
+  if (data.endTime <= data.startTime) {
     throw new CustomError(400, 'error.scrap_end_before_start')
   }
-  if (new Date(data.startTime) < jo.startTime) {
+  if (data.startTime < jo.startTime) {
     throw new CustomError(400, 'error.job_order_time_before_start')
   }
 
@@ -108,8 +108,8 @@ export async function update(
   const scrap = await ScrapEntry.findById(id)
   if (!scrap) throw new CustomError(404, 'error.not_found')
 
-  const newStartTime = data.startTime ? new Date(data.startTime) : scrap.startTime
-  const newEndTime = data.endTime ? new Date(data.endTime) : scrap.endTime
+  const newStartTime = data.startTime ?? scrap.startTime
+  const newEndTime = data.endTime ?? scrap.endTime
 
   if (newEndTime <= newStartTime) {
     throw new CustomError(400, 'error.scrap_end_before_start')
@@ -117,7 +117,7 @@ export async function update(
 
   if (data.startTime) {
     const jo = await JobOrder.findById(scrap.jobOrderId)
-    if (jo && jo.startTime && new Date(data.startTime) < jo.startTime) {
+    if (jo && jo.startTime && data.startTime < jo.startTime) {
       throw new CustomError(400, 'error.job_order_time_before_start')
     }
   }

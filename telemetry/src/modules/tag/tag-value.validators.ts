@@ -1,8 +1,9 @@
+import { utcDateSchema } from '@mes/core'
 import { z } from 'zod'
 
 export const writeValueSchema = z
   .object({
-    time: z.string().datetime(),
+    time: utcDateSchema,
     value: z.number(),
   })
   .strict()
