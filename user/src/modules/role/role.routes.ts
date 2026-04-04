@@ -3,9 +3,9 @@
  */
 
 import { requirePermission } from '@mes/auth'
+import { PRIVILEGES } from '@mes/privileges'
 import type { Request, Response } from 'express'
 import { Router } from 'express'
-import { PRIVILEGES } from '../../constants/privileges.js'
 import { validateBody, validateParams } from '../../core/middleware/validate.js'
 import type { SuccessResponse } from '../../core/types/api.types.js'
 import * as roleController from './role.controller.js'

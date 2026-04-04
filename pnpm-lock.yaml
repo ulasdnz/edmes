@@ -187,6 +187,15 @@ importers:
         specifier: ^5.0.0
         version: 5.4.6(zod@4.3.6)
 
+  packages/privileges:
+    devDependencies:
+      '@types/node':
+        specifier: ^20.0.0
+        version: 20.19.37
+      typescript:
+        specifier: ^5.5.0
+        version: 5.9.3
+
   packages/testing:
     devDependencies:
       '@testcontainers/mongodb':
@@ -246,6 +255,9 @@ importers:
       '@mes/openapi':
         specifier: workspace:*
         version: link:../packages/openapi
+      '@mes/privileges':
+        specifier: workspace:*
+        version: link:../packages/privileges
       compression:
         specifier: ^1.8.1
         version: 1.8.1
@@ -425,6 +437,9 @@ importers:
       '@mes/openapi':
         specifier: workspace:*
         version: link:../packages/openapi
+      '@mes/privileges':
+        specifier: workspace:*
+        version: link:../packages/privileges
       compression:
         specifier: ^1.8.1
         version: 1.8.1
@@ -549,6 +564,9 @@ importers:
       '@mes/openapi':
         specifier: workspace:*
         version: link:../packages/openapi
+      '@mes/privileges':
+        specifier: workspace:*
+        version: link:../packages/privileges
       bcryptjs:
         specifier: ^3.0.3
         version: 3.0.3
@@ -694,6 +712,9 @@ importers:
       '@mes/openapi':
         specifier: workspace:*
         version: link:../packages/openapi
+      '@mes/privileges':
+        specifier: workspace:*
+        version: link:../packages/privileges
       compression:
         specifier: ^1.8.1
         version: 1.8.1

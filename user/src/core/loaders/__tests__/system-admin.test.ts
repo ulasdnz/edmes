@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { PRIVILEGES } from '../../../constants/privileges.js'
+import { PRIVILEGES } from '@mes/privileges'
 import { SYSTEM_ADMIN_ROLE_NAME, SYSTEM_ADMIN_USERNAME } from '../../../constants/system-admin.js'
 import Role from '../../../modules/role/role.model.js'
 import User from '../../../modules/user/user.model.js'

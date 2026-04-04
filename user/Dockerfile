@@ -22,6 +22,7 @@ COPY packages/openapi/package.json packages/openapi/tsconfig.json ./packages/ope
 COPY packages/events/package.json packages/events/tsconfig.json ./packages/events/
 COPY packages/health/package.json packages/health/tsconfig.json ./packages/health/
 COPY packages/testing/package.json packages/testing/tsconfig.json ./packages/testing/
+COPY packages/privileges/package.json packages/privileges/tsconfig.json ./packages/privileges/
 COPY user/package.json user/tsconfig.json ./user/
 
 # Fetch deps — node-linker=hoisted ensures @mes/* resolve from any directory

@@ -55,6 +55,7 @@
     "@mes/events": "workspace:*",
     "@mes/health": "workspace:*",
     "@mes/openapi": "workspace:*",
+    "@mes/privileges": "workspace:*",
     "bcryptjs": "^3.0.3",
     "compression": "^1.8.1",
     "cors": "^2.8.6",

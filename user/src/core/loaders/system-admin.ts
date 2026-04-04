@@ -1,6 +1,6 @@
 import bcrypt from 'bcryptjs'
+import { PRIVILEGES } from '@mes/privileges'
 import { config } from '../../config/index.js'
-import { PRIVILEGES } from '../../constants/privileges.js'
 import {
   SYSTEM_ADMIN_DEV_PASSWORD,
   SYSTEM_ADMIN_NAME,

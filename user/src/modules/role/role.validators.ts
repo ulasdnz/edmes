@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import 'zod-openapi'
-import { VALID_PRIVILEGE_CODES } from '../../constants/privileges.js'
+import { VALID_PRIVILEGE_CODES } from '@mes/privileges'
 import { objectIdSchema } from '../../utils/validators.js'
 
 const nameSchema = z

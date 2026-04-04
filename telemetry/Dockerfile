@@ -19,6 +19,7 @@ COPY packages/openapi/package.json packages/openapi/tsconfig.json ./packages/ope
 COPY packages/events/package.json packages/events/tsconfig.json ./packages/events/
 COPY packages/health/package.json packages/health/tsconfig.json ./packages/health/
 COPY packages/testing/package.json packages/testing/tsconfig.json ./packages/testing/
+COPY packages/privileges/package.json packages/privileges/tsconfig.json ./packages/privileges/
 COPY telemetry/package.json telemetry/tsconfig.json ./telemetry/
 
 RUN echo "node-linker=hoisted" > .npmrc && pnpm install --frozen-lockfile
