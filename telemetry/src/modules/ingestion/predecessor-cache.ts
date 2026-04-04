@@ -29,12 +29,6 @@ export const predecessorLoad = async (
   if (existing) return existing
 
   const collectionName = `tag_samples_${tagId}`
-
-  const collections = await mongoose.connection
-    .db!.listCollections({ name: collectionName })
-    .toArray()
-  if (collections.length === 0) return undefined
-
   const collection = mongoose.connection.db!.collection(collectionName)
   const lastDoc = await collection.findOne({}, { sort: { occurredAt: -1 } })
   if (!lastDoc) return undefined
