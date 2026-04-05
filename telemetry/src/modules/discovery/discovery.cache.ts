@@ -7,13 +7,13 @@ interface NodeInfo {
 interface DeviceManifest {
   deviceKey: string
   nodes: NodeInfo[]
-  receivedAt: Date
+  manifestReceivedAt: Date
 }
 
 const manifests = new Map<string, DeviceManifest>()
 
 export const discoverySetManifest = (deviceKey: string, nodes: NodeInfo[]): void => {
-  manifests.set(deviceKey, { deviceKey, nodes, receivedAt: new Date() })
+  manifests.set(deviceKey, { deviceKey, nodes, manifestReceivedAt: new Date() })
 }
 
 export const discoveryGetAll = () => [...manifests.values()]
