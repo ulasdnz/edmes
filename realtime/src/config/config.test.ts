@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('dotenv', () => ({ default: { config: vi.fn() } }))
 
@@ -21,6 +21,11 @@ describe('RealtimeConfig.validation', () => {
     process.env.PORT = '3003'
     process.env.REDIS_URL = 'redis://localhost:6379'
     process.env.LOG_LEVEL = 'info'
+    process.env.STREAM_CONSUMER_BATCH_SIZE = '20'
+    process.env.STREAM_CONSUMER_BLOCK_MS = '4000'
+    process.env.STREAM_CONSUMER_RECLAIM_MIN_IDLE_MS = '45000'
+    process.env.STREAM_CONSUMER_RECLAIM_BATCH_SIZE = '60'
+    process.env.STREAM_CONSUMER_MAX_DELIVERIES = '7'
 
     const { config } = await import('./index.js')
 
@@ -28,6 +33,11 @@ describe('RealtimeConfig.validation', () => {
     expect(config.PORT).toBe(3003)
     expect(config.REDIS_URL).toBe('redis://localhost:6379')
     expect(config.LOG_LEVEL).toBe('info')
+    expect(config.STREAM_CONSUMER_BATCH_SIZE).toBe(20)
+    expect(config.STREAM_CONSUMER_BLOCK_MS).toBe(4000)
+    expect(config.STREAM_CONSUMER_RECLAIM_MIN_IDLE_MS).toBe(45000)
+    expect(config.STREAM_CONSUMER_RECLAIM_BATCH_SIZE).toBe(60)
+    expect(config.STREAM_CONSUMER_MAX_DELIVERIES).toBe(7)
   })
 
   // ── constraints ───────────────────────────────────────────────────────
@@ -79,6 +89,23 @@ describe('RealtimeConfig.validation', () => {
     expect(config.LOG_LEVEL).toBe('info')
   })
 
+  it('defaults stream consumer tuning when not provided', async () => {
+    delete process.env.STREAM_CONSUMER_BATCH_SIZE
+    delete process.env.STREAM_CONSUMER_BLOCK_MS
+    delete process.env.STREAM_CONSUMER_RECLAIM_MIN_IDLE_MS
+    delete process.env.STREAM_CONSUMER_RECLAIM_BATCH_SIZE
+    delete process.env.STREAM_CONSUMER_MAX_DELIVERIES
+    process.env.REDIS_URL = 'redis://localhost:6379'
+
+    const { config } = await import('./index.js')
+
+    expect(config.STREAM_CONSUMER_BATCH_SIZE).toBe(10)
+    expect(config.STREAM_CONSUMER_BLOCK_MS).toBe(5000)
+    expect(config.STREAM_CONSUMER_RECLAIM_MIN_IDLE_MS).toBe(30000)
+    expect(config.STREAM_CONSUMER_RECLAIM_BATCH_SIZE).toBe(50)
+    expect(config.STREAM_CONSUMER_MAX_DELIVERIES).toBe(5)
+  })
+
   // ── boundaries ────────────────────────────────────────────────────────
 
   it('accepts rediss:// (TLS) URL as valid', async () => {
@@ -104,6 +131,17 @@ describe('RealtimeConfig.validation', () => {
 
   it('exits when REDIS_URL is redis:// with no host', async () => {
     process.env.REDIS_URL = 'redis://'
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never)
+
+    await import('./index.js')
+
+    expect(exitSpy).toHaveBeenCalledWith(1)
+    exitSpy.mockRestore()
+  })
+
+  it('exits when STREAM_CONSUMER_BLOCK_MS is negative', async () => {
+    process.env.REDIS_URL = 'redis://localhost:6379'
+    process.env.STREAM_CONSUMER_BLOCK_MS = '-1'
     const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never)
 
     await import('./index.js')

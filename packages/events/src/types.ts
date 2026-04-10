@@ -22,8 +22,18 @@ export interface StreamConsumerConfig {
   runInContext?: (traceId: string, fn: () => Promise<void>) => Promise<void>
   /** Polling interval in ms when no messages are available. Default: 2000. */
   pollIntervalMs?: number
+  /** Blocking read timeout for XREADGROUP in ms. Default: 0. Set 0 to disable blocking reads. */
+  readBlockMs?: number
   /** Max messages to read per poll. Default: 10. */
   batchSize?: number
+  /** Min idle time before abandoned pending messages are reclaimed. Default: 30000. */
+  reclaimMinIdleMs?: number
+  /** Max abandoned pending messages to reclaim per pass. Default: 50. */
+  reclaimBatchSize?: number
+  /** Dead-letter messages after this many deliveries. Default: 5. */
+  maxDeliveries?: number
+  /** Suffix appended to the source stream name for dead-lettered messages. Default: '.dlq'. */
+  deadLetterSuffix?: string
   /** Max entries per stream before trimming. Default: 10000. */
   maxLen?: number
 }

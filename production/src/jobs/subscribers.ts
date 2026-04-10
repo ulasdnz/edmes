@@ -37,6 +37,6 @@ export const initSubscribers = () => {
   })
 }
 
-export const shutdownSubscribers = () => {
-  consumer.stop()
+export const shutdownSubscribers = async (): Promise<void> => {
+  await consumer.stop()
 }

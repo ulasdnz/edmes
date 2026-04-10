@@ -11,6 +11,9 @@ function makeMockRedis() {
   return {
     xgroup: vi.fn().mockResolvedValue('OK'),
     xack: vi.fn().mockResolvedValue(1),
+    xadd: vi.fn().mockResolvedValue('1-1'),
+    xautoclaim: vi.fn().mockResolvedValue(['0-0', []]),
+    xpending: vi.fn().mockResolvedValue([]),
     xreadgroup: vi.fn(),
   }
 }
@@ -249,5 +252,264 @@ describe('createStreamConsumer — catch-all handler', () => {
     await consumer.start()
 
     expect(receivedTypes).toEqual(['job_order.started', 'scrap_entry.created'])
+  })
+
+  it('reclaims abandoned pending messages before reading new ones', async () => {
+    const redis = makeMockRedis()
+    const catchAll = vi.fn().mockResolvedValue(undefined)
+    let consumer: ReturnType<typeof createStreamConsumer>
+
+    redis.xautoclaim
+      .mockResolvedValueOnce(['1-0', [makeMessage('1-0', 'foo.bar', { reclaimed: true })]])
+      .mockResolvedValueOnce(['0-0', []])
+
+    redis.xreadgroup.mockResolvedValueOnce(null).mockImplementationOnce(() => {
+      consumer.stop()
+      return Promise.resolve(null)
+    })
+
+    consumer = createStreamConsumer({
+      redis: redis as any,
+      group: 'test-group',
+      consumer: 'test-consumer',
+      streams: { 'events.test': { '*': catchAll } },
+      logger: mockLogger,
+      pollIntervalMs: 0,
+      reclaimMinIdleMs: 15000,
+      reclaimBatchSize: 25,
+    })
+
+    await consumer.start()
+
+    expect(redis.xautoclaim).toHaveBeenCalledWith(
+      'events.test',
+      'test-group',
+      'test-consumer',
+      15000,
+      '0-0',
+      'COUNT',
+      25,
+    )
+    expect(catchAll).toHaveBeenCalledWith(expect.objectContaining({ reclaimed: true }), 'foo.bar')
+    expect(redis.xack).toHaveBeenCalledWith('events.test', 'test-group', '1-0')
+  })
+
+  it('stops reclaim loop when no abandoned pending messages remain', async () => {
+    const redis = makeMockRedis()
+    let consumer: ReturnType<typeof createStreamConsumer>
+
+    redis.xreadgroup.mockResolvedValueOnce(null).mockImplementationOnce(() => {
+      consumer.stop()
+      return Promise.resolve(null)
+    })
+
+    consumer = createStreamConsumer({
+      redis: redis as any,
+      group: 'test-group',
+      consumer: 'test-consumer',
+      streams: { 'events.test': {} },
+      logger: mockLogger,
+      pollIntervalMs: 0,
+    })
+
+    await consumer.start()
+
+    expect(redis.xautoclaim).toHaveBeenCalledTimes(1)
+    expect(redis.xautoclaim).toHaveBeenCalledWith(
+      'events.test',
+      'test-group',
+      'test-consumer',
+      30000,
+      '0-0',
+      'COUNT',
+      50,
+    )
+  })
+
+  it('dead-letters poison messages after max deliveries and ACKs the source message', async () => {
+    const redis = makeMockRedis()
+    const catchAll = vi.fn().mockRejectedValue(new Error('boom'))
+    let consumer: ReturnType<typeof createStreamConsumer>
+
+    redis.xpending.mockResolvedValueOnce([['1-0', 'other-consumer', 1000, 5]])
+    redis.xreadgroup
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce([['events.test', [makeMessage('1-0', 'foo.bar', { x: 1 })]]])
+      .mockImplementationOnce(() => {
+        consumer.stop()
+        return Promise.resolve(null)
+      })
+
+    consumer = createStreamConsumer({
+      redis: redis as any,
+      group: 'test-group',
+      consumer: 'test-consumer',
+      streams: { 'events.test': { '*': catchAll } },
+      logger: mockLogger,
+      pollIntervalMs: 0,
+      maxDeliveries: 5,
+    })
+
+    await consumer.start()
+
+    expect(redis.xadd).toHaveBeenCalledOnce()
+    expect(redis.xadd.mock.calls[0][0]).toBe('events.test.dlq')
+    expect(redis.xadd.mock.calls[0][6]).toBe('foo.bar')
+    expect(JSON.parse(redis.xadd.mock.calls[0][8])).toEqual(
+      expect.objectContaining({
+        originalStream: 'events.test',
+        originalId: '1-0',
+        data: { x: 1 },
+        error: 'boom',
+        deliveries: 5,
+        consumer: 'test-consumer',
+      }),
+    )
+    expect(redis.xack).toHaveBeenCalledWith('events.test', 'test-group', '1-0')
+  })
+
+  it('keeps failed messages pending while deliveries are below the dead-letter threshold', async () => {
+    const redis = makeMockRedis()
+    const catchAll = vi.fn().mockRejectedValue(new Error('boom'))
+    let consumer: ReturnType<typeof createStreamConsumer>
+
+    redis.xpending.mockResolvedValueOnce([['1-0', 'other-consumer', 1000, 2]])
+    redis.xreadgroup
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce([['events.test', [makeMessage('1-0', 'foo.bar', { x: 1 })]]])
+      .mockImplementationOnce(() => {
+        consumer.stop()
+        return Promise.resolve(null)
+      })
+
+    consumer = createStreamConsumer({
+      redis: redis as any,
+      group: 'test-group',
+      consumer: 'test-consumer',
+      streams: { 'events.test': { '*': catchAll } },
+      logger: mockLogger,
+      pollIntervalMs: 0,
+      maxDeliveries: 5,
+    })
+
+    await consumer.start()
+
+    expect(redis.xadd).not.toHaveBeenCalled()
+    expect(redis.xack).not.toHaveBeenCalled()
+  })
+
+  it('uses non-blocking reads for new messages by default', async () => {
+    const redis = makeMockRedis()
+    let consumer: ReturnType<typeof createStreamConsumer>
+
+    redis.xreadgroup.mockResolvedValueOnce(null).mockImplementationOnce(() => {
+      consumer.stop()
+      return Promise.resolve(null)
+    })
+
+    consumer = createStreamConsumer({
+      redis: redis as any,
+      group: 'test-group',
+      consumer: 'test-consumer',
+      streams: { 'events.test': {} },
+      logger: mockLogger,
+      pollIntervalMs: 0,
+    })
+
+    await consumer.start()
+
+    expect(redis.xreadgroup).toHaveBeenNthCalledWith(
+      2,
+      'GROUP',
+      'test-group',
+      'test-consumer',
+      'COUNT',
+      '10',
+      'STREAMS',
+      'events.test',
+      '>',
+    )
+  })
+
+  it('uses bounded blocking reads when readBlockMs is configured', async () => {
+    const redis = makeMockRedis()
+    let consumer: ReturnType<typeof createStreamConsumer>
+
+    redis.xreadgroup.mockResolvedValueOnce(null).mockImplementationOnce(() => {
+      consumer.stop()
+      return Promise.resolve(null)
+    })
+
+    consumer = createStreamConsumer({
+      redis: redis as any,
+      group: 'test-group',
+      consumer: 'test-consumer',
+      streams: { 'events.test': {} },
+      logger: mockLogger,
+      pollIntervalMs: 0,
+      readBlockMs: 5000,
+    })
+
+    await consumer.start()
+
+    expect(redis.xreadgroup).toHaveBeenNthCalledWith(
+      2,
+      'GROUP',
+      'test-group',
+      'test-consumer',
+      'COUNT',
+      '10',
+      'BLOCK',
+      '5000',
+      'STREAMS',
+      'events.test',
+      '>',
+    )
+  })
+
+  it('waits for the in-flight handler to finish before stop resolves', async () => {
+    const redis = makeMockRedis()
+    let releaseHandler!: () => void
+    const handlerFinished = new Promise<void>(resolve => {
+      releaseHandler = resolve
+    })
+    const catchAll = vi.fn().mockImplementation(async () => handlerFinished)
+    let consumer: ReturnType<typeof createStreamConsumer>
+
+    redis.xreadgroup
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce([['events.test', [makeMessage('1-0', 'foo.bar', { x: 1 })]]])
+      .mockImplementation(() => Promise.resolve(null))
+
+    consumer = createStreamConsumer({
+      redis: redis as any,
+      group: 'test-group',
+      consumer: 'test-consumer',
+      streams: { 'events.test': { '*': catchAll } },
+      logger: mockLogger,
+      pollIntervalMs: 0,
+      readBlockMs: 0,
+    })
+
+    const startPromise = consumer.start()
+    // Flush enough microtasks for the consumer to reach the handler
+    // (ensureGroups → recoverAbandonedPending → processPending → pollLoop → processBatch → handler)
+    while (catchAll.mock.calls.length === 0) await Promise.resolve()
+
+    const stopPromise = consumer.stop()
+    let stopResolved = false
+    void stopPromise.then(() => {
+      stopResolved = true
+    })
+
+    await Promise.resolve()
+    expect(stopResolved).toBe(false)
+
+    releaseHandler()
+
+    await stopPromise
+    await startPromise
+
+    expect(redis.xack).toHaveBeenCalledWith('events.test', 'test-group', '1-0')
   })
 })

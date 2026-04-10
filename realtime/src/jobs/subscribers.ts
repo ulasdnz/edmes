@@ -1,5 +1,6 @@
 import { runInContext } from '@mes/core'
 import { createStreamConsumer } from '@mes/events'
+import { config } from '../config/index.js'
 import { resolveRooms } from '../gateway/router.js'
 import { getIO } from '../gateway/socket.js'
 import { logger } from '../lib/logger.js'
@@ -36,6 +37,11 @@ const consumer = createStreamConsumer({
   streams,
   logger,
   runInContext: (traceId, fn) => runInContext({ traceId, ip: 'internal' }, fn),
+  batchSize: config.STREAM_CONSUMER_BATCH_SIZE,
+  readBlockMs: config.STREAM_CONSUMER_BLOCK_MS,
+  reclaimMinIdleMs: config.STREAM_CONSUMER_RECLAIM_MIN_IDLE_MS,
+  reclaimBatchSize: config.STREAM_CONSUMER_RECLAIM_BATCH_SIZE,
+  maxDeliveries: config.STREAM_CONSUMER_MAX_DELIVERIES,
 })
 
 export const initSubscribers = () => {
@@ -47,6 +53,6 @@ export const initSubscribers = () => {
   })
 }
 
-export const shutdownSubscribers = () => {
-  consumer.stop()
+export const shutdownSubscribers = async (): Promise<void> => {
+  await consumer.stop()
 }

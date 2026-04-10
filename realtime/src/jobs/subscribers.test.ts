@@ -1,5 +1,5 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest'
 import type { EventHandler } from '@mes/events'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockEmit = vi.fn()
 const mockTo = vi.fn(() => ({ to: mockTo, emit: mockEmit }))
@@ -14,6 +14,16 @@ vi.mock('../gateway/router.js', () => ({
   resolveRooms: vi.fn(),
 }))
 
+vi.mock('../config/index.js', () => ({
+  config: {
+    STREAM_CONSUMER_BATCH_SIZE: 11,
+    STREAM_CONSUMER_BLOCK_MS: 4000,
+    STREAM_CONSUMER_RECLAIM_MIN_IDLE_MS: 45000,
+    STREAM_CONSUMER_RECLAIM_BATCH_SIZE: 77,
+    STREAM_CONSUMER_MAX_DELIVERIES: 6,
+  },
+}))
+
 vi.mock('../lib/redis.js', () => ({ streamClient: {} }))
 vi.mock('../lib/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -24,6 +34,11 @@ vi.mock('@mes/core', () => ({
 
 let capturedConfig: {
   group: string
+  batchSize: number
+  readBlockMs: number
+  reclaimMinIdleMs: number
+  reclaimBatchSize: number
+  maxDeliveries: number
   streams: Record<string, Record<string, EventHandler>>
 }
 
@@ -78,6 +93,14 @@ describe('Subscribers.catchAllForwarding', () => {
     expect(capturedConfig.group).toBe('realtime')
   })
 
+  it('passes stream consumer tuning from config', () => {
+    expect(capturedConfig.batchSize).toBe(11)
+    expect(capturedConfig.readBlockMs).toBe(4000)
+    expect(capturedConfig.reclaimMinIdleMs).toBe(45000)
+    expect(capturedConfig.reclaimBatchSize).toBe(77)
+    expect(capturedConfig.maxDeliveries).toBe(6)
+  })
+
   it('subscribes to all three streams', () => {
     const streams = Object.keys(capturedConfig.streams)
     expect(streams).toContain('events.user')
@@ -87,7 +110,12 @@ describe('Subscribers.catchAllForwarding', () => {
   })
 
   it("uses '*' handler for all streams", () => {
-    for (const stream of ['events.user', 'events.work_center', 'events.production', 'events.telemetry']) {
+    for (const stream of [
+      'events.user',
+      'events.work_center',
+      'events.production',
+      'events.telemetry',
+    ]) {
       const handlers = capturedConfig.streams[stream]
       expect(handlers['*']).toBeDefined()
       expect(Object.keys(handlers)).toEqual(['*'])

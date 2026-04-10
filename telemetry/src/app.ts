@@ -36,8 +36,7 @@ const startServer = async (): Promise<void> => {
         logger.info('HTTP server closed', { event: 'server.http.closed' })
 
         try {
-          shutdownSubscribers()
-          await Promise.all([disconnectDB(), closeRedis(), closeMqtt()])
+          await Promise.all([disconnectDB(), closeRedis(), closeMqtt(), shutdownSubscribers()])
           logger.info('Data connections closed', { event: 'server.shutdown.completed' })
           process.exit(0)
         } catch (err) {

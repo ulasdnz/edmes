@@ -31,6 +31,11 @@ const envSchema = z.object({
       },
       { message: 'REDIS_URL must be a valid redis URL like redis://host:port' },
     ),
+  STREAM_CONSUMER_BATCH_SIZE: z.coerce.number().int().positive().default(10),
+  STREAM_CONSUMER_BLOCK_MS: z.coerce.number().int().min(0).default(5000),
+  STREAM_CONSUMER_RECLAIM_MIN_IDLE_MS: z.coerce.number().int().positive().default(30000),
+  STREAM_CONSUMER_RECLAIM_BATCH_SIZE: z.coerce.number().int().positive().default(50),
+  STREAM_CONSUMER_MAX_DELIVERIES: z.coerce.number().int().positive().default(5),
 })
 
 const result = envSchema.safeParse(process.env)

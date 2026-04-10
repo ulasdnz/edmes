@@ -39,5 +39,5 @@ export const initSubscribers = () => {
  * Stop the consumer gracefully.
  */
 export const shutdownSubscribers = () => {
-  consumer.stop()
+  return consumer.stop()
 }

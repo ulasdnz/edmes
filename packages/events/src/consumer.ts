@@ -1,14 +1,19 @@
+import { publishEvent } from './publish.js'
 import type { StreamConsumerConfig } from './types.js'
 
 /** Shape returned by ioredis xreadgroup: [streamName, [[messageId, [field, value, ...]], ...]] */
 type XReadGroupResult = [stream: string, messages: [id: string, fields: string[]][]][]
+type StreamMessage = [id: string, fields: string[]]
+type XAutoClaimResult = [nextStartId: string, messages: StreamMessage[], deletedIds?: string[]]
+type XPendingDetailResult = [id: string, consumer: string, idleMs: number, deliveries: number][]
 
 /**
- * Creates a Redis Stream consumer that polls for messages
+ * Creates a Redis Stream consumer that reads messages from Redis Streams
  * using XREADGROUP, routes them to handlers, and ACKs on success.
  *
- * Uses non-blocking reads + poll interval so a single Redis connection
- * can be shared with publishEvent().
+ * Uses non-blocking reads by default so the same Redis connection can still
+ * be shared with publishing in services that do both. Services can opt into
+ * bounded blocking reads explicitly.
  */
 export function createStreamConsumer(config: StreamConsumerConfig) {
   const {
@@ -19,10 +24,16 @@ export function createStreamConsumer(config: StreamConsumerConfig) {
     logger,
     runInContext,
     pollIntervalMs = 2000,
+    readBlockMs = 0,
     batchSize = 10,
+    reclaimMinIdleMs = 30000,
+    reclaimBatchSize = 50,
+    maxDeliveries = 5,
+    deadLetterSuffix = '.dlq',
   } = config
 
   let stopped = false
+  let runPromise: Promise<void> | null = null
   const streamNames = Object.keys(streams)
 
   /** Ensure consumer groups exist for every stream (idempotent). */
@@ -65,20 +76,38 @@ export function createStreamConsumer(config: StreamConsumerConfig) {
         continue
       }
 
+      let data: Record<string, unknown> | undefined
+
       try {
-        const data = JSON.parse(parsed.data ?? '{}')
-        const traceId: string = data.traceId ?? id
+        data = JSON.parse(parsed.data ?? '{}') as Record<string, unknown>
+        const traceId = typeof data.traceId === 'string' ? data.traceId : id
 
         const execute = () => handler(data, parsed.type)
         await (runInContext ? runInContext(traceId, execute) : execute())
 
         await redis.xack(stream, group, id)
       } catch (err) {
+        const deliveries = await getDeliveryCount(stream, id)
+
+        if (deliveries !== null && deliveries >= maxDeliveries) {
+          await deadLetterAndAck({
+            stream,
+            id,
+            type: parsed.type,
+            data,
+            rawData: parsed.data,
+            error: err,
+            deliveries,
+          })
+          continue
+        }
+
         logger.error(`Failed to process event ${id} (${parsed.type}) on ${stream}`, {
           event: 'events.handler.failed',
           eventId: id,
           eventType: parsed.type,
           stream,
+          deliveries,
           error: err instanceof Error ? err.message : err,
         })
         // Don't ACK — message stays pending and can be retried.
@@ -86,7 +115,111 @@ export function createStreamConsumer(config: StreamConsumerConfig) {
     }
   }
 
+  async function getDeliveryCount(stream: string, id: string): Promise<number | null> {
+    try {
+      const result = (await redis.xpending(stream, group, id, id, 1)) as XPendingDetailResult | null
+      if (!Array.isArray(result) || result.length === 0) return null
+
+      const deliveries = Number(result[0][3])
+      return Number.isFinite(deliveries) ? deliveries : null
+    } catch (err) {
+      logger.error(`Failed to inspect delivery count for event ${id} on ${stream}`, {
+        event: 'events.pending.inspect_failed',
+        eventId: id,
+        stream,
+        error: err instanceof Error ? err.message : err,
+      })
+      return null
+    }
+  }
+
+  async function deadLetterAndAck(params: {
+    stream: string
+    id: string
+    type: string
+    data?: Record<string, unknown>
+    rawData?: string
+    error: unknown
+    deliveries: number
+  }): Promise<void> {
+    const { stream, id, type, data, rawData, error, deliveries } = params
+    const deadLetterStream = `${stream}${deadLetterSuffix}`
+    const errorMessage = error instanceof Error ? error.message : String(error)
+
+    try {
+      await publishEvent(redis, deadLetterStream, type, {
+        originalStream: stream,
+        originalId: id,
+        data: data ?? null,
+        rawData: rawData ?? null,
+        failedAt: new Date().toISOString(),
+        error: errorMessage,
+        deliveries,
+        consumer,
+      })
+
+      await redis.xack(stream, group, id)
+
+      logger.error(`Dead-lettered event ${id} (${type}) from ${stream}`, {
+        event: 'events.handler.dead_lettered',
+        eventId: id,
+        eventType: type,
+        stream,
+        deadLetterStream,
+        deliveries,
+        error: errorMessage,
+      })
+    } catch (deadLetterError) {
+      logger.error(`Failed to dead-letter event ${id} (${type}) from ${stream}`, {
+        event: 'events.handler.dead_letter_failed',
+        eventId: id,
+        eventType: type,
+        stream,
+        deadLetterStream,
+        deliveries,
+        error: deadLetterError instanceof Error ? deadLetterError.message : deadLetterError,
+      })
+    }
+  }
+
   /** Read and process pending messages (from a previous crash). */
+  async function recoverAbandonedPending(): Promise<void> {
+    for (const stream of streamNames) {
+      let start = '0-0'
+
+      while (!stopped) {
+        const result = (await redis.xautoclaim(
+          stream,
+          group,
+          consumer,
+          reclaimMinIdleMs,
+          start,
+          'COUNT',
+          reclaimBatchSize,
+        )) as XAutoClaimResult | null
+
+        if (!result) break
+
+        const [nextStartId, messages] = result
+        if (messages.length === 0) break
+
+        logger.warn(`Claimed ${messages.length} abandoned pending events on ${stream}`, {
+          event: 'events.pending.claimed',
+          count: messages.length,
+          stream,
+          consumer,
+          minIdleMs: reclaimMinIdleMs,
+        })
+
+        await processBatch(stream, messages)
+
+        if (nextStartId === start) break
+        start = nextStartId
+      }
+    }
+  }
+
+  /** Read and process pending messages already owned by this consumer. */
   async function processPending(): Promise<void> {
     const ids = streamNames.map(() => '0')
     const results = (await redis.xreadgroup(
@@ -119,22 +252,20 @@ export function createStreamConsumer(config: StreamConsumerConfig) {
 
     while (!stopped) {
       try {
-        const results = (await redis.xreadgroup(
-          'GROUP',
-          group,
-          consumer,
-          'COUNT',
-          String(batchSize),
-          'STREAMS',
-          ...streamNames,
-          ...ids,
-        )) as XReadGroupResult | null
+        const readArgs: Array<string> = ['GROUP', group, consumer, 'COUNT', String(batchSize)]
+        if (readBlockMs > 0) {
+          readArgs.push('BLOCK', String(readBlockMs))
+        }
+        readArgs.push('STREAMS', ...streamNames, ...ids)
+
+        const xreadgroup = redis.xreadgroup.bind(redis) as (...args: string[]) => Promise<unknown>
+        const results = (await xreadgroup(...readArgs)) as XReadGroupResult | null
 
         if (results) {
           for (const [stream, messages] of results) {
             await processBatch(stream, messages)
           }
-        } else {
+        } else if (readBlockMs <= 0) {
           // No messages — sleep before next poll.
           await new Promise(r => setTimeout(r, pollIntervalMs))
         }
@@ -152,19 +283,35 @@ export function createStreamConsumer(config: StreamConsumerConfig) {
   return {
     /** Start consuming. Resolves once the poll loop exits (after stop()). */
     async start(): Promise<void> {
-      await ensureGroups()
-      await processPending()
-      logger.info(`Stream consumer started [group=${group}] streams=[${streamNames.join(', ')}]`, {
-        event: 'events.consumer.started',
-        group,
-        streams: streamNames,
-      })
-      await pollLoop()
+      if (runPromise) return runPromise
+
+      stopped = false
+      runPromise = (async () => {
+        await ensureGroups()
+        await recoverAbandonedPending()
+        await processPending()
+        logger.info(
+          `Stream consumer started [group=${group}] streams=[${streamNames.join(', ')}]`,
+          {
+            event: 'events.consumer.started',
+            group,
+            streams: streamNames,
+          },
+        )
+        await pollLoop()
+      })()
+
+      try {
+        await runPromise
+      } finally {
+        runPromise = null
+      }
     },
 
-    /** Signal the consumer to stop after the current poll completes. */
-    stop(): void {
+    /** Signal the consumer to stop after the current batch completes and wait for drain. */
+    async stop(): Promise<void> {
       stopped = true
+      await runPromise
     },
   }
 }
