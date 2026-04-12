@@ -2,27 +2,21 @@ import { utcDateSchema } from '@mes/core'
 import { z } from 'zod'
 import { objectIdSchema } from '../../utils/validators.js'
 
-// ── Shift schema ────────────────────────────────────────────────────────────
+// ── Weekly pattern (shift id references per day) ────────────────────────────
 
-const shiftSchema = z.object({
-  name: z.string().trim().min(1).max(100),
-  startHour: z.number().int().min(0).max(23),
-  startMinute: z.number().int().min(0).max(59),
-  endHour: z.number().int().min(0).max(23),
-  endMinute: z.number().int().min(0).max(59),
-}).strict()
+const dayShiftsSchema = z.array(objectIdSchema).default([])
 
-// ── Weekly pattern ──────────────────────────────────────────────────────────
-
-const weeklyPatternSchema = z.object({
-  monday: z.array(shiftSchema).default([]),
-  tuesday: z.array(shiftSchema).default([]),
-  wednesday: z.array(shiftSchema).default([]),
-  thursday: z.array(shiftSchema).default([]),
-  friday: z.array(shiftSchema).default([]),
-  saturday: z.array(shiftSchema).default([]),
-  sunday: z.array(shiftSchema).default([]),
-}).strict()
+const weeklyPatternSchema = z
+  .object({
+    monday: dayShiftsSchema,
+    tuesday: dayShiftsSchema,
+    wednesday: dayShiftsSchema,
+    thursday: dayShiftsSchema,
+    friday: dayShiftsSchema,
+    saturday: dayShiftsSchema,
+    sunday: dayShiftsSchema,
+  })
+  .strict()
 
 // ── Calendar schemas ────────────────────────────────────────────────────────
 
@@ -48,15 +42,15 @@ export const patchCalendarSchema = z
     weeklyPattern: weeklyPatternSchema.optional(),
   })
   .strict()
-  .refine(data => Object.keys(data).length > 0, {
-    message: 'error.empty_patch',
-  })
+  .refine(data => Object.keys(data).length > 0, { message: 'error.empty_patch' })
 
 // ── Date exception schemas ──────────────────────────────────────────────────
 
-export const upsertExceptionSchema = z.object({
-  intervals: z.array(shiftSchema).default([]),
-}).strict()
+export const upsertExceptionSchema = z
+  .object({
+    shiftIds: z.array(objectIdSchema).default([]),
+  })
+  .strict()
 
 // ── Param schemas ───────────────────────────────────────────────────────────
 

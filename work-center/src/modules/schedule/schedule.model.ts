@@ -3,30 +3,17 @@ import auditLogPlugin from '../../lib/plugins/audit-log.plugin.js'
 
 const { Schema, model } = mongoose
 
-// ── Shift sub-schema ────────────────────────────────────────────────────────
-
-const shiftSchema = new Schema(
-  {
-    name: { type: String, required: true, trim: true },
-    startHour: { type: Number, required: true, min: 0, max: 23 },
-    startMinute: { type: Number, required: true, min: 0, max: 59 },
-    endHour: { type: Number, required: true, min: 0, max: 23 },
-    endMinute: { type: Number, required: true, min: 0, max: 59 },
-  },
-  { _id: false },
-)
-
-// ── Weekly pattern sub-schema ───────────────────────────────────────────────
+// ── Weekly pattern sub-schema (shiftIds per day) ────────────────────────────
 
 const weeklyPatternSchema = new Schema(
   {
-    monday: { type: [shiftSchema], default: [] },
-    tuesday: { type: [shiftSchema], default: [] },
-    wednesday: { type: [shiftSchema], default: [] },
-    thursday: { type: [shiftSchema], default: [] },
-    friday: { type: [shiftSchema], default: [] },
-    saturday: { type: [shiftSchema], default: [] },
-    sunday: { type: [shiftSchema], default: [] },
+    monday: { type: [Schema.Types.ObjectId], default: [] },
+    tuesday: { type: [Schema.Types.ObjectId], default: [] },
+    wednesday: { type: [Schema.Types.ObjectId], default: [] },
+    thursday: { type: [Schema.Types.ObjectId], default: [] },
+    friday: { type: [Schema.Types.ObjectId], default: [] },
+    saturday: { type: [Schema.Types.ObjectId], default: [] },
+    sunday: { type: [Schema.Types.ObjectId], default: [] },
   },
   { _id: false },
 )
@@ -77,8 +64,13 @@ export const Calendar = model<ICalendar>('WorkCenterCalendar', calendarSchema)
 const dateExceptionSchema = new Schema(
   {
     workCenterId: { type: Schema.Types.ObjectId, required: true },
-    localDate: { type: Date, required: true },
-    intervals: { type: [shiftSchema], default: [] },
+    // Date-only (YYYY-MM-DD), plant-local. NOT an instant.
+    localDate: {
+      type: String,
+      required: true,
+      match: /^\d{4}-\d{2}-\d{2}$/,
+    },
+    shiftIds: { type: [Schema.Types.ObjectId], default: [] },
     createdBy: { type: Schema.Types.ObjectId, required: true },
     updatedBy: { type: Schema.Types.ObjectId, required: true },
   },
