@@ -1,7 +1,12 @@
 import { Types } from 'mongoose'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { hasProductionShiftReferences } from '../../../lib/internal-api.js'
+import { Calendar, DateException } from '../../schedule/schedule.model.js'
+import WorkCenter from '../../work-center/work-center.model.js'
 import { Shift } from '../shift.model.js'
 import * as shiftService from '../shift.service.js'
+
+const mockedHasProdRefs = vi.mocked(hasProductionShiftReferences)
 
 vi.mock('../shift.scheduler.js', () => ({
   onShiftCreated: vi.fn(),
@@ -86,6 +91,115 @@ describe('shift.service create/list/get', () => {
     await expect(shiftService.getShift(unknown)).rejects.toMatchObject({
       statusCode: 404,
       message: 'shift.not_found',
+    })
+  })
+})
+
+describe('shift.service update', () => {
+  beforeEach(async () => {
+    await Promise.all([
+      Shift.deleteMany({}),
+      WorkCenter.deleteMany({}),
+      Calendar.deleteMany({}),
+      DateException.deleteMany({}),
+    ])
+    mockedHasProdRefs.mockResolvedValue(false)
+  })
+
+  it('renames a shift', async () => {
+    const s = await shiftService.createShift(
+      { name: 'Morning', startHour: 8, startMinute: 0, endHour: 16, endMinute: 0 },
+      userId,
+    )
+    const out = await shiftService.updateShift(String(s._id), { name: 'Day' }, userId)
+    expect(out.name).toBe('Day')
+  })
+
+  it('rejects rename collision', async () => {
+    const a = await shiftService.createShift(
+      { name: 'Morning', startHour: 8, startMinute: 0, endHour: 16, endMinute: 0 },
+      userId,
+    )
+    await shiftService.createShift(
+      { name: 'Night', startHour: 22, startMinute: 0, endHour: 6, endMinute: 0 },
+      userId,
+    )
+    await expect(
+      shiftService.updateShift(String(a._id), { name: 'night' }, userId),
+    ).rejects.toMatchObject({ statusCode: 409, message: 'shift.name_in_use' })
+  })
+
+  it('rejects time update that would make a referencing work-center assignment overlap', async () => {
+    const a = await shiftService.createShift(
+      { name: 'A', startHour: 8, startMinute: 0, endHour: 12, endMinute: 0 },
+      userId,
+    )
+    const b = await shiftService.createShift(
+      { name: 'B', startHour: 13, startMinute: 0, endHour: 18, endMinute: 0 },
+      userId,
+    )
+    await WorkCenter.create({
+      code: 'WC1',
+      name: 'WC1',
+      type: 'physical',
+      shiftIds: [a._id, b._id],
+      createdBy: new Types.ObjectId(userId),
+      updatedBy: new Types.ObjectId(userId),
+    })
+    await expect(
+      shiftService.updateShift(String(a._id), { endHour: 14 }, userId),
+    ).rejects.toMatchObject({ statusCode: 400, message: 'shift.overlap_in_assignment' })
+  })
+})
+
+describe('shift.service delete', () => {
+  beforeEach(async () => {
+    await Promise.all([
+      Shift.deleteMany({}),
+      WorkCenter.deleteMany({}),
+      Calendar.deleteMany({}),
+      DateException.deleteMany({}),
+    ])
+    mockedHasProdRefs.mockResolvedValue(false)
+  })
+
+  it('deletes an unreferenced shift', async () => {
+    const s = await shiftService.createShift(
+      { name: 'A', startHour: 8, startMinute: 0, endHour: 16, endMinute: 0 },
+      userId,
+    )
+    await shiftService.deleteShift(String(s._id))
+    expect(await Shift.findById(s._id)).toBeNull()
+  })
+
+  it('blocks delete when referenced by WorkCenter.shiftIds', async () => {
+    const s = await shiftService.createShift(
+      { name: 'A', startHour: 8, startMinute: 0, endHour: 16, endMinute: 0 },
+      userId,
+    )
+    await WorkCenter.create({
+      code: 'WC1',
+      name: 'WC1',
+      type: 'physical',
+      shiftIds: [s._id],
+      createdBy: new Types.ObjectId(userId),
+      updatedBy: new Types.ObjectId(userId),
+    })
+    await expect(shiftService.deleteShift(String(s._id))).rejects.toMatchObject({
+      statusCode: 409,
+      message: 'shift.in_use',
+    })
+  })
+
+  it('blocks delete when referenced by production (internal API)', async () => {
+    const s = await shiftService.createShift(
+      { name: 'A', startHour: 8, startMinute: 0, endHour: 16, endMinute: 0 },
+      userId,
+    )
+    mockedHasProdRefs.mockResolvedValue(true)
+    await expect(shiftService.deleteShift(String(s._id))).rejects.toMatchObject({
+      statusCode: 409,
+      message: 'shift.in_use',
     })
   })
 })
