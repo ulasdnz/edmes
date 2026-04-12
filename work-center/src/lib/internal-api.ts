@@ -106,3 +106,35 @@ export async function validateOperatorExists(operatorId: string): Promise<boolea
     return false
   }
 }
+
+const PRODUCTION_API = config.INTERNAL_API_PRODUCTION
+
+async function fetchProduction(path: string, options?: RequestInit): Promise<Response> {
+  return fetch(`${PRODUCTION_API}/internal/v1${path}`, {
+    ...options,
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+  })
+}
+
+export async function hasProductionShiftReferences(shiftId: string): Promise<boolean> {
+  try {
+    const res = await fetchProduction(`/shifts/${shiftId}/references`)
+    if (!res.ok) {
+      logger.warn('Production-service shift reference check failed, blocking delete', {
+        event: 'internal_api.production.shift_ref_check_failed',
+        shiftId,
+        status: res.status,
+      })
+      return true
+    }
+    const body = (await res.json()) as { data?: { inUse?: boolean } }
+    return body.data?.inUse ?? true
+  } catch (err) {
+    logger.warn('Cannot reach production-service for shift reference check, blocking delete', {
+      event: 'internal_api.production.shift_ref_check_unreachable',
+      shiftId,
+      error: err instanceof Error ? err.message : err,
+    })
+    return true
+  }
+}

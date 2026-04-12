@@ -70,3 +70,41 @@ export const emitOperatorCheckedOut = (
 
 export const emitActionStateChanged = (workCenterId: string) =>
   emit('work_center.action_state.changed', { workCenterId })
+
+// ── Shift lifecycle events ───────────────────────────────────────────────────
+
+export const emitShiftCreated = (shiftId: string) => emit('work_center.shift.created', { shiftId })
+
+export const emitShiftUpdated = (shiftId: string) => emit('work_center.shift.updated', { shiftId })
+
+export const emitShiftDeleted = (shiftId: string) => emit('work_center.shift.deleted', { shiftId })
+
+// ── Shift boundary events ────────────────────────────────────────────────────
+
+export const emitShiftStarted = (payload: {
+  shiftId: string
+  name: string
+  startedAt: Date
+  occurrenceDay: string
+  startHour: number
+  startMinute: number
+  endHour: number
+  endMinute: number
+}) => emit('work_center.shift.started', { ...payload, startedAt: payload.startedAt.toISOString() })
+
+export const emitShiftEnded = (payload: {
+  shiftId: string
+  name: string
+  startedAt: Date
+  endedAt: Date
+  occurrenceDay: string
+  startHour: number
+  startMinute: number
+  endHour: number
+  endMinute: number
+}) =>
+  emit('work_center.shift.ended', {
+    ...payload,
+    startedAt: payload.startedAt.toISOString(),
+    endedAt: payload.endedAt.toISOString(),
+  })
