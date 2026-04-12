@@ -3,6 +3,7 @@ import { SYSTEM_IDENTITY } from '../../constants/identity.js'
 import { CustomError } from '../../core/errors/index.js'
 import { emitOperatorCheckedIn, emitOperatorCheckedOut } from '../../jobs/events.js'
 import { validateOperatorExists } from '../../lib/internal-api.js'
+import { resolveAffectedWorkCenters } from '../schedule/schedule.service.js'
 import WorkCenter from '../work-center/work-center.model.js'
 import { type IOperatorCheckIn, OperatorCheckIn } from './operators.model.js'
 import type { CheckInInput } from './operators.validators.js'
@@ -98,24 +99,33 @@ export async function hasAnyCheckInRecords(workCenterId: string): Promise<boolea
 
 // ── Auto check-out (shift-ended event) ──────────────────────────────────────
 
-export async function autoCheckOutByShift(workCenterId: string): Promise<string[]> {
-  const openCheckIns = await OperatorCheckIn.find({ workCenterId, checkedOutAt: null })
-  const checkedOutIds: string[] = []
+/**
+ * Close open check-ins for all work centers whose effective schedule for
+ * `occurrenceDay` currently contains `shiftId`. Uses the effective schedule at
+ * call time (NO stored snapshot). Idempotent.
+ */
+export async function autoCheckOutByShiftEnd(
+  shiftId: string,
+  occurrenceDay: string,
+): Promise<{ affectedWorkCenterIds: string[]; closedCheckInIds: string[] }> {
+  const affectedWorkCenterIds = await resolveAffectedWorkCenters(shiftId, occurrenceDay)
+  const closedCheckInIds: string[] = []
   const now = new Date()
 
-  for (const ci of openCheckIns) {
-    ci.checkedOutAt = now
-    ci.checkoutSource = 'shift_boundary'
-    ci.updatedBy = new Types.ObjectId(SYSTEM_IDENTITY)
-    await ci.save()
-    await emitOperatorCheckedOut(
-      workCenterId,
-      String(ci.operatorId),
-      String(ci._id),
-      'shift_boundary',
-    )
-    checkedOutIds.push(String(ci._id))
+  for (const wcId of affectedWorkCenterIds) {
+    const openCheckIns = await OperatorCheckIn.find({
+      workCenterId: wcId,
+      checkedOutAt: null,
+    })
+    for (const ci of openCheckIns) {
+      ci.checkedOutAt = now
+      ci.checkoutSource = 'shift_boundary'
+      ci.updatedBy = new Types.ObjectId(SYSTEM_IDENTITY)
+      await ci.save()
+      await emitOperatorCheckedOut(wcId, String(ci.operatorId), String(ci._id), 'shift_boundary')
+      closedCheckInIds.push(String(ci._id))
+    }
   }
 
-  return checkedOutIds
+  return { affectedWorkCenterIds, closedCheckInIds }
 }
