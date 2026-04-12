@@ -44,6 +44,26 @@ const envSchema = z
       ),
     MONGO_INDEX_STRATEGY: z.enum(['off', 'ensure']).optional(),
     INTERNAL_API_USER: z.string().trim().min(1, 'INTERNAL_API_USER must be provided').pipe(z.url()),
+    INTERNAL_API_PRODUCTION: z
+      .string()
+      .trim()
+      .min(1, 'INTERNAL_API_PRODUCTION must be provided')
+      .pipe(z.url()),
+    PLANT_TIMEZONE: z
+      .string()
+      .trim()
+      .min(1, 'PLANT_TIMEZONE must be provided')
+      .refine(
+        val => {
+          try {
+            new Intl.DateTimeFormat('en-US', { timeZone: val })
+            return true
+          } catch {
+            return false
+          }
+        },
+        { message: 'PLANT_TIMEZONE must be a valid IANA timezone (e.g. Europe/Istanbul)' },
+      ),
   })
   .transform(data => ({
     ...data,
