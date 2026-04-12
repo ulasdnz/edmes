@@ -54,3 +54,4 @@ Thumbs.db
 # Local analysis / scratch files
 mes-user-service-analysis.html
 user/test_types.ts
+.worktrees/
