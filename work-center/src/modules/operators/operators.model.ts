@@ -10,6 +10,11 @@ const operatorCheckInSchema = new Schema(
     checkedInAt: { type: Date, required: true, default: () => new Date() },
     checkedOutAt: { type: Date, default: null },
     shiftId: { type: Schema.Types.ObjectId, default: null },
+    checkoutSource: {
+      type: String,
+      enum: ['manual', 'shift_boundary'],
+      default: null,
+    },
     createdBy: { type: Schema.Types.ObjectId, required: true },
     updatedBy: { type: Schema.Types.ObjectId, required: true },
   },

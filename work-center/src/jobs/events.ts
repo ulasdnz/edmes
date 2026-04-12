@@ -64,7 +64,9 @@ export const emitOperatorCheckedOut = (
   workCenterId: string,
   operatorId: string,
   checkInId: string,
-) => emit('work_center.operator.checked_out', { workCenterId, operatorId, checkInId })
+  checkoutSource: 'manual' | 'shift_boundary',
+) =>
+  emit('work_center.operator.checked_out', { workCenterId, operatorId, checkInId, checkoutSource })
 
 // ── Action state events ──────────────────────────────────────────────────────
 

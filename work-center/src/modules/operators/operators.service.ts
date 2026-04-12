@@ -67,10 +67,11 @@ export async function checkOut(
   if (record.checkedOutAt) throw new CustomError(400, 'operators.already_checked_out')
 
   record.checkedOutAt = new Date()
+  record.checkoutSource = 'manual'
   record.updatedBy = new Types.ObjectId(userId)
 
   const saved = await record.save()
-  await emitOperatorCheckedOut(workCenterId, String(record.operatorId), String(saved._id))
+  await emitOperatorCheckedOut(workCenterId, String(record.operatorId), String(saved._id), 'manual')
   return saved
 }
 
@@ -104,9 +105,15 @@ export async function autoCheckOutByShift(workCenterId: string): Promise<string[
 
   for (const ci of openCheckIns) {
     ci.checkedOutAt = now
+    ci.checkoutSource = 'shift_boundary'
     ci.updatedBy = new Types.ObjectId(SYSTEM_IDENTITY)
     await ci.save()
-    await emitOperatorCheckedOut(workCenterId, String(ci.operatorId), String(ci._id))
+    await emitOperatorCheckedOut(
+      workCenterId,
+      String(ci.operatorId),
+      String(ci._id),
+      'shift_boundary',
+    )
     checkedOutIds.push(String(ci._id))
   }
 
