@@ -17,6 +17,7 @@ import actionStateRoutes, {
 } from '../../modules/action-state/action-state.routes.js'
 import operatorRoutes from '../../modules/operators/operators.routes.js'
 import scheduleRoutes from '../../modules/schedule/schedule.routes.js'
+import shiftRoutes from '../../modules/shift/shift.routes.js'
 import workCenterRoutes from '../../modules/work-center/work-center.routes.js'
 import { errorHandler } from '../middleware/error-handler.js'
 import { contextMiddleware, setUserId } from '../middleware/request-context.js'
@@ -29,6 +30,7 @@ import { initI18n } from './i18n.js'
 const mountSharedRoutes = (router: ReturnType<typeof Router>) => {
   router.use(workCenterRoutes)
   router.use(scheduleRoutes)
+  router.use(shiftRoutes)
   router.use(operatorRoutes)
   router.use(actionStateRoutes)
 }
