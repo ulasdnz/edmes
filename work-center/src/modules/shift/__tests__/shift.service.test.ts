@@ -204,6 +204,92 @@ describe('shift.service delete', () => {
   })
 })
 
+describe('shift.service calendar/exception reference guards', () => {
+  beforeEach(async () => {
+    await Promise.all([Shift.deleteMany({}), Calendar.deleteMany({}), DateException.deleteMany({})])
+  })
+
+  it('rejects update that creates overlap in a Calendar weeklyPattern day', async () => {
+    const a = await shiftService.createShift(
+      { name: 'A', startHour: 8, startMinute: 0, endHour: 16, endMinute: 0 },
+      userId,
+    )
+    const b = await shiftService.createShift(
+      { name: 'B', startHour: 16, startMinute: 0, endHour: 0, endMinute: 0 },
+      userId,
+    )
+    await Calendar.create({
+      workCenterId: new Types.ObjectId(),
+      validFrom: new Date('2026-01-01'),
+      validTo: new Date('2026-12-31'),
+      weeklyPattern: { monday: [a._id, b._id] },
+      createdBy: new Types.ObjectId(userId),
+      updatedBy: new Types.ObjectId(userId),
+    })
+    await expect(
+      shiftService.updateShift(String(a._id), { endHour: 18 }, userId),
+    ).rejects.toMatchObject({ statusCode: 400, message: 'shift.overlap_in_assignment' })
+  })
+
+  it('rejects update that creates overlap in a DateException', async () => {
+    const a = await shiftService.createShift(
+      { name: 'A', startHour: 8, startMinute: 0, endHour: 16, endMinute: 0 },
+      userId,
+    )
+    const b = await shiftService.createShift(
+      { name: 'B', startHour: 16, startMinute: 0, endHour: 0, endMinute: 0 },
+      userId,
+    )
+    await DateException.create({
+      workCenterId: new Types.ObjectId(),
+      localDate: '2026-04-10',
+      shiftIds: [a._id, b._id],
+      createdBy: new Types.ObjectId(userId),
+      updatedBy: new Types.ObjectId(userId),
+    })
+    await expect(
+      shiftService.updateShift(String(a._id), { endHour: 18 }, userId),
+    ).rejects.toMatchObject({ statusCode: 400, message: 'shift.overlap_in_assignment' })
+  })
+
+  it('blocks delete when Calendar references the shift', async () => {
+    const a = await shiftService.createShift(
+      { name: 'A', startHour: 8, startMinute: 0, endHour: 16, endMinute: 0 },
+      userId,
+    )
+    await Calendar.create({
+      workCenterId: new Types.ObjectId(),
+      validFrom: new Date('2026-01-01'),
+      validTo: new Date('2026-12-31'),
+      weeklyPattern: { monday: [a._id] },
+      createdBy: new Types.ObjectId(userId),
+      updatedBy: new Types.ObjectId(userId),
+    })
+    await expect(shiftService.deleteShift(String(a._id))).rejects.toMatchObject({
+      statusCode: 409,
+      message: 'shift.in_use',
+    })
+  })
+
+  it('blocks delete when DateException references the shift', async () => {
+    const a = await shiftService.createShift(
+      { name: 'A', startHour: 8, startMinute: 0, endHour: 16, endMinute: 0 },
+      userId,
+    )
+    await DateException.create({
+      workCenterId: new Types.ObjectId(),
+      localDate: '2026-04-10',
+      shiftIds: [a._id],
+      createdBy: new Types.ObjectId(userId),
+      updatedBy: new Types.ObjectId(userId),
+    })
+    await expect(shiftService.deleteShift(String(a._id))).rejects.toMatchObject({
+      statusCode: 409,
+      message: 'shift.in_use',
+    })
+  })
+})
+
 describe('shift.service active-shift update rules', () => {
   beforeEach(async () => {
     await Shift.deleteMany({})

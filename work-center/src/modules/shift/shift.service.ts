@@ -3,6 +3,7 @@ import { config } from '../../config/index.js'
 import { CustomError } from '../../core/errors/index.js'
 import { emitShiftCreated, emitShiftDeleted, emitShiftUpdated } from '../../jobs/events.js'
 import { hasProductionShiftReferences } from '../../lib/internal-api.js'
+import { Calendar, DateException } from '../schedule/schedule.model.js'
 import WorkCenter from '../work-center/work-center.model.js'
 import { type IShift, Shift } from './shift.model.js'
 import { onShiftCreated, onShiftDeleted, onShiftUpdated } from './shift.scheduler.js'
@@ -77,6 +78,8 @@ export async function assertShiftsExist(ids: string[]): Promise<void> {
 
 // ── Update ───────────────────────────────────────────────────────────────────
 
+const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as const
+
 const TIME_FIELDS = ['startHour', 'startMinute', 'endHour', 'endMinute'] as const
 type TimeField = (typeof TIME_FIELDS)[number]
 
@@ -141,6 +144,29 @@ async function assertReferencingAssignmentsRemainValid(
     const set = await resolveAssignmentSet(wc.shiftIds ?? [], shiftId, proposed)
     assertNoOverlap(set)
   }
+
+  const calendars = await Calendar.find({
+    $or: DAYS.map(d => ({ [`weeklyPattern.${d}`]: shiftId })),
+  })
+    .select('weeklyPattern')
+    .lean()
+
+  for (const cal of calendars) {
+    for (const day of DAYS) {
+      const dayIds = (cal.weeklyPattern as Record<string, unknown[]>)?.[day] as
+        | Array<{ toString(): string }>
+        | undefined
+      if (!dayIds?.some(id => String(id) === shiftId)) continue
+      const set = await resolveAssignmentSet(dayIds, shiftId, proposed)
+      assertNoOverlap(set)
+    }
+  }
+
+  const exceptions = await DateException.find({ shiftIds: shiftId }).select('shiftIds').lean()
+  for (const exc of exceptions) {
+    const set = await resolveAssignmentSet(exc.shiftIds ?? [], shiftId, proposed)
+    assertNoOverlap(set)
+  }
 }
 
 async function resolveAssignmentSet(
@@ -163,12 +189,16 @@ export async function deleteShift(id: string): Promise<void> {
   const existing = await Shift.findById(id).select('_id').lean()
   if (!existing) throw new CustomError(404, 'shift.not_found')
 
-  const [wcRef, prodRef] = await Promise.all([
+  const [wcRef, prodRef, calRef, excRef] = await Promise.all([
     WorkCenter.exists({ shiftIds: id }),
     hasProductionShiftReferences(id),
+    Calendar.exists({
+      $or: DAYS.map(d => ({ [`weeklyPattern.${d}`]: id })),
+    }),
+    DateException.exists({ shiftIds: id }),
   ])
 
-  if (wcRef || prodRef) {
+  if (wcRef || prodRef || calRef || excRef) {
     throw new CustomError(409, 'shift.in_use')
   }
 
