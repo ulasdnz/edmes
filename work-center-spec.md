@@ -32,7 +32,7 @@ If a production line has its own physical sensors, that sensor is modeled as a s
 | `type` | `physical \| virtual` | both | **Immutable** |
 | `status` | `active \| archived` | both | |
 | `props` | `Map<string, string>` | both | Customer-specific metadata |
-| `shiftIds` | `ObjectId[]` | both | External shift refs (TBD) |
+| `shiftIds` | `ObjectId[]` | both | References to shifts in the work-center shift catalog |
 | `productivityMode` | `count_based \| speed_based` | physical | How output is measured |
 | `tagBindings` | object | physical | `productionCounterTagId` (mandatory), `runModeTagId` (mandatory), `speedTagId` (mandatory when speed_based) |
 | `attentionSignalTagId` | ObjectId? | physical | Optional. Mirrors `0/1` action signal to tag-service |
@@ -85,6 +85,14 @@ Optional at creation. Once set, all 3 families (`availability`, `productivity`, 
 - `weeklyPattern`: `{ monday: Shift[], ..., sunday: Shift[] }`.
 - No overlapping validity windows per work center. No overlapping resolved intervals.
 - Resolution order: DateException > Calendar weeklyPattern > `shiftIds`. No match = empty array.
+
+## Shift module
+
+- The `shift` module inside `work-center` owns a global shift catalog.
+- Schedules reference shifts by id — no embedded intervals.
+- Boundary scheduling is handled in-process by the work-center service.
+- Runtime boundary events (`work_center.shift.started`, `work_center.shift.ended`) are published on `events.work_center`.
+- Auto check-out of operators on shift end is driven by the `work_center.shift.ended` event. See `docs/work-center-shift-module-spec.md` for full detail.
 
 ### Operator Check-In
 
@@ -162,7 +170,7 @@ Action state ingestion: internal API only (from OEE). Archive transition may als
 - Hierarchy orphaning (archive/delete of virtual) uses MongoDB transaction.
 - Composition updates: no transaction needed (single document).
 - Event publication: persist first, publish second. Failure logged, not rolled back.
-- External ids validated when owner service available. Stubs for tag-service, OEE, shift service.
+- External ids validated when owner service available. Stubs for tag-service and OEE.
 - All mutable aggregates use the shared audit log plugin.
 
 ## Events
@@ -175,7 +183,7 @@ Every event includes `eventId`, `type`, `occurredAt`, `traceId`, and relevant id
 
 - `user-service`: operator validation, visibility, delete dependency checks.
 - `tag-service` (stub): tag identity validation, `attentionSignalTagId` mirroring.
-- Shift service (stub): shift definitions for `shiftIds`.
+- `production-service`: shift delete guard — checks `QuantityAdjustment` and `ScrapEntry` references via `GET /internal/v1/shifts/:id/references`.
 - Future job order / product service: `idealCycleTimeMs`, `idealSpeedPerHour` per product-work center pair.
 - OEE (stub): action-state snapshot source, detection logic owner.
 
