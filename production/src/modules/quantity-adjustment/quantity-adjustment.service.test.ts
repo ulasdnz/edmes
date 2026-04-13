@@ -1,18 +1,23 @@
 import { Types } from 'mongoose'
 import { describe, expect, it, vi } from 'vitest'
+import {
+  emitQuantityAdjustmentCreated,
+  emitQuantityAdjustmentDeleted,
+  emitQuantityAdjustmentUpdated,
+} from '../../jobs/events.js'
 import { JobOrder } from '../job-order/job-order.model.js'
 import { QuantityAdjustment } from './quantity-adjustment.model.js'
 import * as qaService from './quantity-adjustment.service.js'
-import {
-  emitQuantityAdjustmentCreated,
-  emitQuantityAdjustmentUpdated,
-  emitQuantityAdjustmentDeleted,
-} from '../../jobs/events.js'
 
 vi.mock('../../jobs/events.js', () => ({
   emitQuantityAdjustmentCreated: vi.fn(),
   emitQuantityAdjustmentUpdated: vi.fn(),
   emitQuantityAdjustmentDeleted: vi.fn(),
+}))
+
+vi.mock('../../lib/internal-api.js', () => ({
+  assertShiftExists: vi.fn().mockResolvedValue(undefined),
+  getWorkCenterInfo: vi.fn().mockResolvedValue(null),
 }))
 
 const wcId = new Types.ObjectId()

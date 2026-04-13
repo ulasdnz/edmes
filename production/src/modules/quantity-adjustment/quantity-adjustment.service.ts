@@ -4,6 +4,7 @@ import {
   emitQuantityAdjustmentDeleted,
   emitQuantityAdjustmentUpdated,
 } from '../../jobs/events.js'
+import { assertShiftExists } from '../../lib/internal-api.js'
 import { type PaginatedResult, paginate } from '../../utils/pagination.js'
 import { JobOrder } from '../job-order/job-order.model.js'
 import { type IQuantityAdjustment, QuantityAdjustment } from './quantity-adjustment.model.js'
@@ -17,6 +18,8 @@ export async function create(
   data: CreateQuantityAdjustmentInput,
   userId: string,
 ): Promise<IQuantityAdjustment> {
+  if (data.shiftId) await assertShiftExists(String(data.shiftId))
+
   const jo = await JobOrder.findById(data.jobOrderId)
   if (!jo) throw new CustomError(404, 'error.not_found')
   if (!jo.startTime) throw new CustomError(400, 'error.job_order_not_started_for_adjustment')
@@ -91,6 +94,8 @@ export async function update(
   data: PatchQuantityAdjustmentInput,
   userId: string,
 ): Promise<IQuantityAdjustment> {
+  if (data.shiftId) await assertShiftExists(String(data.shiftId))
+
   const qa = await QuantityAdjustment.findById(id)
   if (!qa) throw new CustomError(404, 'error.not_found')
 

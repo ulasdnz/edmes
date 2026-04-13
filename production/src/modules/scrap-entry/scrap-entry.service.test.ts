@@ -1,18 +1,23 @@
 import { Types } from 'mongoose'
 import { describe, expect, it, vi } from 'vitest'
+import {
+  emitScrapEntryCreated,
+  emitScrapEntryDeleted,
+  emitScrapEntryUpdated,
+} from '../../jobs/events.js'
 import { JobOrder } from '../job-order/job-order.model.js'
 import { ScrapEntry } from './scrap-entry.model.js'
 import * as scrapService from './scrap-entry.service.js'
-import {
-  emitScrapEntryCreated,
-  emitScrapEntryUpdated,
-  emitScrapEntryDeleted,
-} from '../../jobs/events.js'
 
 vi.mock('../../jobs/events.js', () => ({
   emitScrapEntryCreated: vi.fn(),
   emitScrapEntryUpdated: vi.fn(),
   emitScrapEntryDeleted: vi.fn(),
+}))
+
+vi.mock('../../lib/internal-api.js', () => ({
+  assertShiftExists: vi.fn().mockResolvedValue(undefined),
+  getWorkCenterInfo: vi.fn().mockResolvedValue(null),
 }))
 
 const wcId = new Types.ObjectId()
