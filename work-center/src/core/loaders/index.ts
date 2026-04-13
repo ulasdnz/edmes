@@ -1,6 +1,8 @@
 import { initSubscribers } from '../../jobs/subscribers.js'
 import { logger } from '../../lib/logger.js'
 import { initRedis } from '../../lib/redis.js'
+import { reconcileOpenCheckInsAtStartup } from '../../modules/shift/shift.reconciliation.js'
+import { startShiftScheduler } from '../../modules/shift/shift.scheduler.js'
 import { initExpress } from './express.js'
 import { initMongoose } from './mongoose.js'
 
@@ -11,6 +13,8 @@ export const initLoaders = async () => {
     await initMongoose()
     await initRedis()
     await initSubscribers()
+    await reconcileOpenCheckInsAtStartup()
+    await startShiftScheduler()
 
     const app = await initExpress()
 
