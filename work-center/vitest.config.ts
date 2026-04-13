@@ -19,6 +19,8 @@ export default defineConfig({
       JWT_SECRET: 'test_secret',
       REDIS_URL: 'redis://localhost:6379',
       INTERNAL_API_USER: 'http://localhost:3000',
+      INTERNAL_API_PRODUCTION: 'http://localhost:3002',
+      PLANT_TIMEZONE: 'Europe/Istanbul',
     },
   },
 })

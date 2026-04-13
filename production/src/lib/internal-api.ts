@@ -1,3 +1,4 @@
+import { CustomError } from '@mes/core'
 import { config } from '../config/index.js'
 import { logger } from './logger.js'
 
@@ -33,5 +34,25 @@ export async function getWorkCenterInfo(workCenterId: string): Promise<WorkCente
       workCenterId,
     })
     return null
+  }
+}
+
+export async function assertShiftExists(shiftId: string): Promise<void> {
+  try {
+    const res = await fetchInternal(WC_API, `/shifts/${shiftId}`)
+    if (res.status === 404) {
+      throw new CustomError(400, 'production.shift_not_found', { shiftId })
+    }
+    if (!res.ok) {
+      throw new CustomError(503, 'production.work_center_unreachable')
+    }
+  } catch (err) {
+    if (err instanceof CustomError) throw err
+    logger.warn('work-center unreachable for shift validation', {
+      event: 'internal_api.work_center.shift_validation_unreachable',
+      shiftId,
+      error: err instanceof Error ? err.message : err,
+    })
+    throw new CustomError(503, 'production.work_center_unreachable')
   }
 }

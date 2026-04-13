@@ -4,6 +4,7 @@ import { createStreamConsumer } from '@mes/events'
 import { sharedCacheDel } from '../lib/cache.js'
 import { logger } from '../lib/logger.js'
 import { streamClient } from '../lib/redis.js'
+import { autoCheckOutByShiftEnd } from '../modules/operators/operators.service.js'
 
 const SERVICE_GROUP = 'work-center-service'
 const CONSUMER_ID = `wc-${process.pid}`
@@ -14,6 +15,26 @@ const streams = {
       logger.debug('Invalidated auth context cache', {
         event: 'cache.auth_context.invalidated',
         userId: data.userId,
+      })
+    },
+  },
+  'events.work_center': {
+    'work_center.shift.ended': async (data: {
+      shiftId: string
+      occurrenceDay: string
+      endedAt: string
+    }) => {
+      const result = await autoCheckOutByShiftEnd(
+        data.shiftId,
+        data.occurrenceDay,
+        new Date(data.endedAt),
+      )
+      logger.info('Shift ended auto check-out processed', {
+        event: 'operators.auto_checkout.shift_ended',
+        shiftId: data.shiftId,
+        occurrenceDay: data.occurrenceDay,
+        affectedCount: result.affectedWorkCenterIds.length,
+        closedCount: result.closedCheckInIds.length,
       })
     },
   },

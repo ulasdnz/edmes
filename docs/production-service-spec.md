@@ -459,7 +459,8 @@ Kurallar:
 - `ScrapEntry.causeId` opsiyonel external referanstır
 - `causeId` master data owner'ı `operations-service`tir
 - Bu spec kapsamında `causeId` için synchronous validation zorunlu değildir; opaque reference olarak saklanabilir
-- `shiftId` ownership'i external shift service tarafındadır; bu spec kapsamında synchronous validation zorunlu değildir, opaque reference olarak saklanır; shift service erişilebilir olduğunda validate edilecektir
+- `shiftId` references `work-center-service.Shift` — production must validate shift existence via `GET /internal/v1/shifts/:id` on write paths (create/update).
+- **Delete guard:** Production exposes `GET /internal/v1/shifts/:id/references` so work-center can block shift delete when any `QuantityAdjustment` or `ScrapEntry` references the shift.
 
 ## Cross-Cutting Rules
 
@@ -483,7 +484,7 @@ Every event includes `eventId`, `type`, `occurredAt`, `traceId`, and relevant id
 - `work-center-service`: `WorkCenter` varlığı, fiziksel/virtual ayrımı ve `productivityMode`
 - `operations-service`: `grossProduction` owner'ı ve `ScrapEntry.causeId` için cause master data owner'ı
 - `user-service` / auth context: public route authentication, permission çözümü ve `createdBy` / `startedBy` / `endedBy` actor kimliği
-- Shift service (stub): `shiftId` kimliği ve shift definition owner'ı
+- `work-center-service` (shift module): `shiftId` kimliği ve shift definition owner'ı
 
 ## Delete And Reference Rules
 
@@ -507,6 +508,6 @@ Every event includes `eventId`, `type`, `occurredAt`, `traceId`, and relevant id
 ## Assumptions
 
 - `ProductionPlan` opsiyoneldir; standalone `JobOrder` birinci sınıf kullanım şeklidir
-- `shiftId` ownership'i external shift service tarafındadır
+- `shiftId` ownership'i `work-center-service` shift module tarafındadır
 - Work center archive lifecycle'ı production tarafında modellenmez; production yalnız referans ve fiziksel work center doğrulamasına dayanır
 - Bu spec service boundary ve behavior contract'ını tanımlar; execution hesapları `operations-service` owner'lığında kalır

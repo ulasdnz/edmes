@@ -12,6 +12,7 @@ import { sharedCacheWrapDedup } from '../../lib/cache.js'
 import { httpLoggerMiddleware, logger, morganMiddleware } from '../../lib/logger.js'
 import { generateOpenApiDocument } from '../../lib/openapi/setup.js'
 import { redisClient } from '../../lib/redis.js'
+import shiftReferencesRoutes from '../../modules/internal/shift-references.routes.js'
 import workCenterReferencesRoutes from '../../modules/internal/work-center-references.routes.js'
 import jobOrderRoutes from '../../modules/job-order/job-order.routes.js'
 import productRoutes from '../../modules/product/product.routes.js'
@@ -106,6 +107,7 @@ export const initExpress = async () => {
   })
   mountSharedRoutes(internalRouter)
   internalRouter.use(workCenterReferencesRoutes)
+  internalRouter.use(shiftReferencesRoutes)
 
   app.use('/internal/v1', internalRouter)
 

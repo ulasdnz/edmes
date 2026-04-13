@@ -19,6 +19,8 @@ import {
 } from '../action-state/action-state.service.js'
 import { hasAnyCheckInRecords, hasOpenCheckIns } from '../operators/operators.service.js'
 import { hasActiveCalendars } from '../schedule/schedule.service.js'
+import { Shift } from '../shift/shift.model.js'
+import { assertNoOverlap, type ShiftLike } from '../shift/shift.utils.js'
 import WorkCenter, { type IWorkCenter } from './work-center.model.js'
 import type { CreateWorkCenterInput, PatchWorkCenterInput } from './work-center.validators.js'
 import {
@@ -78,6 +80,21 @@ function enforceTypeFields(type: string, data: Record<string, unknown>): void {
     if (PHYSICAL_ONLY_FIELDS.has(key)) assertPhysicalOnly(type, key)
     if (VIRTUAL_ONLY_FIELDS.has(key)) assertVirtualOnly(type, key)
   }
+}
+
+async function validateShiftIdsAssignment(ids: string[]): Promise<void> {
+  if (ids.length === 0) return
+  const unique = Array.from(new Set(ids.map(String)))
+  if (unique.length !== ids.length) {
+    throw new CustomError(400, 'shift.duplicate_in_assignment')
+  }
+  const docs = (await Shift.find({ _id: { $in: unique } })
+    .select('_id startHour startMinute endHour endMinute')
+    .lean()) as Array<ShiftLike>
+  if (docs.length !== unique.length) {
+    throw new CustomError(404, 'shift.not_found')
+  }
+  assertNoOverlap(docs)
 }
 
 // ── Metric composition validation ───────────────────────────────────────────
@@ -196,6 +213,10 @@ export async function createWorkCenter(
 
   if (data.type === 'virtual' && data.metricComposition) {
     await validateMetricComposition(null, data.metricComposition)
+  }
+
+  if (data.shiftIds && data.shiftIds.length > 0) {
+    await validateShiftIdsAssignment(data.shiftIds.map(String))
   }
 
   const doc = new WorkCenter({
@@ -414,6 +435,11 @@ export async function updateWorkCenter(
       existing.set('metricComposition', merged)
       compositionChanged = true
     }
+  }
+
+  // Validate shiftIds if provided
+  if (updateFields.shiftIds !== undefined) {
+    await validateShiftIdsAssignment(updateFields.shiftIds.map(String))
   }
 
   // Handle parentWorkCenterId change

@@ -4,6 +4,7 @@ import {
   emitScrapEntryDeleted,
   emitScrapEntryUpdated,
 } from '../../jobs/events.js'
+import { assertShiftExists } from '../../lib/internal-api.js'
 import { type PaginatedResult, paginate } from '../../utils/pagination.js'
 import { JobOrder } from '../job-order/job-order.model.js'
 import { type IScrapEntry, ScrapEntry } from './scrap-entry.model.js'
@@ -14,6 +15,8 @@ import type {
 } from './scrap-entry.validators.js'
 
 export async function create(data: CreateScrapEntryInput, userId: string): Promise<IScrapEntry> {
+  if (data.shiftId) await assertShiftExists(String(data.shiftId))
+
   const jo = await JobOrder.findById(data.jobOrderId)
   if (!jo) throw new CustomError(404, 'error.not_found')
   if (!jo.startTime) throw new CustomError(400, 'error.job_order_not_started_for_adjustment')
@@ -105,6 +108,8 @@ export async function update(
   data: PatchScrapEntryInput,
   userId: string,
 ): Promise<IScrapEntry> {
+  if (data.shiftId) await assertShiftExists(String(data.shiftId))
+
   const scrap = await ScrapEntry.findById(id)
   if (!scrap) throw new CustomError(404, 'error.not_found')
 

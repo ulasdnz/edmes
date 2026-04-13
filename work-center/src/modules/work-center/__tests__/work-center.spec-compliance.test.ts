@@ -5,6 +5,7 @@ import { initLoaders } from '../../../core/loaders/index.js'
 import { OperatorCheckIn } from '../../operators/operators.model.js'
 import { Calendar } from '../../schedule/schedule.model.js'
 import * as scheduleService from '../../schedule/schedule.service.js'
+import { Shift } from '../../shift/shift.model.js'
 import WorkCenter from '../work-center.model.js'
 
 const fetchMock = vi.hoisted(() => vi.fn())
@@ -181,22 +182,24 @@ describe('Work Center Spec Compliance Review', () => {
   })
 
   it('returns the effective schedule for a given date', async () => {
+    const shift = await Shift.create({
+      name: 'Day Shift',
+      startHour: 8,
+      startMinute: 0,
+      endHour: 16,
+      endMinute: 0,
+      createdBy: '507f1f77bcf86cd799439091',
+      updatedBy: '507f1f77bcf86cd799439091',
+    })
+
     const workCenterId = await createInternalWorkCenter(
       buildPhysicalWorkCenter({
-        shiftIds: ['507f1f77bcf86cd799439014'],
+        shiftIds: [String(shift._id)],
       }),
     )
 
     const weeklyPattern = baseWeek()
-    weeklyPattern.monday = [
-      {
-        name: 'Day Shift',
-        startHour: 8,
-        startMinute: 0,
-        endHour: 16,
-        endMinute: 0,
-      },
-    ]
+    weeklyPattern.monday = [String(shift._id)]
 
     const calendarRes = await request(app)
       .post(`/internal/v1/work-centers/${workCenterId}/calendars`)
@@ -213,14 +216,12 @@ describe('Work Center Spec Compliance Review', () => {
     const directSchedule = await scheduleService.getEffectiveSchedule(workCenterId, '2026-03-23')
 
     expect(calendarRes.status).toBe(201)
-    expect(directSchedule).toEqual({
-      source: 'calendar',
-      date: '2026-03-23',
-      calendarId: calendarRes.body.data._id,
-      intervals: weeklyPattern.monday,
-    })
+    expect(directSchedule.source).toBe('calendar')
+    expect(directSchedule.date).toBe('2026-03-23')
+    expect(directSchedule.shiftIds).toEqual([String(shift._id)])
+    expect(directSchedule.shifts).toHaveLength(1)
     expect(effectiveSchedule.status).toBe(200)
-    expect(effectiveSchedule.body.data).toEqual(directSchedule)
+    expect(effectiveSchedule.body.data.source).toBe('calendar')
   })
 
   it('matches the archive guard that blocks physical work centers with open check-ins', async () => {
@@ -239,24 +240,26 @@ describe('Work Center Spec Compliance Review', () => {
   })
 
   it('accepts date exception upserts on the internal API', async () => {
+    const shift = await Shift.create({
+      name: 'Maintenance Window',
+      startHour: 10,
+      startMinute: 0,
+      endHour: 12,
+      endMinute: 0,
+      createdBy: '507f1f77bcf86cd799439091',
+      updatedBy: '507f1f77bcf86cd799439091',
+    })
+
     const workCenterId = await createInternalWorkCenter(buildPhysicalWorkCenter())
 
     const res = await request(app)
       .put(`/internal/v1/work-centers/${workCenterId}/exceptions/2026-03-23`)
       .send({
-        intervals: [
-          {
-            name: 'Maintenance Window',
-            startHour: 10,
-            startMinute: 0,
-            endHour: 12,
-            endMinute: 0,
-          },
-        ],
+        shiftIds: [String(shift._id)],
       })
 
     expect(res.status).toBe(200)
-    expect(res.body.data.intervals).toHaveLength(1)
+    expect(res.body.data.shiftIds).toHaveLength(1)
   })
 
   it('keeps action-state ingestion off the public API while allowing internal ingestion', async () => {
@@ -325,26 +328,30 @@ describe('Work Center Spec Compliance Review', () => {
     expect(saved?.metricComposition).toBeNull()
   })
 
-  it('proves overlapping schedule intervals are accepted even though the spec forbids them', async () => {
+  it('rejects overlapping shifts in calendar weekly pattern', async () => {
+    const morning = await Shift.create({
+      name: 'Morning',
+      startHour: 8,
+      startMinute: 0,
+      endHour: 12,
+      endMinute: 0,
+      createdBy: '507f1f77bcf86cd799439091',
+      updatedBy: '507f1f77bcf86cd799439091',
+    })
+    const overlap = await Shift.create({
+      name: 'Overlap',
+      startHour: 11,
+      startMinute: 0,
+      endHour: 16,
+      endMinute: 0,
+      createdBy: '507f1f77bcf86cd799439091',
+      updatedBy: '507f1f77bcf86cd799439091',
+    })
+
     const workCenterId = await createInternalWorkCenter(buildPhysicalWorkCenter())
 
     const overlappingWeek = baseWeek()
-    overlappingWeek.monday = [
-      {
-        name: 'Morning',
-        startHour: 8,
-        startMinute: 0,
-        endHour: 12,
-        endMinute: 0,
-      },
-      {
-        name: 'Overlap',
-        startHour: 11,
-        startMinute: 0,
-        endHour: 16,
-        endMinute: 0,
-      },
-    ]
+    overlappingWeek.monday = [String(morning._id), String(overlap._id)]
 
     const res = await request(app)
       .post(`/internal/v1/work-centers/${workCenterId}/calendars`)
@@ -354,7 +361,7 @@ describe('Work Center Spec Compliance Review', () => {
         weeklyPattern: overlappingWeek,
       })
 
-    expect(res.status).toBe(201)
-    expect(await Calendar.countDocuments({ workCenterId })).toBe(1)
+    expect(res.status).toBe(400)
+    expect(await Calendar.countDocuments({ workCenterId })).toBe(0)
   })
 })
