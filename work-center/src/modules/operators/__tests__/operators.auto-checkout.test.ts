@@ -1,5 +1,5 @@
 import { Types } from 'mongoose'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { emitOperatorCheckedOut } from '../../../jobs/events.js'
 import { Shift } from '../../shift/shift.model.js'
 import WorkCenter from '../../work-center/work-center.model.js'
@@ -71,7 +71,11 @@ describe('autoCheckOutByShiftEnd', () => {
       userId,
     )
 
-    const result = await operatorService.autoCheckOutByShiftEnd(String(shift._id), '2026-04-10')
+    const result = await operatorService.autoCheckOutByShiftEnd(
+      String(shift._id),
+      '2026-04-10',
+      new Date('2026-04-10T08:00:00.000Z'),
+    )
     expect(result).toEqual({
       affectedWorkCenterIds: [String(wcAffected._id)],
       closedCheckInIds: [String(ciA._id)],
@@ -99,9 +103,17 @@ describe('autoCheckOutByShiftEnd', () => {
       { operatorId: new Types.ObjectId().toHexString() },
       userId,
     )
-    await operatorService.autoCheckOutByShiftEnd(String(shift._id), '2026-04-10')
+    await operatorService.autoCheckOutByShiftEnd(
+      String(shift._id),
+      '2026-04-10',
+      new Date('2026-04-10T08:00:00.000Z'),
+    )
     mockedEmit.mockClear()
-    const second = await operatorService.autoCheckOutByShiftEnd(String(shift._id), '2026-04-10')
+    const second = await operatorService.autoCheckOutByShiftEnd(
+      String(shift._id),
+      '2026-04-10',
+      new Date('2026-04-10T08:00:00.000Z'),
+    )
     expect(second.closedCheckInIds).toEqual([])
     expect(mockedEmit).not.toHaveBeenCalled()
   })
@@ -114,7 +126,11 @@ describe('autoCheckOutByShiftEnd', () => {
       { operatorId: new Types.ObjectId().toHexString() }, // no shiftId
       userId,
     )
-    await operatorService.autoCheckOutByShiftEnd(String(shift._id), '2026-04-10')
+    await operatorService.autoCheckOutByShiftEnd(
+      String(shift._id),
+      '2026-04-10',
+      new Date('2026-04-10T08:00:00.000Z'),
+    )
     const after = await OperatorCheckIn.findById(ci._id)
     expect(after?.checkedOutAt).toBeTruthy()
   })
@@ -130,10 +146,40 @@ describe('autoCheckOutByShiftEnd', () => {
       { operatorId: new Types.ObjectId().toHexString() },
       userId,
     )
-    const result = await operatorService.autoCheckOutByShiftEnd(String(shift._id), '2026-04-10')
+    const result = await operatorService.autoCheckOutByShiftEnd(
+      String(shift._id),
+      '2026-04-10',
+      new Date('2026-04-10T08:00:00.000Z'),
+    )
     // The exception on that day removed the shift → WC is NOT affected → no close.
     expect(result.affectedWorkCenterIds).toEqual([])
     const after = await OperatorCheckIn.findById(ci._id)
     expect(after?.checkedOutAt).toBeNull()
+  })
+
+  it('uses endedAt boundary time, not processing time, for checkedOutAt', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-04-10T14:00:00.000Z')) // 17:00 IST — 1h after shift ended
+
+    const shift = await mkShift('Day', 8, 16)
+    const wc = await mkWc('WC_A', [shift._id])
+    const ci = await operatorService.checkIn(
+      String(wc._id),
+      { operatorId: new Types.ObjectId().toHexString() },
+      userId,
+    )
+
+    const endedAt = new Date('2026-04-10T13:00:00.000Z') // 16:00 IST — actual boundary
+    const result = await operatorService.autoCheckOutByShiftEnd(
+      String(shift._id),
+      '2026-04-10',
+      endedAt,
+    )
+
+    expect(result.closedCheckInIds).toHaveLength(1)
+    const after = await OperatorCheckIn.findById(ci._id)
+    expect(after?.checkedOutAt?.toISOString()).toBe('2026-04-10T13:00:00.000Z')
+
+    vi.useRealTimers()
   })
 })

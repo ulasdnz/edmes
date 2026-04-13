@@ -19,8 +19,16 @@ const streams = {
     },
   },
   'events.work_center': {
-    'work_center.shift.ended': async (data: { shiftId: string; occurrenceDay: string }) => {
-      const result = await autoCheckOutByShiftEnd(data.shiftId, data.occurrenceDay)
+    'work_center.shift.ended': async (data: {
+      shiftId: string
+      occurrenceDay: string
+      endedAt: string
+    }) => {
+      const result = await autoCheckOutByShiftEnd(
+        data.shiftId,
+        data.occurrenceDay,
+        new Date(data.endedAt),
+      )
       logger.info('Shift ended auto check-out processed', {
         event: 'operators.auto_checkout.shift_ended',
         shiftId: data.shiftId,

@@ -107,10 +107,10 @@ export async function hasAnyCheckInRecords(workCenterId: string): Promise<boolea
 export async function autoCheckOutByShiftEnd(
   shiftId: string,
   occurrenceDay: string,
+  endedAt: Date,
 ): Promise<{ affectedWorkCenterIds: string[]; closedCheckInIds: string[] }> {
   const affectedWorkCenterIds = await resolveAffectedWorkCenters(shiftId, occurrenceDay)
   const closedCheckInIds: string[] = []
-  const now = new Date()
 
   for (const wcId of affectedWorkCenterIds) {
     const openCheckIns = await OperatorCheckIn.find({
@@ -118,7 +118,7 @@ export async function autoCheckOutByShiftEnd(
       checkedOutAt: null,
     })
     for (const ci of openCheckIns) {
-      ci.checkedOutAt = now
+      ci.checkedOutAt = endedAt
       ci.checkoutSource = 'shift_boundary'
       ci.updatedBy = new Types.ObjectId(SYSTEM_IDENTITY)
       await ci.save()
