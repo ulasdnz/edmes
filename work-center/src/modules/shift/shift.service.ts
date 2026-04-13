@@ -1,11 +1,17 @@
 import { Types } from 'mongoose'
+import { config } from '../../config/index.js'
 import { CustomError } from '../../core/errors/index.js'
 import { emitShiftCreated, emitShiftDeleted, emitShiftUpdated } from '../../jobs/events.js'
 import { hasProductionShiftReferences } from '../../lib/internal-api.js'
 import WorkCenter from '../work-center/work-center.model.js'
 import { type IShift, Shift } from './shift.model.js'
 import { onShiftCreated, onShiftDeleted, onShiftUpdated } from './shift.scheduler.js'
-import { assertNoOverlap, type ShiftLike } from './shift.utils.js'
+import {
+  assertNoOverlap,
+  currentRunningOccurrence,
+  occurrenceEndOnDay,
+  type ShiftLike,
+} from './shift.utils.js'
 import type { CreateShiftInput, PatchShiftInput } from './shift.validators.js'
 
 async function assertUniqueName(name: string, excludeId?: string): Promise<void> {
@@ -100,6 +106,18 @@ export async function updateShift(
       endMinute: data.endMinute ?? existing.endMinute,
     }
     assertValidTimeRange(proposed)
+    const endChanged = data.endHour !== undefined || data.endMinute !== undefined
+    const current = currentRunningOccurrence(
+      existing as unknown as ShiftLike,
+      new Date(),
+      config.PLANT_TIMEZONE,
+    )
+    if (endChanged && current) {
+      const proposedEnd = occurrenceEndOnDay(proposed, current.occurrenceDay, config.PLANT_TIMEZONE)
+      if (proposedEnd.getTime() <= Date.now()) {
+        throw new CustomError(409, 'shift.end_before_now')
+      }
+    }
     await assertReferencingAssignmentsRemainValid(String(existing._id), proposed)
 
     for (const f of TIME_FIELDS) {

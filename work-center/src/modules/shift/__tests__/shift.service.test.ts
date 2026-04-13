@@ -203,3 +203,35 @@ describe('shift.service delete', () => {
     })
   })
 })
+
+describe('shift.service active-shift update rules', () => {
+  beforeEach(async () => {
+    await Shift.deleteMany({})
+  })
+
+  it('rejects end-time update moving end before now on the currently running occurrence (409)', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-04-10T07:00:00.000Z'))
+    const s = await shiftService.createShift(
+      { name: 'Day', startHour: 8, startMinute: 0, endHour: 16, endMinute: 0 },
+      userId,
+    )
+    // Try to move end to 09:00 → in the past → reject
+    await expect(
+      shiftService.updateShift(String(s._id), { endHour: 9 }, userId),
+    ).rejects.toMatchObject({ statusCode: 409, message: 'shift.end_before_now' })
+    vi.useRealTimers()
+  })
+
+  it('accepts end-time update moving end further into the future', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-04-10T07:00:00.000Z'))
+    const s = await shiftService.createShift(
+      { name: 'Day', startHour: 8, startMinute: 0, endHour: 16, endMinute: 0 },
+      userId,
+    )
+    const updated = await shiftService.updateShift(String(s._id), { endHour: 18 }, userId)
+    expect(updated.endHour).toBe(18)
+    vi.useRealTimers()
+  })
+})
