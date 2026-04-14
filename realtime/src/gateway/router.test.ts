@@ -57,7 +57,7 @@ describe('resolveRooms', () => {
   })
 
   it('adds tag:{id} room when tagId is in payload', () => {
-    const rooms = resolveRooms('tag.value.updated', { tagId: 'tag-1' })
+    const rooms = resolveRooms('tag.value.recorded', { tagId: 'tag-1' })
     expect(rooms).toEqual(['tag', 'tag:tag-1'])
   })
 
