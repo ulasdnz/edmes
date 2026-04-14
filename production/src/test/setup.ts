@@ -1,8 +1,17 @@
 import { MongoDBContainer, type StartedMongoDBContainer } from '@testcontainers/mongodb'
 import mongoose from 'mongoose'
-import { afterAll, afterEach, beforeAll } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach } from 'vitest'
 
 let mongoContainer: StartedMongoDBContainer
+let indexedModels = new Set<string>()
+
+const ensureTestIndexes = async () => {
+  for (const [modelName, model] of Object.entries(mongoose.models)) {
+    if (indexedModels.has(modelName)) continue
+    await model.createIndexes()
+    indexedModels.add(modelName)
+  }
+}
 
 beforeAll(async () => {
   mongoContainer = await new MongoDBContainer('mongo:7').start()
@@ -12,11 +21,19 @@ beforeAll(async () => {
   }
   uri = uri.replace('localhost', '127.0.0.1')
   await mongoose.connect(uri)
+  indexedModels = new Set()
+  await ensureTestIndexes()
 }, 120000)
 
 afterAll(async () => {
   await mongoose.disconnect()
   await mongoContainer.stop()
+})
+
+beforeEach(async () => {
+  if (mongoose.connection.readyState !== 0) {
+    await ensureTestIndexes()
+  }
 })
 
 afterEach(async () => {
