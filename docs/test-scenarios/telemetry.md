@@ -175,14 +175,13 @@
 ### happy path
 - valid counter tag with binding → returns doc with all fields, timestamps, audit fields
 - valid binary tag without binding (virtual tag) → returns doc with binding=null
-- valid speed tag with storageMode='stateOnly' → returns doc
+- valid speed tag → returns doc
 - digit/tolerance/min/max provided for counter → accepted
 - digit/tolerance/min/max omitted for binary → defaults applied
 
 ### constraints
 - tagTypeId not in DB → error.not_found
 - behavior not in ['counter', 'speed', 'binary'] → validation error
-- storageMode not in ['history', 'stateOnly'] → validation error
 - binding.deviceKey provided but deviceKey not matching any EdgeDevice → validation error or allowed (spec says binding references deviceKey string, not necessarily validated against EdgeDevice)
 - [CRITICAL] binding with nodeId already bound to another tag → error (binding uniqueness violated)
 - binding without nodeId → uniqueness check skipped
@@ -249,13 +248,13 @@
 > plan-task: 5
 
 ### happy path
-- tag with storageMode='stateOnly' → deleted, current_states entry cleaned
-- tag with storageMode='history' and empty historian collection → deleted
-- tag with storageMode='history' and non-empty historian, forceDelete=true → deleted, historian collection dropped
+- tag with no historian collection → deleted
+- tag with empty historian collection → deleted, collection left as-is
+- tag with non-empty historian, forceDelete=true → deleted, historian collection dropped
 
 ### constraints
 - non-existent id → error.not_found
-- [CRITICAL] tag with storageMode='history' and non-empty historian, no forceDelete → 409 Conflict
+- [CRITICAL] tag with non-empty historian, no forceDelete → 409 Conflict
 
 ### edge cases
 - [HIGH] delete tag with binding → binding cache and predecessor cache entries cleaned up
@@ -306,8 +305,7 @@
 - valid MQTT message for bound speed tag → sample persisted with prevValue, prevTs
 - valid MQTT message for bound binary tag, state change (0→1) → sample persisted
 - first sample for a tag (no predecessor) → prevValue=null, prevTs=null; counter: prev2Value=null, prev2Ts=null, reset=false
-- stateOnly tag → current_states upserted, no historian append
-- after persist → Redis Pub/Sub notification published to tag:{tagId}:value channel
+- after persist → `tag.value.recorded` event emitted on `events.telemetry` with `{ tagId, behavior, value, occurredAt }`
 
 ### constraints
 - topic not matching `devices/{deviceKey}/nodes/{nodeId}` format → silently dropped
@@ -487,12 +485,35 @@
 
 ### happy path
 - binary tag with transitions in range → returns array of { state, start, end, durationMs } segments
-- baseline (last value before range) used as initial state
+- baseline (last value before range) used as initial state, first segment starts at rangeStart
 
 ### edge cases
-- [HIGH] no transitions in range → single segment from rangeStart to rangeEnd with baseline state
-- no baseline and no docs → initial state defaults to 0
+- [HIGH] baseline exists, no transitions in range → single segment from rangeStart to rangeEnd with baseline state
+- [HIGH] no baseline, single sample in range → single segment from sample.occurredAt to rangeEnd with sample.value
+- [HIGH] no baseline, multiple samples in range → first segment starts at first sample's occurredAt (NOT rangeStart); state=first sample's value
+- [CRITICAL] no baseline and no docs → returns `[]` (never assume default state)
 - [HIGH] final segment always extends to rangeEnd (closing segment)
+- deterministic ordering: ties on occurredAt broken by _id for both baseline and in-range docs
+
+### authorization
+- [CRITICAL] caller without `readHistorian` permission → 403
+
+---
+
+## Historian.latest
+> target: telemetry/src/modules/historian/__tests__/historian.service.test.ts
+> plan-task: 12
+
+### happy path
+- tag with historian samples → returns `{ tagId, value, occurredAt }` from the last persisted sample (sort `occurredAt desc, _id desc`)
+- tag exists but historian collection is empty (no samples yet) → returns `null`
+
+### constraints
+- non-existent tagId → 404 `tag.not_found`
+- [HIGH] only persisted samples are visible; samples dropped by `same_value`/`within_tolerance`/`out_of_order` filters do not appear here
+
+### edge cases
+- two samples with identical occurredAt → deterministic tiebreak via `_id desc`
 
 ### authorization
 - [CRITICAL] caller without `readHistorian` permission → 403
@@ -606,7 +627,6 @@
 
 ### happy path
 - after sample persisted → Redis PUBLISH to `tag:{tagId}:value` with { tagId, value, occurredAt }
-- after stateOnly upsert → same publish
 
 ### edge cases
 - Redis Pub/Sub publish fails → ingestion NOT affected (fire-and-forget, error swallowed)
