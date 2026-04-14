@@ -71,6 +71,11 @@ export const getStateDurations = async (req: Request<{ tagId: string }>, res: Re
   res.json({ data: segments })
 }
 
+export const getLatest = async (req: Request<{ tagId: string }>, res: Response) => {
+  const data = await historianService.getLatest(req.params.tagId)
+  res.json({ data })
+}
+
 export const getRollup = async (req: Request<{ tagId: string }>, res: Response) => {
   const { from, to, interval, fn } = req.query as unknown as {
     from: Date

@@ -6,22 +6,8 @@ import { calculateProduced } from './calculations/counter.calc.js'
 import { calculateSpeedAvg } from './calculations/speed.calc.js'
 
 const SERIES_INTERVAL_CANDIDATES_MS = [
-  1_000,
-  5_000,
-  10_000,
-  30_000,
-  60_000,
-  300_000,
-  600_000,
-  900_000,
-  1_800_000,
-  3_600_000,
-  14_400_000,
-  28_800_000,
-  43_200_000,
-  86_400_000,
-  604_800_000,
-  2_592_000_000,
+  1_000, 5_000, 10_000, 30_000, 60_000, 300_000, 600_000, 900_000, 1_800_000, 3_600_000, 14_400_000,
+  28_800_000, 43_200_000, 86_400_000, 604_800_000, 2_592_000_000,
 ] as const
 
 type SeriesFilterType = 'raw' | 'last_value_bucket'
@@ -325,6 +311,20 @@ export const getStateDurations = async (tagId: string, from: Date, to: Date) => 
     throw new CustomError(400, 'historian.binary_only')
   }
   return calculateStateDurations(tagId, from, to)
+}
+
+export const getLatest = async (tagId: string) => {
+  await ensureTagExists(tagId)
+  const collection = getHistorianCollection(tagId)
+  const sample = await collection.findOne<{ value: number; occurredAt: Date }>(
+    {},
+    {
+      sort: { occurredAt: -1, _id: -1 },
+      projection: { _id: 0, value: 1, occurredAt: 1 },
+    },
+  )
+  if (!sample) return null
+  return { tagId, value: sample.value, occurredAt: sample.occurredAt }
 }
 
 export const getRollup = async (

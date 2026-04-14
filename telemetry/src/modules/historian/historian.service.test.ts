@@ -1,12 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { findByIdMock, findOneMock, aggregateToArrayMock, rawToArrayMock } =
-  vi.hoisted(() => ({
-    findByIdMock: vi.fn(),
-    findOneMock: vi.fn(),
-    aggregateToArrayMock: vi.fn(),
-    rawToArrayMock: vi.fn(),
-  }))
+const { findByIdMock, findOneMock, aggregateToArrayMock, rawToArrayMock } = vi.hoisted(() => ({
+  findByIdMock: vi.fn(),
+  findOneMock: vi.fn(),
+  aggregateToArrayMock: vi.fn(),
+  rawToArrayMock: vi.fn(),
+}))
 
 vi.mock('../tag/tag.model.js', () => ({
   default: {
@@ -33,7 +32,7 @@ vi.mock('../ingestion/historian.repository.js', () => ({
   })),
 }))
 
-import { getRollup, getSeries } from './historian.service.js'
+import { getLatest, getRollup, getSeries } from './historian.service.js'
 
 describe('historian.service.getSeries', () => {
   beforeEach(() => {
@@ -85,10 +84,12 @@ describe('historian.service.getSeries', () => {
     const to = new Date('2026-04-02T00:00:00.000Z')
 
     findOneMock.mockResolvedValue({ value: 10 })
-    rawToArrayMock.mockResolvedValue(new Array(1001).fill(null).map((_, i) => ({
-      t: new Date(`2026-04-01T00:${String(i % 60).padStart(2, '0')}:00.000Z`),
-      v: i,
-    })))
+    rawToArrayMock.mockResolvedValue(
+      new Array(1001).fill(null).map((_, i) => ({
+        t: new Date(`2026-04-01T00:${String(i % 60).padStart(2, '0')}:00.000Z`),
+        v: i,
+      })),
+    )
     aggregateToArrayMock.mockResolvedValue([
       { t: new Date('2026-04-01T06:00:00.000Z'), v: 18 },
       { t: new Date('2026-04-01T12:00:00.000Z'), v: 22 },
@@ -164,5 +165,54 @@ describe('historian.service.getRollup', () => {
       },
     ])
     expect(rawToArrayMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('historian.service.getLatest', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    findByIdMock.mockReturnValue({
+      select: vi.fn().mockReturnValue({
+        lean: vi.fn().mockResolvedValue({ behavior: 'binary' }),
+      }),
+    })
+  })
+
+  it('returns { tagId, value, occurredAt } for the last persisted sample', async () => {
+    const occurredAt = new Date('2026-04-01T10:30:00.000Z')
+    findOneMock.mockResolvedValue({ value: 1, occurredAt })
+
+    const result = await getLatest('tag-1')
+
+    expect(result).toEqual({ tagId: 'tag-1', value: 1, occurredAt })
+    expect(findOneMock).toHaveBeenCalledWith(
+      {},
+      {
+        sort: { occurredAt: -1, _id: -1 },
+        projection: { _id: 0, value: 1, occurredAt: 1 },
+      },
+    )
+  })
+
+  it('returns null when tag exists but historian collection has no samples', async () => {
+    findOneMock.mockResolvedValue(null)
+
+    const result = await getLatest('tag-1')
+
+    expect(result).toBeNull()
+  })
+
+  it('throws 404 tag.not_found when tag does not exist', async () => {
+    findByIdMock.mockReturnValue({
+      select: vi.fn().mockReturnValue({
+        lean: vi.fn().mockResolvedValue(null),
+      }),
+    })
+
+    await expect(getLatest('missing-tag')).rejects.toMatchObject({
+      statusCode: 404,
+      message: 'tag.not_found',
+    })
+    expect(findOneMock).not.toHaveBeenCalled()
   })
 })

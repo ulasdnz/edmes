@@ -31,11 +31,6 @@ const tagSchema = new Schema(
       enum: ['counter', 'speed', 'binary'],
       required: true,
     },
-    storageMode: {
-      type: String,
-      enum: ['history', 'stateOnly'],
-      default: 'history',
-    },
     digit: {
       type: Number,
       default: 1,

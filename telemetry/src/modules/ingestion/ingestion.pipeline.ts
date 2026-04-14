@@ -1,11 +1,10 @@
 import { parseUtcZonedDateTime } from '@mes/core'
 import { CustomError } from '../../core/errors/index.js'
-import { emitTagValueUpdated } from '../../jobs/events.js'
+import { emitTagValueRecorded } from '../../jobs/events.js'
 import { getPeriodLock } from '../../jobs/subscribers.js'
 import { logger } from '../../lib/logger.js'
 import type { ITag } from '../tag/tag.model.js'
 import { bindingCacheResolve } from './binding-cache.js'
-import { upsertCurrentState } from './current-state.repository.js'
 import { type HistorianSample, insertSample } from './historian.repository.js'
 import { predecessorLoad, predecessorSet } from './predecessor-cache.js'
 
@@ -15,7 +14,7 @@ interface IncomingMessage {
 }
 
 export type IngestValueResult =
-  | { applied: true; reason: 'history_inserted' | 'state_updated' }
+  | { applied: true; reason: 'history_inserted' }
   | {
       applied: false
       reason: 'out_of_order' | 'same_value' | 'within_tolerance'
@@ -94,18 +93,6 @@ export const ingestValue = async (
     }
   }
 
-  if (tag.storageMode === 'stateOnly') {
-    await upsertCurrentState(tagId, value, occurredAt)
-    await emitTagValueUpdated(tagId, value, occurredAt)
-    predecessorSet(tagId, {
-      value,
-      occurredAt,
-      prevValue: pred?.value ?? null,
-      prevTs: pred?.occurredAt ?? null,
-    })
-    return { applied: true, reason: 'state_updated' }
-  }
-
   const sample = buildSample(tag.behavior, value, occurredAt, pred)
 
   await insertSample(tagId, sample)
@@ -124,7 +111,7 @@ export const ingestValue = async (
   }
   predecessorSet(tagId, newPred)
 
-  await emitTagValueUpdated(tagId, value, occurredAt)
+  await emitTagValueRecorded(tagId, tag.behavior, value, occurredAt)
   return { applied: true, reason: 'history_inserted' }
 }
 

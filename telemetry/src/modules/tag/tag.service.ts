@@ -81,23 +81,21 @@ export const deleteTag = async (id: string, forceDelete = false) => {
     bindingCacheDelete(tag.binding.deviceKey, tag.binding.nodeId)
   }
 
-  if (tag.storageMode === 'history') {
-    const collectionName = `tag_samples_${id}`
-    const collections = await mongoose.connection
-      .db!.listCollections({ name: collectionName })
-      .toArray()
+  const collectionName = `tag_samples_${id}`
+  const collections = await mongoose.connection
+    .db!.listCollections({ name: collectionName })
+    .toArray()
 
-    if (collections.length > 0) {
-      const collection = mongoose.connection.db!.collection(collectionName)
-      const count = await collection.countDocuments({}, { limit: 1 })
+  if (collections.length > 0) {
+    const collection = mongoose.connection.db!.collection(collectionName)
+    const count = await collection.countDocuments({}, { limit: 1 })
 
-      if (count > 0 && !forceDelete) {
-        throw new CustomError(409, 'tag.has_historian_data')
-      }
+    if (count > 0 && !forceDelete) {
+      throw new CustomError(409, 'tag.has_historian_data')
+    }
 
-      if (forceDelete) {
-        await collection.drop()
-      }
+    if (forceDelete) {
+      await collection.drop()
     }
   }
 

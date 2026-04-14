@@ -77,6 +77,13 @@ router.get(
 )
 
 router.get(
+  '/historian/:tagId/latest',
+  requirePermission('readHistorian'),
+  validateParams(tagIdParamSchema),
+  historianController.getLatest,
+)
+
+router.get(
   '/historian/:tagId/rollup',
   requirePermission('readHistorian'),
   validateParams(tagIdParamSchema),
