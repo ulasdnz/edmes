@@ -21,37 +21,57 @@ export const calculateStateDurations = async (
 
   const baseline = await collection.findOne<BinaryDoc>(
     { occurredAt: { $lt: rangeStart } },
-    { sort: { occurredAt: -1 } },
+    { sort: { occurredAt: -1, _id: -1 } },
   )
 
   const docs = await collection
     .find<BinaryDoc>({ occurredAt: { $gte: rangeStart, $lte: rangeEnd } })
-    .sort({ occurredAt: 1 })
+    .sort({ occurredAt: 1, _id: 1 })
     .toArray()
 
-  const segments: StateSegment[] = []
-  let currentState = baseline?.value ?? 0
-  let segmentStart = rangeStart
+  if (!baseline && docs.length === 0) return []
 
-  for (const doc of docs) {
+  const segments: StateSegment[] = []
+  let currentState: number
+  let segmentStart: Date
+  let startIdx: number
+
+  if (baseline) {
+    currentState = baseline.value
+    segmentStart = rangeStart
+    startIdx = 0
+  } else {
+    currentState = docs[0].value
+    segmentStart = docs[0].occurredAt
+    startIdx = 1
+  }
+
+  for (let i = startIdx; i < docs.length; i++) {
+    const doc = docs[i]
     if (doc.value !== currentState) {
-      segments.push({
-        state: currentState,
-        start: segmentStart,
-        end: doc.occurredAt,
-        durationMs: doc.occurredAt.getTime() - segmentStart.getTime(),
-      })
+      const durationMs = doc.occurredAt.getTime() - segmentStart.getTime()
+      if (durationMs > 0) {
+        segments.push({
+          state: currentState,
+          start: segmentStart,
+          end: doc.occurredAt,
+          durationMs,
+        })
+      }
       currentState = doc.value
       segmentStart = doc.occurredAt
     }
   }
 
-  segments.push({
-    state: currentState,
-    start: segmentStart,
-    end: rangeEnd,
-    durationMs: rangeEnd.getTime() - segmentStart.getTime(),
-  })
+  const finalDurationMs = rangeEnd.getTime() - segmentStart.getTime()
+  if (finalDurationMs > 0) {
+    segments.push({
+      state: currentState,
+      start: segmentStart,
+      end: rangeEnd,
+      durationMs: finalDurationMs,
+    })
+  }
 
   return segments
 }
