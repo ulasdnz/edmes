@@ -8,7 +8,6 @@ classification for Aimes core MES.
 The first version must support a solid core MES flow:
 
 - collect machine signals from Telemetry,
-- use Work Center calendars to understand expected operating time,
 - use Production job order executions as the production context,
 - calculate OEE/productivity for a requested time range,
 - create and manage planned and unplanned stop records,
@@ -18,15 +17,16 @@ The first version must support a solid core MES flow:
 
 1. The frontend asks for OEE directly.
 
-   There is no required public "time-context" call before OEE. The frontend should call:
+   There is no required public "time-context" call before OEE. The frontend calls:
 
    ```http
    GET /api/v1/oee?workCenterId=...&from=...&to=...&groupBy=...
    ```
 
-2. Work Center owns calendars.
+2. Work Center owns work center metadata.
 
-   Work Center answers: "When is this work center expected to operate?"
+   Work Center answers: "What is this work center, how is it measured, and how is it
+   composed?"
 
 3. Production owns job orders.
 
@@ -38,13 +38,14 @@ The first version must support a solid core MES flow:
 
 5. Productivity owns OEE and downtime classification.
 
-   Productivity combines operating windows, job order executions, planned stops,
-   unplanned stops, quantities, scrap, and historian summaries.
+   Productivity combines job order executions, planned stops, unplanned stops,
+   quantities, scrap, and historian summaries.
 
-6. Calendar and planned stops are different concepts.
+6. Work calendars are not OEE time gates.
 
-   Calendar defines when the work center is normally expected to work. Planned stops
-   define deliberate stops during otherwise expected operating windows.
+   OEE denominator is based on started job order execution time. Customer-specific
+   non-working periods such as lunch, maintenance, tea breaks, or planned closure windows
+   must be modeled as planned stops when plant policy says they affect OEE.
 
 7. Deployment scoping stays simple.
 
@@ -58,23 +59,113 @@ The first version must support a solid core MES flow:
 Owns:
 
 - work centers,
-- shifts,
-- weekly calendars,
-- date exceptions,
-- default shift assignment,
-- effective operating window resolution.
+- work center type,
+- tag bindings,
+- attention settings,
+- virtual work center metric composition.
 
 Required internal contract:
 
 ```http
-GET /internal/v1/operating-windows?workCenterId=...&from=...&to=...
+GET /internal/v1/work-centers/:id
+GET /internal/v1/work-centers/:id/attention-state
+POST /internal/v1/work-centers/:id/attention-state
 ```
 
-This endpoint should return resolved operating windows for the range. It should not try to
-calculate OEE, job orders, downtime, or productivity.
+The work center response must include type, productivity mode, tag bindings, attention
+settings, and `metricComposition` when the target work center is virtual.
 
-Implementation prerequisite: this exact range-resolved internal endpoint must be exposed
-by Work Center before Productivity depends on it.
+Tag bindings used by Productivity:
+
+```ts
+tagBindings {
+  runModeTagId?: ObjectId
+  productionCounterTagId?: ObjectId
+  speedTagId?: ObjectId
+  attentionTagId?: ObjectId
+}
+```
+
+Run-mode operational scope is determined by `runModeTagId`, not by a separate
+`productivityEnabled` flag. Productivity monitors work centers whose Work Center response
+includes `tagBindings.runModeTagId`.
+
+`runModeTagId` is mandatory for:
+
+- attention scheduler/evaluation state,
+- automatic unplanned stop open/close from run-mode transitions,
+- live downtime flows that depend on the current machine run state.
+
+Work centers without `runModeTagId` are outside attention evaluation and run-mode downtime
+automation scope. If a previously monitored work center loses `runModeTagId`,
+Productivity must clear its attention types and disable the evaluation state with
+`disabledReason='missing_run_mode_tag'`.
+
+A virtual work center may still be requested for OEE without its own `runModeTagId`.
+Virtual OEE is calculated by resolving its child work centers through `metricComposition`
+and combining their OEE results. The virtual work center itself must not create
+run-mode-derived downtime records.
+
+`attentionTagId` is an output binding for writing attention state to a plant tag later. If
+it is missing, Productivity must still maintain Work Center attention-state snapshots, but
+skip attention-tag writes.
+
+Attention settings:
+
+```ts
+attentionSettings {
+  missingJobOrderThresholdMs: number
+  missingOperatorThresholdMs: number
+  uncausedDowntimeThresholdMs: number
+  downtimeConfirmationDeadlineMs: number
+}
+```
+
+The attention-state endpoint stores a snapshot of broad active attention types used by
+Productivity:
+
+```ts
+WorkCenterAttentionState {
+  workCenterId: ObjectId
+  changedAt: Date
+  activeAttentionTypes: Array<
+    'missing_job_order' |
+    'missing_operator' |
+    'downtime_requires_attention'
+  >
+}
+```
+
+It does not store detailed reason codes. When Productivity changes an attention type, it
+must read or track the latest snapshot, add/remove only the type it owns, and preserve
+unrelated active attention types.
+
+Attention type producers:
+
+- `missing_job_order`: Productivity sets/clears it when a running monitored work center has
+  no active job order longer than `attentionSettings.missingJobOrderThresholdMs`.
+- `missing_operator`: Productivity sets/clears it when a running monitored work center has
+  no active operator check-in longer than `attentionSettings.missingOperatorThresholdMs`.
+  Work Center owns operator check-in records; Productivity owns this missing-operator
+  attention decision because it requires run-mode context.
+- `downtime_requires_attention`: Productivity sets/clears it for open downtime that needs
+  operator attention, such as uncaused downtime or confirmation-deadline cases.
+
+Implementation prerequisite:
+
+Work Center currently has an older action-state concept in code. Before implementing
+Productivity attention updates, rename that Work Center contract to attention-state:
+
+- route path: `/work-centers/:workCenterId/action-state` -> `/work-centers/:workCenterId/attention-state`,
+- model/resource name: `WorkCenterActionState` -> `WorkCenterAttentionState`,
+- payload field: `activeActions` -> `activeAttentionTypes`,
+- allowed values: `downtime | operator | jobOrder | service` ->
+  `missing_job_order | missing_operator | downtime_requires_attention`,
+- event type: `work_center.action_state.changed` -> `work_center.attention_state.changed`,
+- permission name: `readActionState` -> `readAttentionState`.
+
+The rename should be a real domain rename, not just a route alias. Do not keep the old
+action names in new Productivity code.
 
 ### Production
 
@@ -91,18 +182,54 @@ Owns:
 Required internal contract:
 
 ```http
-GET /internal/v1/job-order-executions?workCenterId=...&from=...&to=...
+GET /internal/v1/job-orders?workCenterId=...&activeFrom=...&activeTo=...
 ```
 
-This should return job orders whose actual execution window intersects the requested
-range. A still-open job order should use the request `to` as its temporary end for
-calculation.
+This returns started job orders whose actual execution window intersects the requested
+range:
 
-Implementation prerequisite: this exact execution-window internal endpoint must be exposed
-by Production before Productivity depends on it.
+```text
+startTime < activeTo AND (endTime == null OR endTime > activeFrom)
+```
+
+A still-open job order must use the request `to` as its temporary end for calculation.
+Pending job orders are not OEE inputs.
+
+Productivity first loads the job orders intersecting the OEE range, then loads child
+Production records per job order:
+
+```http
+GET /internal/v1/quantity-adjustments?jobOrderId=...&timeFrom=...&timeTo=...
+GET /internal/v1/scrap-entries?jobOrderId=...&startTimeTo=...&endTimeFrom=...
+```
+
+For each returned job order, use the job order execution window clipped to the OEE query
+range as the child-record window:
+
+- Quantity adjustments are signed corrections. Load adjustments whose `time` is inside the
+  clipped job order window with `timeFrom`/`timeTo`.
+- Scrap entries are interval records. Load scrap entries whose interval overlaps the
+  clipped job order window with `startTimeTo=<windowEnd>` and `endTimeFrom=<windowStart>`.
+- Both child queries must include `jobOrderId`; downtime is not loaded through job orders.
+
+Downtime records are not loaded by job order. They are owned by Productivity and are read
+by work center and time range.
+
+Product standards are revisioned by `validFrom`. Productivity must be able to load both
+the standard applicable at an exact instant and the standard timeline for a calculation
+range:
+
+```http
+GET /internal/v1/product-standards/applicable?workCenterId=...&productId=...&at=...
+GET /internal/v1/product-standards/timeline?workCenterId=...&productId=...&from=...&to=...
+```
+
+The timeline response must include the baseline standard effective at `from`
+(`validFrom <= from`) and every later standard revision whose `validFrom` falls inside
+`(from, to]`.
 
 Aimes Production already blocks active/overlapping job orders on the same work center.
-Productivity should rely on that invariant and does not need to add a duplicate
+Productivity can rely on that invariant and does not need to add a duplicate
 overlapping job order guard.
 
 ### Telemetry
@@ -117,216 +244,114 @@ Owns:
 
 Productivity uses Telemetry historian endpoints for calculation. Every tag retains full
 history in Telemetry, so run mode transitions between polls are never lost and past
-downtime can be recalculated after calendar/job order corrections.
+OEE results can be recalculated after job order, stop, reason, quantity, scrap, or
+product-standard corrections.
 
 Run mode detection uses the Work Center tag binding as the source of truth:
 
-- Work Center provides the target work center's `runModeTagId`.
+- Work Center provides `runModeTagId` for each work center that should be monitored by
+  Productivity attention and run-mode downtime logic.
 - Productivity consumes `tag.value.recorded` events from the Telemetry stream and handles
   only events whose `tagId` matches a configured run mode tag. The payload includes
   `behavior` (`counter | speed | binary`) so subscribers can interpret the sample without
   re-fetching the tag.
-- On startup/restart, Productivity should fetch the latest historian sample from Telemetry
+- On startup/restart, Productivity must fetch the latest historian sample from Telemetry
   via `GET /internal/v1/historian/:tagId/latest` and reconstruct any missed transitions
   via `GET /internal/v1/historian/:tagId/state-durations` so it can reconcile an
   already-stopped or already-running work center.
-- Productivity should not subscribe directly to MQTT topics.
+- Productivity must not subscribe directly to MQTT topics.
 
 ### Productivity
 
 Owns:
 
 - OEE API,
-- downtime reasons,
+- reasons,
 - planned stops,
 - unplanned stops,
 - planned stop schedules,
-- planned/unplanned/out-of-schedule stop classification,
+- planned/unplanned stop classification,
 - OEE calculation rules.
-
-## Work Center Calendar Changes
-
-The current Aimes effective schedule precedence is correct:
-
-```text
-date exception > calendar weekly pattern > default workCenter.shiftIds > none
-```
-
-However, the current single-day `GET /work-centers/:workCenterId/schedule?date=YYYY-MM-DD`
-response is not enough for OEE. It returns source, shift ids, and shifts for one day, but
-Productivity needs resolved operating windows for a full range.
-
-### Required Calendar Improvements
-
-#### DateException
-
-The current `DateException` model only has `shiftIds`. That makes an exception with
-`shiftIds: []` ambiguous. It may mean a closed day, but the meaning is implicit.
-
-Add explicit mode fields:
-
-```ts
-DateException {
-  workCenterId: ObjectId
-  localDate: string
-  mode: 'closed' | 'replace' | 'add'
-  shiftIds?: ObjectId[]
-  customWindows?: Array<{
-    startHour: number
-    startMinute: number
-    endHour: number
-    endMinute: number
-  }>
-  reason?: 'holiday' | 'overtime' | 'special_shift' | 'other'
-  note?: string
-}
-```
-
-Meaning:
-
-- `closed`: no operating time for that local date.
-- `replace`: replace the normal calendar/default assignment for that date.
-- `add`: add extra operating time on top of the normal calendar/default assignment.
-
-Migration rule:
-
-- Existing exception with `shiftIds: []` should become `mode: 'closed'`.
-- Existing exception with non-empty `shiftIds` should become `mode: 'replace'`.
-
-#### Time Handling
-
-All calendar resolution must use the plant timezone configured for the installation.
-
-- Public API `from` and `to` values are instants.
-- `localDate` is used only for resolving calendar/exception rules in the plant timezone.
-- Operating windows are returned as ISO instants after local schedule resolution.
-- Overnight shifts belong to the local date where the shift starts.
-- Date exception `customWindows` must pass the same overlap validation as shifts.
-- `DateException(mode='add')` must not overlap existing operating windows for the same
-  work center and local date. Reject overlapping add windows instead of merging silently.
-
-#### Operating Windows
-
-Work Center should expose resolved operating windows for a range:
-
-```ts
-type OperatingWindowsResponse = {
-  workCenterId: string
-  from: string
-  to: string
-  operatingWindows: Array<{
-    startAt: string
-    endAt: string
-    source: 'calendar' | 'default' | 'exception'
-    shiftId?: string
-    calendarId?: string
-    exceptionId?: string
-    exceptionMode?: 'replace' | 'add'
-  }>
-  diagnostics: Array<{
-    type: 'no_schedule' | 'closed_day'
-    startAt: string
-    endAt: string
-    source: 'none' | 'exception'
-    exceptionId?: string
-    reason?: string
-    note?: string
-  }>
-}
-```
-
-Important behavior:
-
-- Return only expected operating windows in `operatingWindows`.
-- Do not return every non-working gap as a window.
-- Use `diagnostics` for meaningful non-working explanations such as `closed_day` and
-  `no_schedule`.
-- If a date exception is `closed`, do not return operating windows for that local date.
-- If there is no calendar/default/exception for a range, return `no_schedule`
-  diagnostics so Productivity can apply its fallback policy.
-
-### Breaks as Planned Stops
-
-Tea breaks, needs breaks, cleaning, and operator-triggered pauses are deliberate stops
-during an expected operating window. They should be modeled as planned stops or planned
-stop schedules. This keeps the calendar simple:
-
-- Calendar: when the work center is expected to operate.
-- Planned stop: why expected operation intentionally stopped.
-
-If a plant has a fixed lunch break every day, model it as a scheduled planned stop.
-If an operator starts a tea break based on actual production conditions, model it as a
-manual planned stop.
 
 ## Productivity Time Rules
 
-### Base Expected Time
+### Base Production Time
 
 For each OEE query:
 
 ```text
-baseExpectedTime = jobOrderExecutions intersect operatingWindows
+baseProductionTime = started job order execution intervals clipped to the query range
 ```
 
-If Work Center returns `no_schedule` for the requested range:
+This is the only denominator source before planned-stop exclusions. Work Center calendars,
+shifts, date exceptions, and operating windows are not used by Productivity OEE.
+
+If no started job order intersects the requested range:
 
 ```text
-baseExpectedTime = jobOrderExecutions
+denominator = 0
 ```
 
-If the customer has not configured a schedule yet, a running/open job order is treated as
-expected production time.
+The response must return the requested group item with zero factor percentages, zero
+duration/output fields, and a diagnostic such as `no_job_order_in_range`. Do not silently
+omit the group item, because the frontend needs to distinguish "no OEE context" from "API
+did not return this work center".
 
-### No Schedule Policy
+### Downtime and Uptime
 
-When no schedule exists:
+Downtime records are stored by work center and time range, not by job order. During OEE
+calculation, Productivity clips planned and unplanned stops to each job order execution
+interval.
 
-- still calculate OEE from job order execution time,
-- still create unplanned stops from run mode stops inside the job order execution
-  window,
-- include a diagnostic warning in the OEE response:
+For each job order interval:
 
-```ts
-{
-  code: 'calendar_missing_job_order_fallback',
-  message: 'No calendar found; job order execution time was used as expected production time.'
-}
+```text
+jobOrderWindow = jobOrder.startTime..(jobOrder.endTime ?? queryTo), clipped to query range
+downtimeInJobOrder = stop intervals intersecting jobOrderWindow
+availability windows and productivity windows are derived from each stop reason's
+calculation flags
 ```
 
-### Calendar Exists But Work Is Outside It
+Counter and speed summaries used for productivity must be queried or aggregated over
+productivity windows. Downtime outside started job order execution does not affect OEE,
+but the downtime record remains available for operations and audit.
 
-When a calendar exists and a job order is open outside the operating windows:
+### Breaks as Planned Stops
 
-- do not create an OEE-affecting unplanned stop for stopped time outside the windows,
-- do not include outside-window time in availability/productivity denominator,
-- keep machine-signal-derived stop/run observations as `out_of_schedule` events or
-  diagnostics so the data is not lost,
-- when the customer adds overtime through a `DateException(mode='add')`, historical
-OEE can be recalculated from historian data and existing stop observations.
-
-### Closed Day
-
-If a date exception marks the day as `closed`:
-
-- no expected time is produced for that day,
-- open job orders do not create OEE denominator for that day,
-- stopped machine state does not create OEE-affecting unplanned stop time,
-- running machine state may be reported as out-of-schedule production/run.
+Tea breaks, lunch, cleaning, maintenance, and operator-triggered pauses must be modeled
+as planned stops or planned stop schedules when plant policy says they affect OEE. A fixed
+daily lunch break is a scheduled planned stop. An operator-triggered break is a manual planned
+stop.
 
 ## Downtime Domain Model
 
-### DowntimeReason
+Terminology:
+
+- `PlannedStopSchedule`: time-based recurring definition. It creates scheduled
+  `PlannedStop` occurrences.
+- `PlannedStopTemplate`: reusable on-demand operator action. It creates one new
+  `PlannedStop` occurrence each time an operator starts it.
+- `PlannedStop`: one planned stop occurrence. It is the historical record used by OEE.
+- `UnplannedStop`: one unplanned stop occurrence created from run mode or manual input.
+
+### Reason
 
 ```ts
-DowntimeReason {
+Reason {
   _id: ObjectId
+  code: string
   name: string
-  kind: 'planned' | 'unplanned' | 'both'
-  oeeEffect: 'excluded' | 'availability_loss'
+  description?: string
+  usages: Array<'planned_stop' | 'unplanned_stop'>
+  countsAsAvailabilityLoss: boolean
+  countsAsProductivityTime: boolean
+  workCenterIds?: ObjectId[]
   canStartManually: boolean
   canBeScheduled: boolean
   canConvertFromUnplanned: boolean
+  requiresDescription: boolean
   isActive: boolean
+  props: Record<string, string | number | boolean>
   createdBy: ObjectId
   updatedBy: ObjectId
   createdAt: Date
@@ -336,27 +361,54 @@ DowntimeReason {
 
 Meaning:
 
-- `planned`: can be used for planned stops only.
-- `unplanned`: can be used for unplanned stops only.
-- `both`: can be used in either flow.
-- `excluded`: remove the interval from OEE denominator.
-- `availability_loss`: keep the interval in denominator and count it as availability loss.
+- `planned_stop`: can be used for planned stops.
+- `unplanned_stop`: can be used for unplanned stops.
+- `countsAsAvailabilityLoss`: keep the interval in the availability denominator and count
+  it as availability loss.
+- `countsAsProductivityTime`: include the interval in productivity calculation windows;
+  counter/speed and target are evaluated for that time.
+- `workCenterIds` is an optional applicability filter. Empty or missing means the reason
+  is globally available.
+- `requiresDescription` forces operators to enter a description when assigning this
+  reason.
 
-Stop records store `reasonId`. OEE resolves `oeeEffect` from the current
-`DowntimeReason` at calculation time. Reasons referenced by stops must not be
-hard-deleted; mark them inactive instead.
+Stop records store `reasonId`. OEE resolves the two calculation flags from the current
+`Reason` at calculation time. Reasons referenced by stops must not be hard-deleted; mark
+them inactive instead.
+
+Recommended combinations:
+
+```text
+countsAsAvailabilityLoss=false, countsAsProductivityTime=false
+  Excluded non-production time. Example: lunch, tea break, planned plant shutdown.
+
+countsAsAvailabilityLoss=true, countsAsProductivityTime=false
+  Classic downtime/availability loss. Example: machine breakdown, unplanned stop.
+
+countsAsAvailabilityLoss=false, countsAsProductivityTime=true
+  Availability-neutral performance time. Use only when the plant wants this time treated
+  as available production time and production shortfall to appear in productivity.
+
+countsAsAvailabilityLoss=true, countsAsProductivityTime=true
+  Intentional double penalty. This must be admin-only or rejected by default unless a
+  customer explicitly needs it.
+```
 
 Examples:
 
-- Lunch break: `planned`, `excluded`, manually startable or schedulable.
-- Tea break: `planned`, `excluded`, manually startable.
-- Planned cleaning: `planned`, `excluded` or `availability_loss` depending on plant rule.
+- Lunch break: `planned_stop`, both flags `false`, manually startable or schedulable.
+- Tea break: `planned_stop`, both flags `false`, manually startable.
+- Planned cleaning: `planned_stop`, either both flags `false` or availability loss only,
+  depending on plant rule.
 - Machine stopped, no reason yet: unplanned stop with no reason.
-- Minor stop: `unplanned`, `availability_loss`.
+- Minor stop: `unplanned_stop`, `countsAsAvailabilityLoss=true`,
+  `countsAsProductivityTime=false`.
 
 ### PlannedStopSchedule
 
 Recurring or scheduled planned stops are separate from realized planned stops.
+`PlannedStopSchedule`, `PlannedStop`, and `UnplannedStop` are separate collections. Do not
+merge planned and unplanned stop records into one collection.
 
 ```ts
 PlannedStopSchedule {
@@ -366,16 +418,18 @@ PlannedStopSchedule {
   plannedOwnerId: ObjectId
   name: string
   description?: string
+  occurrenceStartMode: 'automatic' | 'manual'
   recurrence: {
     frequency: 'daily' | 'weekly' | 'monthly'
     daysOfWeek?: Array<
       'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday'
     >
+    timezone: string
     startHour: number
     startMinute: number
   }
   plannedDurationMs: number
-  createBeforeStartMs: number
+  createBeforeStartMs: number // default: 15 * 60 * 1000
   isEnabled: boolean
   props: Record<string, string | number | boolean>
   createdBy: ObjectId
@@ -394,8 +448,20 @@ Indexes:
 ```
 
 When a schedule occurrence enters its `createBeforeStartMs` window, Productivity creates
-a `PlannedStop` occurrence. Schedule definitions for the same work center should be
-validated so their generated planned windows do not overlap.
+a `PlannedStop` occurrence. `createBeforeStartMs` is the lead time before
+`plannedStartAt` for creating the occurrence, and defaults to 15 minutes. Schedule
+definitions for the same work center must be validated so their generated planned
+windows do not overlap.
+
+The recurrence time is interpreted in `recurrence.timezone`. Store materialized
+`plannedStartAt` and `plannedEndAt` as UTC instants. `plannedDurationMs` must be positive.
+
+`occurrenceStartMode` controls how the materialized planned stop starts:
+
+- `automatic`: the scheduler starts the occurrence at `plannedStartAt` by applying the
+  `Planned Stop Start Rule`.
+- `manual`: the scheduler only materializes the occurrence; an operator or authorized
+  API/internal command starts it later.
 
 ### PlannedStop
 
@@ -407,7 +473,8 @@ PlannedStop {
   workCenterId: ObjectId
   reasonId: ObjectId
   plannedOwnerId: ObjectId
-  source: 'manual' | 'scheduled' | 'converted'
+  source: 'manual' | 'scheduled' | 'converted' | 'template'
+  startMode: 'automatic' | 'manual'
   status: 'planned' | 'active' | 'closed' | 'cancelled'
 
   plannedStartAt: Date
@@ -415,6 +482,7 @@ PlannedStop {
   actualStartAt?: Date
   actualEndAt?: Date
   scheduleId?: ObjectId
+  templateId?: ObjectId
 
   operatorId?: ObjectId
   closedBy?: ObjectId
@@ -427,6 +495,15 @@ PlannedStop {
   updatedAt: Date
 }
 ```
+
+Status meaning:
+
+- `planned`: created/materialized but not active yet; `actualStartAt` and `actualEndAt` are
+  missing, and it does not affect OEE.
+- `active`: planned stop is currently running; `actualStartAt` exists,
+  `actualEndAt` is missing, and at most one active planned stop is allowed per work center.
+- `closed`: completed planned stop; `actualStartAt` and `actualEndAt` exist.
+- `cancelled`: ignored by runtime and OEE; it must not be started or closed later.
 
 Indexes:
 
@@ -441,9 +518,90 @@ The unique scheduled occurrence index prevents duplicate planned stops when the 
 restarts or retries the same occurrence. `plannedStartAt`/`plannedEndAt` are the intended
 window; `actualStartAt`/`actualEndAt` are the realized window used by OEE when present.
 
+### PlannedStopTemplate
+
+Template planned stops are reusable operator actions. They are not downtime occurrences
+and do not affect OEE by themselves. Each template start creates a new `PlannedStop`
+occurrence, so multiple needs breaks on the same day are stored as separate planned stop
+records.
+
+Use a template when the plant needs a repeatable planned stop button that can be started
+at any time, but every use must still be stored as its own historical stop interval.
+Examples are needs breaks, smoking breaks, quick restroom breaks, short cleaning actions,
+and other operator-triggered pauses that are planned by policy but not tied to a calendar
+time.
+
+Templates exist to avoid creating placeholder planned stops with arbitrary future
+`plannedStartAt`/`plannedEndAt` values just to keep a reusable action available. A
+schedule is for time-based recurring stops. A template is for on-demand repeatable stops.
+A `PlannedStop` record is a single historical occurrence.
+
+```ts
+PlannedStopTemplate {
+  _id: ObjectId
+  workCenterIds: ObjectId[]
+  reasonId: ObjectId
+  name: string
+  description?: string
+  defaultDurationMs: number
+  plannedOwnerId?: ObjectId
+  responsibleUserId?: ObjectId
+  overrunPolicy: 'split_to_unplanned' | 'extend_planned_until_close' | 'alert_only'
+  overrunReasonId?: ObjectId
+  isActive: boolean
+  props: Record<string, string | number | boolean>
+  createdBy: ObjectId
+  updatedBy?: ObjectId
+  createdAt: Date
+  updatedAt: Date
+}
+```
+
+Indexes:
+
+```ts
+{ workCenterIds: 1, isActive: 1 }
+{ reasonId: 1 }
+```
+
+`defaultDurationMs` must be positive. `overrunReasonId` is required when
+`overrunPolicy='split_to_unplanned'`.
+
+Starting a template creates and starts a new planned stop immediately:
+
+```ts
+PlannedStop {
+  source: 'template',
+  templateId: template._id,
+  workCenterId: selectedWorkCenterId,
+  reasonId: template.reasonId,
+  plannedOwnerId: template.plannedOwnerId ?? currentUserId,
+  startMode: 'manual',
+  status: 'active',
+  plannedStartAt: now,
+  plannedEndAt: now + template.defaultDurationMs,
+  actualStartAt: now,
+  operatorId: currentUserId
+}
+```
+
+Templates must not create placeholder planned stops before the operator starts them.
+They provide an explicit reusable start action while keeping historical stop records as
+real per-use `PlannedStop` occurrences.
+
+In the example above, `now`, `selectedWorkCenterId`, and `currentUserId` come from the
+start request context. They are not template fields.
+
 ### UnplannedStop
 
 One unplanned stop record represents one run-mode or manual unplanned stop.
+
+For v1, live downtime features are supported only for work centers that have
+`tagBindings.runModeTagId`. This includes run-mode-created unplanned stops, manual
+unplanned stops, planned stop start/close flows, planned stop overrun handling, and
+downtime attention state. A work center without `runModeTagId` may still appear in OEE
+through virtual-work-center aggregation, but Productivity must not create or manage live
+downtime records for that work center.
 
 ```ts
 UnplannedStop {
@@ -451,7 +609,6 @@ UnplannedStop {
   workCenterId: ObjectId
   reasonId?: ObjectId
   source: 'run_mode' | 'manual'
-  status: 'open' | 'closed' | 'converted'
 
   startAt: Date
   endAt?: Date
@@ -460,6 +617,7 @@ UnplannedStop {
   operatorId?: ObjectId
   closedBy?: ObjectId
   approvedAt?: Date
+  approvedBy?: ObjectId
   description?: string
   props: Record<string, string | number | boolean>
 
@@ -470,16 +628,63 @@ UnplannedStop {
 }
 ```
 
+Unplanned stop state is derived instead of stored as a separate `status` field:
+
+- open: `endAt` is missing.
+- closed: `endAt` exists and `convertedToPlannedStopId` is missing.
+- converted: `convertedToPlannedStopId` exists; `endAt` is required.
+
 Indexes:
 
 ```ts
-{ workCenterId: 1, status: 1 } // unique, partial: { status: 'open' }
+{ workCenterId: 1 } // unique, partial: { endAt: null }
 { workCenterId: 1, startAt: 1, endAt: 1 }
 { reasonId: 1 }
 ```
 
+### RunModeProcessingState
+
+This collection is the persisted idempotency cursor for event-driven run mode processing.
+It must be stored in Productivity's database, not only in Redis or process memory, because
+the service has to survive restarts, retries, and duplicate Telemetry events.
+Create this state only for work centers that have `tagBindings.runModeTagId`.
+
+```ts
+RunModeProcessingState {
+  _id: ObjectId
+  workCenterId: ObjectId
+  runModeTagId: ObjectId
+  lastProcessedOccurredAt: Date
+  lastProcessedValue: number
+  updatedAt: Date
+}
+```
+
+Indexes:
+
+```ts
+{ workCenterId: 1, runModeTagId: 1 } unique
+```
+
+This state is only a processing cursor. It is not the source of truth for OEE. OEE
+calculation must still read Telemetry historian/state-duration data for the requested
+range.
+
+Startup/retry behavior:
+
+- If a cursor exists, query Telemetry state durations from
+  `lastProcessedOccurredAt` to the current time and apply any reconstructed running/stopped
+  transitions through the `Run Mode Opens Unplanned Stop` and
+  `Run Mode Closes Unplanned Stop` rules.
+- If no cursor exists yet, query `GET /internal/v1/historian/:tagId/latest`. If the latest
+  sample is stopped (`value < 1`), open an unplanned stop from that sample's `occurredAt`;
+  if it is running, only initialize the cursor.
+- Do not create downtime from `latest` alone when historical state-duration data exists for
+  the same recovery range. Use state-duration reconstruction first, then use `latest` only
+  to confirm the current state.
+
 There must be at most one active planned stop and at most one open unplanned stop per work
-center. Planned and unplanned stops should not overlap in OEE calculation; planned start
+center. Planned and unplanned stops must not overlap in OEE calculation; planned start
 rules below define how to close or convert unplanned stops before a planned stop becomes
 active.
 
@@ -487,21 +692,35 @@ active.
 
 ### Run Mode Opens Unplanned Stop
 
-When run mode is below the configured running threshold:
+When the bound run mode tag value is `< 1`:
 
-- if the current time is inside expected time, open an `UnplannedStop` with
-  `source='run_mode'`,
-- if the current time is outside expected time but a calendar exists, open or update an
-  out-of-schedule observation instead of an OEE-affecting unplanned stop,
-- if no schedule exists, use the job order fallback and open an unplanned stop inside
-  the job order execution window.
+- if there is no active `PlannedStop` covering the event time for the work center, open an
+  `UnplannedStop` with `source='run_mode'`,
+- do not check active job order state before opening the stop,
+- do not check Work Center calendars, shifts, date exceptions, or operating windows before
+  opening the stop.
 
-Use the Telemetry event `occurredAt` as the `UnplannedStop.startAt`. Ignore run mode events
-whose `occurredAt` is older than the last processed run mode timestamp for that work
-center.
+These are the only business gates for opening a run-mode unplanned stop: the work center
+has no active planned stop covering the event time, and the run mode value is `< 1`.
 
-Use the existing Work Center action settings where possible for thresholds such as
-micro-stop and uncaused downtime confirmation.
+An active planned stop covers an event time only inside its effective planned interval. By
+default that interval ends at `plannedEndAt`; authorized planned-window extension or an
+overrun policy may extend it. This distinction prevents a forgotten active planned stop
+from hiding run-mode stopped time after its planned window.
+
+Use the Telemetry event `occurredAt` as the `UnplannedStop.startAt`. Compare each run mode
+event with `RunModeProcessingState.lastProcessedOccurredAt` for that work center and run
+mode tag. Ignore events older than or equal to the cursor, and update the cursor only after the
+open/close operation is successfully applied or determined to be already handled.
+
+An existing open `UnplannedStop` is not a business condition for whether the machine is
+stopped; it is only an idempotency/duplication guard. Use the unique open-stop constraint
+and atomic create/update behavior so repeated stopped samples keep the same open stop
+instead of creating duplicates.
+
+Use Work Center attention settings only after the stop exists. They may classify the stop as
+a micro-stop, require reason confirmation, or create/update work-center attention state, but
+they must not be extra gates for opening the stop.
 
 ### Run Mode Closes Unplanned Stop
 
@@ -511,16 +730,26 @@ When run mode returns to running:
 - classify very short stops according to the configured micro-stop/short-stop rule,
 - leave the stop reason empty if the operator has not selected a reason yet.
 
-Close with an atomic condition such as `workCenterId + status='open'`. If no open stop
+Close with an atomic condition such as `workCenterId + endAt=null`. If no open stop
 matches, treat the close as already handled.
 
-### Planned Stop Starts While Unplanned Is Open
+### Planned Stop Start Rule
 
-When a planned stop starts and there is an open unplanned stop on the same work center:
+This rule applies whenever a planned stop occurrence becomes active:
 
-1. Close the open `UnplannedStop` at the planned stop `actualStartAt`.
-2. Mark the `PlannedStop` as `active`.
-3. Do not allow the two intervals to overlap in OEE calculation.
+- an operator starts an existing `PlannedStop`,
+- the scheduler starts a scheduled `PlannedStop` whose `startMode='automatic'`,
+- an operator starts a `PlannedStopTemplate`, which first creates a new planned stop
+  occurrence and then starts it.
+
+Start behavior:
+
+1. Determine `actualStartAt`. For standard runtime starts this is the request processing
+   time. Authorized backdated corrections may provide an explicit start time.
+2. Reject the start if another `PlannedStop` is already active on the same work center.
+3. If an open `UnplannedStop` exists on the same work center, close it at `actualStartAt`.
+4. Mark the planned stop as `active`, set `actualStartAt`, and clear `actualEndAt`.
+5. Do not allow planned and unplanned intervals to overlap in OEE calculation.
 
 For retrospective correction, provide a conversion action:
 
@@ -528,7 +757,11 @@ For retrospective correction, provide a conversion action:
 POST /api/v1/unplanned-stops/:id/convert-to-planned
 ```
 
-This should create a `PlannedStop` and mark the original `UnplannedStop` as converted:
+This is a correction flow for a stop that was first recorded as unplanned but must be
+treated as part of a planned stop. The request may either link the unplanned stop to an
+existing planned stop or create a new planned stop from the unplanned interval.
+
+If it creates a planned stop, the created record must use the unplanned interval:
 
 ```ts
 {
@@ -541,18 +774,34 @@ This should create a `PlannedStop` and mark the original `UnplannedStop` as conv
 }
 ```
 
+After conversion, update the unplanned stop with `endAt` if it was still open, and
+`convertedToPlannedStopId=<linked planned stop id>`.
+
 The conversion is allowed only if the selected reason has `canConvertFromUnplanned=true`.
-Converted `UnplannedStop` records must be excluded from OEE interval aggregation to avoid
-double counting.
+Converted `UnplannedStop` records must not be counted as independent unplanned
+availability-loss intervals. Their OEE policy comes from the linked `PlannedStop` reason
+flags. The linked planned stop must cover the converted unplanned interval, or the
+normalizer must handle uncovered parts explicitly. If an existing linked planned stop does
+not fully cover it, the normalizer must either require authorized planned-stop extension or
+apply the linked planned reason flags to the non-overlapping converted interval parts. In
+all cases, merge intervals before aggregation so the same time is never counted twice.
+Conversion must not automatically mean denominator exclusion.
+
+If the plant does not want explicit conversion in the first implementation, the simpler
+correction flow is to split or update closed unplanned stops and create planned stops
+separately. In that case OEE still prevents double counting by applying planned-stop
+precedence when planned and unplanned intervals overlap.
 
 ### Planned Stop Ends
 
 When a planned stop ends:
 
 - close the active `PlannedStop`,
-- if the machine is still stopped and current time is expected time, open a new unplanned
-  stop from the planned stop `actualEndAt`,
-- if the machine is outside expected time, do not open an OEE-affecting unplanned stop.
+- resolve the run mode state at `actualEndAt` from Telemetry historian; when closing at the
+  current time, the latest historian sample can be used as the current state,
+- if the machine is still stopped and no active planned stop covers `actualEndAt`, open a
+  new `UnplannedStop` from the planned stop `actualEndAt` unless another unplanned stop is
+  already open.
 
 ### Manual Planned Stop
 
@@ -568,28 +817,226 @@ Use cases:
 - other plant-defined planned stop reasons.
 
 Manual and scheduled planned stop creation must reject planned windows that overlap another
-non-cancelled `PlannedStop` for the same work center. Use the normal interval overlap rule:
+non-cancelled `PlannedStop` for the same work center. Use this interval overlap predicate:
 `new.plannedStartAt < existing.plannedEndAt && new.plannedEndAt > existing.plannedStartAt`.
+
+### Template Planned Stop
+
+Operators may start a reusable planned stop template if the template is active, assigned to
+the work center, and its reason has `canStartManually=true`.
+
+Use cases:
+
+- needs break,
+- smoking break,
+- quick cleaning action,
+- other plant-defined repeatable operator breaks.
+
+Starting a template is atomic:
+
+1. Validate there is no active `PlannedStop` on the work center.
+2. If an open `UnplannedStop` exists on the same work center, close it at `now` using the
+   `Planned Stop Start Rule`.
+3. Create a new `PlannedStop` with `source='template'`, `templateId`, `status='active'`,
+   `plannedStartAt=now`, `plannedEndAt=now + defaultDurationMs`, and `actualStartAt=now`.
+
+Here `now` is the template start request processing time, unless an authorized correction
+flow explicitly provides a different start time.
+
+Closing a template-created planned stop before `plannedEndAt` simply sets `actualEndAt` and
+closes the occurrence. The template remains active and can be started again later,
+creating another planned stop occurrence.
+
+If the operator closes it after `plannedEndAt`, apply the template `overrunPolicy`:
+
+- `split_to_unplanned`: keep the template-created `PlannedStop.actualEndAt` as the real
+  operator close time for audit, treat the planned portion as ending at `plannedEndAt` for
+  OEE, and create an `UnplannedStop` from `plannedEndAt` to `actualEndAt` with
+  `overrunReasonId`.
+- `extend_planned_until_close`: keep the full actual interval as planned by extending the
+  planned stop's effective end to `actualEndAt`. If no separate effective-end field is
+  implemented, update `plannedEndAt` to `actualEndAt` as the authorized extension.
+- `alert_only`: close at `actualEndAt` and emit an operational diagnostic or work-center
+  action for the overrun. It does not automatically split the overrun into an
+  `UnplannedStop`, and OEE still uses the standard planned-window cap.
 
 ### Scheduled Planned Stop Occurrences
 
-The scheduler should create one `PlannedStop` per work center and occurrence window. It
+The scheduler must create one `PlannedStop` per work center and occurrence window. It
 must use the `scheduleId + workCenterId + plannedStartAt` unique index and treat duplicate
 key errors as an already-created occurrence. If an occurrence is created late, keep the
 original `plannedStartAt`/`plannedEndAt` and set `actualStartAt` to the actual start time
 when the stop becomes active.
+
+Creating the occurrence sets `source='scheduled'`, `status='planned'`, and
+`startMode=schedule.occurrenceStartMode`. It does not block unplanned stop creation until
+it becomes `active`.
+
+If `startMode='automatic'`, the scheduler must start the occurrence at `plannedStartAt`
+using the `Planned Stop Start Rule`. If the scheduler is late, create or load the
+occurrence, keep the original `plannedStartAt`/`plannedEndAt`, and start it
+immediately with `actualStartAt=now`.
+
+If `startMode='manual'`, the scheduler must not start the occurrence. It remains
+`planned` until an operator or authorized API/internal command starts it.
 
 ### Backdated Correction
 
 Allow authorized users to correct a past stop interval by:
 
 - assigning a reason,
+- changing equipment/operator/description/props,
+- splitting a closed unplanned stop into contiguous closed unplanned stops,
 - converting an unplanned stop to a planned stop if the reason allows it,
 - creating a closed planned stop interval for a past period if the plant explicitly
   permits backdated correction.
 
-Any correction should be auditable and should trigger recalculation for affected OEE
+Any correction must be auditable and must trigger recalculation for affected OEE
 queries if cached results exist.
+
+## Attention Evaluation Runtime
+
+Productivity owns the timing decisions behind Work Center attention-state. Implement
+this as an in-process `AttentionScheduler` module inside the Productivity API service.
+Do not create a separate worker service, per-work-center timer, per-condition process, or
+user-script execution model for v1.
+
+The runtime has two loops:
+
+- `AttentionDueLoop`: runs every `attentionDuePollIntervalMs` (default `5000`). It
+  queries only states where `isEnabled=true` and `nextEvaluationAt <= now`, ordered by
+  `nextEvaluationAt`, with a bounded batch size. It reevaluates those work centers and
+  posts a new Work Center attention-state snapshot only when `activeAttentionTypes`
+  changes.
+- `AttentionReconciliationLoop`: runs every `attentionReconciliationIntervalMs`
+  (default `60000`). It processes state records where `reconcileAfter <= now` and
+  rebuilds/evaluates them from Work Center, Production, downtime, and latest run-mode
+  data. It also runs a batched discovery pass over active work centers that have
+  `runModeTagId` to create missing state records. This is a safety net for missed events,
+  newly created work centers, and long-lived states. It is not the primary path. After each successful
+  reconciliation, set `reconcileAfter` to the next planned reconciliation time.
+
+Use bounded batches for both loops. Suggested defaults are `attentionDueBatchSize=100`
+and `attentionReconciliationBatchSize=100`; tune them per plant size.
+
+At startup, do not wait for new events. Run one batched bootstrap/reconciliation pass for
+active work centers that have `runModeTagId`:
+
+- load the work center and run-mode tag binding,
+- resolve the latest run-mode state from Telemetry,
+- load the active job order from Production,
+- load the active operator count from Work Center,
+- load open unplanned/planned downtime that can require attention,
+- upsert `WorkCenterAttentionEvaluationState`,
+- sync Work Center attention-state when the calculated output snapshot changes.
+
+If multiple Productivity API replicas are enabled later, only one scheduler-enabled
+instance may run these loops unless a database claim/lease is added.
+
+Internal collection:
+
+```ts
+WorkCenterAttentionEvaluationState {
+  _id: ObjectId
+  workCenterId: ObjectId
+  runModeTagId: ObjectId
+  attentionTagId?: ObjectId
+
+  runState: 'running' | 'stopped' | 'unknown'
+  runningSince?: Date
+  lastRunModeOccurredAt?: Date
+
+  activeJobOrderId?: ObjectId
+  missingJobOrderSince?: Date
+
+  activeOperatorCount: number
+  missingOperatorSince?: Date
+
+  openUnplannedStopId?: ObjectId
+  attentionDowntimeId?: ObjectId
+  attentionDowntimeType?: 'planned' | 'unplanned'
+  downtimeAttentionSince?: Date
+
+  activeAttentionTypes: Array<
+    'missing_job_order' |
+    'missing_operator' |
+    'downtime_requires_attention'
+  >
+
+  isEnabled: boolean
+  disabledReason?: 'archived' | 'missing_run_mode_tag'
+
+  nextEvaluationAt?: Date
+  reconcileAfter?: Date
+  lastEvaluatedAt?: Date
+  lastReconciledAt?: Date
+  syncPending: boolean
+  lastSyncError?: string
+  updatedAt: Date
+}
+```
+
+Indexes:
+
+- unique `{ workCenterId: 1 }`
+- `{ nextEvaluationAt: 1 }`
+- `{ reconcileAfter: 1 }`
+- `{ runModeTagId: 1 }`
+- `{ attentionTagId: 1 }`
+
+Event-driven updates:
+
+- `tag.value.recorded` for a work center's run-mode tag updates `runState`,
+  `runningSince`, and `lastRunModeOccurredAt`.
+- `job_order.started`, `job_order.ended`, `job_order.updated`, and
+  `job_order.deleted` update `activeJobOrderId` and missing-job-order state.
+- `work_center.operator.checked_in` and `work_center.operator.checked_out` update
+  `activeOperatorCount` and missing-operator state.
+- `unplanned_stop.opened`, `unplanned_stop.updated`, `unplanned_stop.closed`,
+  `planned_stop.started`, `planned_stop.updated`, and `planned_stop.closed` update
+  downtime attention state.
+- reason, approval, confirmation, and backdated downtime corrections must reevaluate
+  the affected work center and interval.
+- `work_center.created`, `work_center.updated`, `work_center.archived`,
+  `work_center.reactivated`, and `work_center.deleted` create, update, disable, or
+  remove the evaluation state.
+
+For downtime writes performed by Productivity itself, update the evaluation state after
+the database write succeeds. Do not depend on a Redis round trip to update same-service
+attention state.
+
+Evaluation rules:
+
+- If a monitored work center is running and has no active job order, set
+  `missingJobOrderSince` if it is empty. The next due time is
+  `missingJobOrderSince + attentionSettings.missingJobOrderThresholdMs`.
+- If a monitored work center is running and has no active operator check-in, set
+  `missingOperatorSince` if it is empty. The next due time is
+  `missingOperatorSince + attentionSettings.missingOperatorThresholdMs`.
+- If open downtime requires attention, set `downtimeAttentionSince` if it is empty. The
+  next due time is based on the relevant attention setting, such as
+  `uncausedDowntimeThresholdMs` or `downtimeConfirmationDeadlineMs`.
+- `nextEvaluationAt` is the nearest pending due time among active missing-job-order,
+  missing-operator, and downtime-attention candidates. If there is no pending due work,
+  store `null`/omit the field.
+
+Clear rules:
+
+- A stopped run state clears `missing_job_order` and `missing_operator`.
+- Starting or finding an active job order clears `missing_job_order`.
+- Operator check-in clears `missing_operator`.
+- Reason assignment, required description entry, approval, or confirmation clears
+  `downtime_requires_attention` when the downtime record no longer needs attention.
+- Archived, deleted, or run-mode-tag-missing work centers must clear Productivity
+  attention types, set `isEnabled=false`, and stop scheduling due evaluations.
+
+When Productivity changes `activeAttentionTypes`, it must post the full snapshot to:
+
+```http
+POST /internal/v1/work-centers/:id/attention-state
+```
+
+The snapshot must preserve unrelated attention types owned by other producers.
 
 ## OEE Calculation Rules
 
@@ -598,85 +1045,117 @@ queries if cached results exist.
 For a query:
 
 ```http
-GET /api/v1/oee?workCenterId=...&from=...&to=...&groupBy=none|day|shift|jobOrder
+GET /api/v1/oee?workCenterId=...&from=...&to=...&groupBy=none|day|jobOrder
 ```
 
 Productivity loads:
 
-- operating windows from Work Center,
-- job order executions from Production,
-- product standards from Production,
-- quantity adjustments and scrap entries from Production,
+- work center tag bindings and metric composition from Work Center,
+- started job orders intersecting the query range from Production,
+- product standard timelines from Production,
+- quantity adjustments and scrap entries from Production per job order,
 - run mode, production counter, and speed summaries from Telemetry,
 - planned stops and unplanned stops from Productivity.
 
-For calculation, Productivity normalizes `PlannedStop` and `UnplannedStop` records into
-internal downtime intervals. `converted` unplanned stops are skipped because their OEE
-effect is represented by the linked `PlannedStop`.
+For physical work centers, Productivity calculates OEE directly from that work center's
+started job orders, tag bindings, production records, and stops.
 
-For a `PlannedStop`, actual OEE should use the realized interval when present, capped by
+For virtual work centers, Productivity must first resolve the virtual work center's
+`metricComposition`, calculate the contributing child work centers, then combine
+availability, productivity, and quality according to the composition rule for each factor.
+If a contributor is also virtual, resolve it recursively until physical leaf work centers
+are reached. Virtual work centers must not create their own telemetry-derived downtime
+records; downtime remains tied to the physical work center where it occurred.
+
+For calculation, Productivity normalizes `PlannedStop` and `UnplannedStop` records into
+internal downtime intervals. Unplanned stops linked through `convertedToPlannedStopId`
+inherit the calculation flags from the linked `PlannedStop` reason and must be merged with
+the linked planned interval to prevent double counting.
+
+For a `PlannedStop`, actual OEE must use the realized interval when present, capped by
 the planned window unless an authorized user extends it: start at
 `actualStartAt ?? plannedStartAt`; end at `actualEndAt` if present, otherwise the earlier of
 the query end/current time and `plannedEndAt`; then cap at `plannedEndAt`. A future
 `PlannedStop` with no `actualStartAt` must not reduce current actual OEE. If a planned stop
-starts late, the missed planned portion should not be counted as downtime.
+starts late, the missed planned portion must not be counted as downtime.
 
 ### Availability
 
 ```text
-denominator = baseExpectedTime - plannedStop(oeeEffect='excluded')
-availabilityLoss = unplannedStop + plannedStop(oeeEffect='availability_loss')
-runningTime = denominator - availabilityLoss
-availability = runningTime / denominator
+availabilityExcludedTime =
+  downtime where countsAsAvailabilityLoss=false and countsAsProductivityTime=false
+
+availabilityDenominator = baseProductionTime - availabilityExcludedTime
+availabilityLossTime = downtime where countsAsAvailabilityLoss=true
+availabilityRunningTime = availabilityDenominator - availabilityLossTime
+availability = availabilityRunningTime / availabilityDenominator
 ```
 
 Notes:
 
-- out-of-schedule observations do not affect denominator or availability loss.
-- Planned stops outside expected time do not affect OEE.
-- Downtime intervals must be clipped to the query range and expected windows.
-- Overlapping planned/unplanned intervals on the same work center should be prevented. If
+- Downtime intervals must be clipped to the query range and started job order intervals.
+- Downtime interval sets must be unioned before aggregation so overlapping records never
+  count the same millisecond twice.
+- Downtime outside started job order execution does not affect OEE.
+- Intervals with both flags `false` reduce the availability denominator.
+- Intervals with `countsAsAvailabilityLoss=true` reduce availability running time.
+- Intervals with `countsAsAvailabilityLoss=false` and `countsAsProductivityTime=true` do
+  not reduce availability; they remain available production time and can affect
+  productivity.
+- Overlapping planned/unplanned intervals on the same work center must be prevented. If
   historical overlap is found, planned intervals take precedence, unplanned intervals are
-  split or clipped deterministically, and the response should include a diagnostic warning.
+  split or clipped deterministically, and the response must include a diagnostic warning.
 
 ### Productivity
 
 For count-based work centers:
 
 ```text
-actualOutput = gross produced count from production counter + quantity adjustments
-idealOutput = runningTime minutes * productStandard.idealOutputPerMinute
+productivityTime = baseProductionTime - downtime where countsAsProductivityTime=false
+actualOutput = gross produced count over productivityTime windows + quantity adjustments
+idealOutput = sum(productivityTimeSegment minutes * segmentProductStandard.idealOutputPerMinute)
 productivity = actualOutput / idealOutput
 ```
 
 For speed-based work centers:
 
 ```text
-actualRate = historian speed average over running windows
-idealRate = productStandard.idealSpeed
+productivityTime = baseProductionTime - downtime where countsAsProductivityTime=false
+actualRate = historian speed average over productivity windows
+idealRate = time-weighted average of segmentProductStandard.idealSpeed over productivity windows
 productivity = actualRate / idealRate
 ```
 
-Productivity uses `runningTime`, not the availability denominator, so downtime is not
-penalized once in availability and again in productivity. Counter/speed samples outside
-running windows must not inflate productivity. Running windows are the denominator
-windows after subtracting downtime intervals that count as availability loss.
+Productivity uses productivity windows, not the availability denominator. For the common
+availability-loss case (`countsAsAvailabilityLoss=true`,
+`countsAsProductivityTime=false`), the stopped time is penalized in availability and is
+not penalized again in productivity. Counter/speed samples outside productivity windows
+must not inflate productivity.
+
+Product standards may change while a job order is running. Productivity must split
+productivity windows at product standard `validFrom` boundaries and use the standard effective
+for each sub-interval. The standard timeline for a range must therefore include the
+baseline standard effective at the range start plus every later revision in
+`(rangeStart, rangeEnd]`. If no baseline standard exists for a job order interval, the
+response must include a diagnostic and exclude that interval from target-based
+productivity calculation.
 
 ### Quality
 
 ```text
 total = gross produced count + quantity adjustments
 scrap = scrap entries
-good = total - scrap
+good = max(total - scrap, 0)
 quality = good / total
 ```
 
 The production counter is treated as a gross count from the field signal. Scrap is entered
-separately by Production and subtracted only in the quality calculation.
+separately by Production and subtracted only in the quality calculation. Quantity
+adjustments are signed and are applied to total production before scrap is subtracted.
 
-If no total production exists, quality should return zero or null according to the API
-response convention chosen for the service. The convention must be consistent across all
-OEE factors.
+If `total <= 0`, set `quality.percentage=0`, `quality.good=0`, `quality.total=0`, and
+include a diagnostic such as `no_production_total`. If `scrap > total`, clamp `good` to
+zero for the response and include a diagnostic such as `scrap_exceeds_total`.
 
 ### OEE
 
@@ -684,15 +1163,17 @@ OEE factors.
 oee = availability * productivity * quality
 ```
 
-All factor percentages should be capped at sensible bounds for the response layer, but
-the calculation should preserve raw values in diagnostics when needed for debugging.
+Internal formulas use 0..1 ratios. Public API `percentage` fields are 0..100 values.
+Clamp negative response percentages to zero, but do not cap values above 100 because
+overproduction or data corrections can legitimately produce values greater than 100. Keep
+raw calculation ratios in diagnostics when needed for debugging.
 
 ## Public API
 
 ### OEE
 
 ```http
-GET /api/v1/oee?workCenterId=...&from=...&to=...&groupBy=none|day|shift|jobOrder
+GET /api/v1/oee?workCenterId=...&from=...&to=...&groupBy=none|day|jobOrder
 GET /api/v1/oee?workCenterIds=...&from=...&to=...&groupBy=workCenter
 ```
 
@@ -712,7 +1193,6 @@ Response shape:
       from: string
       to: string
       jobOrderId?: string
-      shiftId?: string
       availability: {
         percentage: number
         denominatorMs: number
@@ -745,15 +1225,18 @@ Response shape:
 }
 ```
 
-### Downtime Reasons
+### Reasons
 
 ```http
-GET /api/v1/downtime-reasons
-POST /api/v1/downtime-reasons
-GET /api/v1/downtime-reasons/:id
-PATCH /api/v1/downtime-reasons/:id
-DELETE /api/v1/downtime-reasons/:id
+GET /api/v1/reasons
+POST /api/v1/reasons
+GET /api/v1/reasons/:id
+PATCH /api/v1/reasons/:id
+DELETE /api/v1/reasons/:id
 ```
+
+`DELETE /api/v1/reasons/:id` must be a soft delete/deactivation when any stop references
+the reason. Referenced reasons must remain readable for historical OEE recalculation.
 
 ### Planned Stops
 
@@ -768,15 +1251,31 @@ PATCH /api/v1/planned-stops/:id
 `POST /api/v1/planned-stops` may be used for creating a planned stop, including an
 authorized backdated closed interval if the plant policy allows it.
 
+### Planned Stop Templates
+
+```http
+GET /api/v1/planned-stop-templates?workCenterId=...
+POST /api/v1/planned-stop-templates
+GET /api/v1/planned-stop-templates/:id
+PATCH /api/v1/planned-stop-templates/:id
+DELETE /api/v1/planned-stop-templates/:id
+POST /api/v1/planned-stop-templates/:id/start
+```
+
+`POST /api/v1/planned-stop-templates/:id/start` creates a new active `PlannedStop`
+occurrence from the template. It does not mutate or consume the template.
+
 ### Unplanned Stops
 
 ```http
-GET /api/v1/unplanned-stops?workCenterId=...&from=...&to=...&status=...
+GET /api/v1/unplanned-stops?workCenterId=...&from=...&to=...&state=open|closed|converted
 POST /api/v1/unplanned-stops
 POST /api/v1/unplanned-stops/:id/close
 POST /api/v1/unplanned-stops/:id/convert-to-planned
 PATCH /api/v1/unplanned-stops/:id
 ```
+
+`state` is a derived filter, not a stored field.
 
 ### Planned Stop Schedules
 
@@ -793,21 +1292,55 @@ DELETE /api/v1/planned-stop-schedules/:id
 ### Work Center
 
 ```http
-GET /internal/v1/operating-windows?workCenterId=...&from=...&to=...
 GET /internal/v1/work-centers/:id
+GET /internal/v1/work-centers/:id/attention-state
+POST /internal/v1/work-centers/:id/attention-state
 ```
 
-The work center response must include productivity mode and tag bindings for the target
-work center.
+The work center response must include type, productivity mode, tag bindings, attention
+settings, and `metricComposition` when the target work center is virtual.
+
+Run-mode operational scope is determined by `runModeTagId`. Productivity monitors work
+centers whose Work Center response includes `tagBindings.runModeTagId`.
+
+`runModeTagId` is mandatory for attention scheduler/evaluation state, automatic unplanned
+stop open/close from run-mode transitions, and live downtime flows that depend on the
+current machine run state. Work centers without `runModeTagId` are outside attention
+evaluation and run-mode downtime automation scope. If a previously monitored work center
+loses `runModeTagId`, Productivity must clear its attention types and disable the
+evaluation state with `disabledReason='missing_run_mode_tag'`.
+
+A virtual work center may still be requested for OEE without its own `runModeTagId`.
+Virtual OEE is calculated by resolving its child work centers through `metricComposition`
+and combining their OEE results. The virtual work center itself must not create
+run-mode-derived downtime records.
+
+`attentionTagId` is an optional output binding for writing attention state to a plant tag
+later; if it is missing, Productivity still uses the Work Center attention-state API as
+the source of truth.
+
+Use attention-state to maintain broad active attention types for monitored work centers:
+
+- `missing_job_order` for running without an active job order,
+- `missing_operator` for running without an active operator check-in,
+- `downtime_requires_attention` for open downtime requiring attention.
+
+Preserve unrelated active attention types when posting a new snapshot.
 
 ### Production
 
 ```http
-GET /internal/v1/job-order-executions?workCenterId=...&from=...&to=...
-GET /internal/v1/product-standards?workCenterId=...&productId=...&at=...
-GET /internal/v1/quantity-adjustments?workCenterId=...&from=...&to=...
-GET /internal/v1/scrap-entries?workCenterId=...&from=...&to=...
+GET /internal/v1/job-orders?workCenterId=...&activeFrom=...&activeTo=...
+GET /internal/v1/product-standards/applicable?workCenterId=...&productId=...&at=...
+GET /internal/v1/product-standards/timeline?workCenterId=...&productId=...&from=...&to=...
+GET /internal/v1/quantity-adjustments?jobOrderId=...&timeFrom=...&timeTo=...
+GET /internal/v1/scrap-entries?jobOrderId=...&startTimeTo=...&endTimeFrom=...
 ```
+
+The `job-orders` active-range query is the primary OEE input. Quantity adjustments and
+scrap entries are fetched per returned job order. Product standards are fetched per
+job-order product/work-center pair so target calculations can change at `validFrom`
+boundaries.
 
 ### Telemetry
 
@@ -820,40 +1353,51 @@ GET /internal/v1/historian/:tagId/state-durations?from=...&to=...
 GET /internal/v1/historian/:tagId/latest
 ```
 
-Productivity should pass clipped denominator windows where possible, or request raw
-summaries per window and aggregate locally.
+Productivity must calculate produced count and speed only over productivity windows. If
+Telemetry summary endpoints accept only one `from`/`to` range, call them once per
+contiguous productivity window and aggregate the results locally.
 
 The `latest` endpoint returns the last persisted historian sample for the tag
 (`{ tagId, value, occurredAt }`), or `null` if the tag has no samples yet. It is used for
 startup/current-status checks but is not the source of truth for historical OEE
-reconstruction — Productivity must reconstruct missed intervals from `state-durations`,
+reconstruction. Productivity must reconstruct missed intervals from `state-durations`,
 which segments binary tags from historian samples and uses the sample preceding `from` as
 the baseline. `state-durations` is the authoritative endpoint for run mode stop
 reconstruction.
+
+`state-durations` must not invent a stopped or running state before the first known sample.
+If there is no baseline sample before `from`, the first returned segment starts at the first
+sample inside the range. If there is no baseline and no sample inside the range, the result
+is empty.
 
 ## Events
 
 Events use Redis Stream name and event type separately.
 
-Productivity should consume:
+Productivity must consume:
 
 - stream `events.production`, types `job_order.started`, `job_order.ended`,
   `job_order.updated`, `job_order.deleted`, `quantity_adjustment.created`,
   `quantity_adjustment.updated`, `quantity_adjustment.deleted`, `scrap_entry.created`,
   `scrap_entry.updated`, `scrap_entry.deleted`, `product_standard.created`,
   `product_standard.updated`, `product_standard.deleted`;
-- stream `events.work_center`, types `work_center.schedule.changed`,
-  `work_center.shift.created`, `work_center.shift.updated`, `work_center.shift.deleted`,
-  `work_center.updated`;
+- stream `events.work_center`, types `work_center.created`, `work_center.updated`,
+  `work_center.archived`, `work_center.reactivated`, `work_center.deleted`,
+  `work_center.operator.checked_in`, `work_center.operator.checked_out`,
+  `work_center.metric_composition.changed`;
 - stream `events.telemetry`, type `tag.value.recorded` for run mode, production counter,
   and speed tags bound to relevant work centers.
 
-Productivity should emit on stream `events.productivity`:
+Productivity must emit on stream `events.productivity`:
 
 - `planned_stop.created`
 - `planned_stop.started`
 - `planned_stop.closed`
 - `planned_stop.updated`
+- `planned_stop_template.created`
+- `planned_stop_template.updated`
+- `planned_stop_template.deleted`
+- `planned_stop_template.started`
 - `unplanned_stop.opened`
 - `unplanned_stop.closed`
 - `unplanned_stop.updated`
@@ -862,93 +1406,154 @@ Productivity should emit on stream `events.productivity`:
 - `planned_stop_schedule.updated`
 - `planned_stop_schedule.deleted`
 
-The first implementation may calculate OEE at query time. When caching is used,
-calendar/job order/stop/telemetry changes must invalidate the affected range.
+The first implementation may calculate OEE at query time. When caching is used, job
+order/stop/reason/production/telemetry changes must invalidate the affected range.
 
 ## Edge Cases
 
 ### Job Order Open Across Multiple Days
 
-If a job order stays open for two days and the work center has one shift per day:
+If a job order stays open for two days:
 
-- only the intersections between job order execution and operating windows count as
-  expected time,
-- time between shifts is not unplanned stop time,
-- time between shifts does not affect productivity denominator,
-- if there is no schedule at all, job order fallback applies and the open job order
-  window is treated as expected time.
+- the full started job order execution interval inside the query range is OEE denominator,
+  unless stop reason flags exclude parts of it,
+- calendar gaps, missing shifts, or closed-day exceptions do not automatically remove time
+  from OEE,
+- if the customer does not want lunch, weekend, maintenance, or overnight idle time in
+  OEE, that time must be represented by planned stops or by closing/pausing the job order.
+
+### Product Standard Changes During Production
+
+If a new product standard revision becomes effective while a job order is running:
+
+- split the affected productivity windows at the revision `validFrom`,
+- use the previous standard until the revision boundary,
+- use the new standard from the revision boundary onward,
+- keep one OEE response item if the requested grouping requires it, but calculate the
+  item's target values from the split sub-intervals.
+
+### Virtual Work Center OEE
+
+If the requested work center is virtual:
+
+- resolve its metric composition from Work Center,
+- calculate each contributing work center for the requested range, recursively when a
+  contributor is also virtual,
+- combine availability, productivity, and quality according to the virtual work center's
+  composition rule for each factor,
+- return diagnostics when a contributor cannot be calculated, instead of silently treating
+  the contributor as zero.
 
 ### Operator Starts Tea Break
 
-Tea break should be a planned stop reason with:
+Tea break is a planned stop reason with:
 
 ```ts
 {
-  kind: 'planned',
-  oeeEffect: 'excluded',
+  usages: ['planned_stop'],
+  countsAsAvailabilityLoss: false,
+  countsAsProductivityTime: false,
   canStartManually: true
 }
 ```
 
-The operator starts and closes a planned stop. OEE excludes the stop from the
-denominator if it intersects expected time.
+The operator starts and closes a planned stop. Because both flags are `false`, OEE excludes
+the stop from the denominator if it intersects a started job order interval.
 
 ### Scheduled Lunch Break
 
-Lunch should be modeled as a planned stop schedule that creates planned stops.
+Lunch is modeled as a planned stop schedule that creates planned stops.
 
-This keeps the same OEE behavior for fixed lunch and manually started breaks.
+Use the same reason flag policy as other planned breaks when lunch should be excluded from
+OEE denominator instead of treated as availability loss.
 
-### No Schedule Configured
+### Repeatable Needs Break
 
-If no calendar/default schedule exists:
+A repeatable operator break, such as a needs break, smoking break, or quick restroom break,
+is modeled as a `PlannedStopTemplate`.
 
-- use job order execution time as expected time,
-- create an unplanned stop when run mode stops inside the job order execution,
-- return a diagnostic warning.
+When the operator starts the template:
 
-### Schedule Exists But Overtime Is Missing
+- create a new active `PlannedStop` occurrence immediately,
+- set planned times from the current time and the template default duration,
+- close that occurrence when the operator returns,
+- keep the template available for the next use.
 
-If the machine runs or stops outside operating windows because overtime was not entered:
+Do not keep a placeholder planned stop with arbitrary future `plannedStartAt` and
+`plannedEndAt` open just so the operator can reuse it later.
 
-- do not include the outside-window time in OEE,
-- store or expose out-of-schedule observations,
-- when an authorized user adds a `DateException(mode='add')` for overtime, recalculate
-  OEE from historian data and stop records.
+### Planned Stop Outside Job Order Time
 
-### Closed Day Exception
+If a planned stop overlaps time without a started job order:
 
-If the work center has `DateException(mode='closed')`:
-
-- no expected time is created for that day,
-- job orders open during that day do not create OEE denominator,
-- stopped machine state does not become OEE-affecting unplanned stop time.
-
-### Planned Stop Outside Expected Time
-
-If a planned stop overlaps off-shift time:
-
-- only the portion intersecting expected time can affect OEE,
-- the off-shift portion should not reduce denominator or create loss.
+- only the portion intersecting started job order execution can affect OEE,
+- the portion outside job order execution remains stored for audit/operations, but it does
+  not reduce denominator or create availability loss.
 
 ### Planned Stop Overruns Planned End
 
 If a planned stop remains active after `plannedEndAt`:
 
-- the planned interval should count only through `plannedEndAt` unless an authorized user
+- the planned interval must count only through `plannedEndAt` unless an authorized user
   extends the planned window,
-- if the machine is still stopped and expected time continues, open an `UnplannedStop`
-  from `plannedEndAt`,
+- do not open an `UnplannedStop` from clock time alone,
+- if the next run-mode sample is still `< 1` and no active planned stop covers that sample
+  time, open an `UnplannedStop` through the `Run Mode Opens Unplanned Stop` rule,
 - preserve the real `actualEndAt` for audit, but split planned and unplanned OEE effects.
 
-### No Job Order But Machine Running
+### No Job Order
 
 If machine runs without an active job order:
 
 - do not calculate OEE for that time,
-- do not create a stop record,
-- emit or update a work-center action such as `jobOrder` / `job_order_missing`,
-- optionally expose the run as out-of-context production diagnostics.
+- set Work Center attention type `missing_job_order` as active,
+- include Productivity diagnostic code `work_center_running_without_job_order` in OEE or
+  operational responses when needed.
+
+This is an attention/diagnostic path, not a downtime-opening gate.
+
+Clear the Work Center `missing_job_order` attention type when the work center is no longer
+running without an active job order. Because Work Center attention-state ingestion is
+snapshot-based, Productivity must preserve unrelated attention types when adding or removing
+`missing_job_order`.
+
+### No Operator
+
+If machine runs without an active operator check-in:
+
+- do not change OEE calculation,
+- set Work Center attention type `missing_operator` as active after
+  `attentionSettings.missingOperatorThresholdMs`,
+- include Productivity diagnostic code `work_center_running_without_operator` in operational
+  responses when needed.
+
+Clear the Work Center `missing_operator` attention type when an operator checks in, when the
+work center is no longer running, or when the condition is otherwise resolved. Productivity
+must preserve unrelated attention types when adding or removing `missing_operator`.
+
+### Downtime Requires Attention
+
+If an open downtime needs operator input:
+
+- set Work Center attention type `downtime_requires_attention` as active after the relevant
+  attention threshold is reached,
+- use `attentionSettings.uncausedDowntimeThresholdMs` for open unplanned downtime without a
+  reason,
+- use `attentionSettings.downtimeConfirmationDeadlineMs` when a downtime reason or policy
+  requires confirmation before a deadline.
+
+Clear `downtime_requires_attention` when the open downtime no longer needs operator input,
+for example when a required reason, description, approval, or confirmation is completed.
+Productivity must preserve unrelated attention types when adding or removing
+`downtime_requires_attention`.
+
+If machine stops without an active job order:
+
+- still open/maintain `UnplannedStop` according to the `Run Mode Opens Unplanned Stop` and
+  `Run Mode Closes Unplanned Stop` rules,
+- do not calculate OEE for the portion that does not intersect started job order
+  execution,
+- later OEE calculation clips the stop to any started job order intervals it overlaps.
 
 ### Overlapping Stop Records
 
@@ -956,5 +1561,86 @@ Prevent more than one active planned stop and more than one open unplanned stop 
 center.
 
 When creating scheduled/manual planned stops while an unplanned stop is open, use the
-planned-stop-start rule above. Do not leave planned and unplanned intervals overlapping in
-OEE calculation for the same work center.
+`Planned Stop Start Rule`. Do not leave planned and unplanned intervals overlapping in OEE
+calculation for the same work center.
+
+## Implementation Checklist
+
+### Reason Policy Validation
+
+Reason creation and update must validate calculation flag combinations:
+
+- `countsAsAvailabilityLoss=false`, `countsAsProductivityTime=false`: allowed default for
+  excluded planned non-production time.
+- `countsAsAvailabilityLoss=true`, `countsAsProductivityTime=false`: allowed default for
+  unplanned downtime and availability loss.
+- `countsAsAvailabilityLoss=false`, `countsAsProductivityTime=true`: allowed only when the
+  plant explicitly wants availability-neutral performance time.
+- `countsAsAvailabilityLoss=true`, `countsAsProductivityTime=true`: reject by default or
+  require an admin-only explicit override because it intentionally double-penalizes OEE.
+
+### Derived Unplanned State
+
+Unplanned stop list filters must derive state from fields instead of storing `status`:
+
+- `state=open`: `endAt == null`.
+- `state=closed`: `endAt != null` and `convertedToPlannedStopId` is missing.
+- `state=converted`: `convertedToPlannedStopId` exists and `endAt != null`.
+
+### Converted Stop Calculation
+
+OEE tests must cover converted unplanned stops:
+
+- converted unplanned interval overlaps a job order only partially,
+- converted unplanned interval starts outside and ends inside a job order,
+- converted unplanned interval starts inside and ends outside a job order,
+- linked planned stop fully covers the converted interval,
+- linked planned stop only partially covers the converted interval,
+- overlapping planned and converted intervals are unioned before aggregation.
+
+The converted unplanned interval must use the linked planned stop reason flags and must
+never be counted as an independent unplanned availability loss.
+
+### OEE Flag Matrix Tests
+
+OEE calculation tests must cover all reason flag combinations:
+
+- `false,false`: denominator exclusion; no availability loss; no productivity time.
+- `true,false`: availability loss; no productivity time; no double penalty.
+- `false,true`: no availability loss; included in productivity time.
+- `true,true`: availability loss and productivity time; intentional double penalty.
+
+Each case must include at least one stop entirely inside a job order and one stop crossing
+job order boundaries.
+
+### Scheduled Planned Stop Tests
+
+Scheduled planned stop tests must verify:
+
+- scheduler materializes one `PlannedStop` per `scheduleId + workCenterId + plannedStartAt`,
+- duplicate scheduler retries do not create another occurrence,
+- occurrence copies `startMode` from `schedule.occurrenceStartMode`,
+- automatic occurrence stays `planned` before `plannedStartAt`,
+- automatic occurrence starts at `plannedStartAt`,
+- late automatic scheduler run keeps planned times but starts with `actualStartAt=now`,
+- manual occurrence remains `planned` until an operator or authorized API/internal command
+  starts it,
+- `Planned Stop Start Rule` closes any open unplanned stop before activation; retrospective
+  conversion remains an explicit correction flow.
+
+### Planned Stop Template Tests
+
+Template tests must verify:
+
+- starting the same template twice at different times creates two different `PlannedStop`
+  occurrences,
+- the template itself is not mutated or consumed by a start operation,
+- generated occurrences use `source='template'`, `templateId`, `plannedStartAt=now`,
+  `plannedEndAt=now + defaultDurationMs`, and `actualStartAt=now`,
+- closing before `plannedEndAt` stores the real `actualEndAt` and does not create an
+  unplanned overrun,
+- `split_to_unplanned` creates an unplanned overrun interval from `plannedEndAt` to
+  `actualEndAt`,
+- `extend_planned_until_close` keeps the full actual interval under the planned stop,
+- template start rejects or handles an already active planned stop through the
+  `Planned Stop Start Rule`.
