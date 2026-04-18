@@ -68,11 +68,6 @@ export const emitOperatorCheckedOut = (
 ) =>
   emit('work_center.operator.checked_out', { workCenterId, operatorId, checkInId, checkoutSource })
 
-// ── Action state events ──────────────────────────────────────────────────────
-
-export const emitActionStateChanged = (workCenterId: string) =>
-  emit('work_center.action_state.changed', { workCenterId })
-
 // ── Shift lifecycle events ───────────────────────────────────────────────────
 
 export const emitShiftCreated = (shiftId: string) => emit('work_center.shift.created', { shiftId })

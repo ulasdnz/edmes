@@ -87,7 +87,6 @@ vi.mock('../../../jobs/events.js', () => ({
   emitWorkCenterDeleted: vi.fn(),
   emitHierarchyChanged: vi.fn(),
   emitMetricCompositionChanged: vi.fn(),
-  emitActionStateChanged: vi.fn(),
 }))
 
 vi.mock('../shift.scheduler.js', () => ({

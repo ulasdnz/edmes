@@ -6,7 +6,6 @@ import { logger } from '../../lib/logger.js'
 import '../../modules/work-center/work-center.model.js'
 import '../../modules/schedule/schedule.model.js'
 import '../../modules/operators/operators.model.js'
-import '../../modules/action-state/action-state.model.js'
 import '../../modules/shift/shift.model.js'
 
 const ensureModelIndexes = async (): Promise<void> => {

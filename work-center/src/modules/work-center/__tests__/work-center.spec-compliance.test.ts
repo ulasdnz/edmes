@@ -262,24 +262,6 @@ describe('Work Center Spec Compliance Review', () => {
     expect(res.body.data.shiftIds).toHaveLength(1)
   })
 
-  it('keeps action-state ingestion off the public API while allowing internal ingestion', async () => {
-    const workCenterId = await createInternalWorkCenter(buildPhysicalWorkCenter())
-
-    const publicRes = await request(app)
-      .post(`/api/v1/work-centers/${workCenterId}/action-state`)
-      .set('x-user-id', '507f1f77bcf86cd799439016')
-      .set('x-permissions', 'writeWorkCenters')
-      .send({ activeActions: ['operator'] })
-
-    const internalRes = await request(app)
-      .post(`/internal/v1/work-centers/${workCenterId}/action-state`)
-      .send({ activeActions: ['operator'] })
-
-    expect(publicRes.status).toBe(404)
-    expect(internalRes.status).toBe(200)
-    expect(internalRes.body.data.activeActions).toEqual(['operator'])
-  })
-
   it('enforces public visibility membership through user workCenterIds', async () => {
     const workCenterId = await createInternalWorkCenter(buildPhysicalWorkCenter())
 

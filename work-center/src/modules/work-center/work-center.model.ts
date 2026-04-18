@@ -14,17 +14,6 @@ const tagBindingsSchema = new Schema(
   { _id: false },
 )
 
-const actionSettingsSchema = new Schema(
-  {
-    jobOrderMissingThresholdMs: { type: Number, required: true },
-    operatorMissingThresholdMs: { type: Number, required: true },
-    uncausedDowntimeThresholdMs: { type: Number, required: true },
-    downtimeConfirmationDeadlineMs: { type: Number, required: true },
-    serviceOverrunThresholdMs: { type: Number, required: true },
-  },
-  { _id: false },
-)
-
 // ── Sub-schemas (virtual-only: metric composition) ───────────────────────────
 
 const contributorSchema = new Schema(
@@ -110,14 +99,6 @@ const workCenterSchema = new Schema(
     },
     tagBindings: {
       type: tagBindingsSchema,
-      default: null,
-    },
-    attentionSignalTagId: {
-      type: Schema.Types.ObjectId,
-      default: null,
-    },
-    actionSettings: {
-      type: actionSettingsSchema,
       default: null,
     },
     microStopThresholdMs: {

@@ -15,7 +15,6 @@ vi.mock('../../../jobs/events.js', () => ({
   emitScheduleChanged: vi.fn(),
   emitOperatorCheckedIn: vi.fn(),
   emitOperatorCheckedOut: vi.fn(),
-  emitActionStateChanged: vi.fn(),
 }))
 vi.mock('../../../lib/internal-api.js', () => ({
   addWorkCenterToUser: vi.fn(),

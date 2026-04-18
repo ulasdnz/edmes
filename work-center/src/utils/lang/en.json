@@ -29,9 +29,7 @@
     "delete_blocked_active_calendars": "Cannot delete: active calendars exist",
     "delete_blocked_user_reference": "Cannot delete: work center is referenced by users",
     "delete_blocked_checkin_records": "Cannot delete: operator check-in records exist",
-    "delete_blocked_action_state": "Cannot delete: non-empty action state records exist",
     "speed_tag_required": "speedTagId is required when productivityMode is speed_based",
-    "action_settings_requires_attention_signal": "actionSettings requires attentionSignalTagId to be set",
     "composition_conflicts_with_partial": "Cannot send both metricComposition and partialMetricComposition",
     "partial_requires_existing_composition": "Cannot use partial composition update without existing composition"
   },
@@ -47,9 +45,6 @@
     "duplicate_active_checkin": "Operator already has an active check-in at this work center",
     "operator_not_found": "Operator not found in user service",
     "already_checked_out": "Check-in record is already checked out"
-  },
-  "action_state": {
-    "ingestion_failed": "Action state ingestion failed"
   },
   "success": {
     "create": "Work center created successfully",
@@ -67,8 +62,7 @@
     "exception_deleted": "Date exception deleted successfully",
     "checked_in": "Operator checked in successfully",
     "checked_out": "Operator checked out successfully",
-    "effective_schedule": "Effective schedule retrieved successfully",
-    "action_state": "Action state retrieved successfully"
+    "effective_schedule": "Effective schedule retrieved successfully"
   },
   "error": {
     "unexpected": "An unexpected error occurred",

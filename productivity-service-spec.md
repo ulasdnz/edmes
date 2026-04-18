@@ -20,7 +20,7 @@ The first version must support a solid core MES flow:
    There is no required public "time-context" call before OEE. The frontend calls:
 
    ```http
-   GET /api/v1/oee?workCenterId=...&from=...&to=...&groupBy=...
+   GET /api/v1/oee?workCenterId=...&from=...&to=...
    ```
 
 2. Work Center owns work center metadata.
@@ -61,19 +61,16 @@ Owns:
 - work centers,
 - work center type,
 - tag bindings,
-- attention settings,
 - virtual work center metric composition.
 
 Required internal contract:
 
 ```http
 GET /internal/v1/work-centers/:id
-GET /internal/v1/work-centers/:id/attention-state
-POST /internal/v1/work-centers/:id/attention-state
 ```
 
-The work center response must include type, productivity mode, tag bindings, attention
-settings, and `metricComposition` when the target work center is virtual.
+The work center response must include type, productivity mode, tag bindings, and
+`metricComposition` when the target work center is virtual.
 
 Tag bindings used by Productivity:
 
@@ -82,7 +79,6 @@ tagBindings {
   runModeTagId?: ObjectId
   productionCounterTagId?: ObjectId
   speedTagId?: ObjectId
-  attentionTagId?: ObjectId
 }
 ```
 
@@ -90,82 +86,17 @@ Run-mode operational scope is determined by `runModeTagId`, not by a separate
 `productivityEnabled` flag. Productivity monitors work centers whose Work Center response
 includes `tagBindings.runModeTagId`.
 
-`runModeTagId` is mandatory for:
+`runModeTagId` is mandatory for automatic unplanned stop open/close from run-mode
+transitions and live downtime flows that depend on the current machine run state.
 
-- attention scheduler/evaluation state,
-- automatic unplanned stop open/close from run-mode transitions,
-- live downtime flows that depend on the current machine run state.
-
-Work centers without `runModeTagId` are outside attention evaluation and run-mode downtime
-automation scope. If a previously monitored work center loses `runModeTagId`,
-Productivity must clear its attention types and disable the evaluation state with
-`disabledReason='missing_run_mode_tag'`.
+Work centers without `runModeTagId` are outside run-mode downtime automation scope. If a
+previously monitored work center loses `runModeTagId`, Productivity must stop creating or
+managing live run-mode downtime for that work center.
 
 A virtual work center may still be requested for OEE without its own `runModeTagId`.
 Virtual OEE is calculated by resolving its child work centers through `metricComposition`
 and combining their OEE results. The virtual work center itself must not create
 run-mode-derived downtime records.
-
-`attentionTagId` is an output binding for writing attention state to a plant tag later. If
-it is missing, Productivity must still maintain Work Center attention-state snapshots, but
-skip attention-tag writes.
-
-Attention settings:
-
-```ts
-attentionSettings {
-  missingJobOrderThresholdMs: number
-  missingOperatorThresholdMs: number
-  uncausedDowntimeThresholdMs: number
-  downtimeConfirmationDeadlineMs: number
-}
-```
-
-The attention-state endpoint stores a snapshot of broad active attention types used by
-Productivity:
-
-```ts
-WorkCenterAttentionState {
-  workCenterId: ObjectId
-  changedAt: Date
-  activeAttentionTypes: Array<
-    'missing_job_order' |
-    'missing_operator' |
-    'downtime_requires_attention'
-  >
-}
-```
-
-It does not store detailed reason codes. When Productivity changes an attention type, it
-must read or track the latest snapshot, add/remove only the type it owns, and preserve
-unrelated active attention types.
-
-Attention type producers:
-
-- `missing_job_order`: Productivity sets/clears it when a running monitored work center has
-  no active job order longer than `attentionSettings.missingJobOrderThresholdMs`.
-- `missing_operator`: Productivity sets/clears it when a running monitored work center has
-  no active operator check-in longer than `attentionSettings.missingOperatorThresholdMs`.
-  Work Center owns operator check-in records; Productivity owns this missing-operator
-  attention decision because it requires run-mode context.
-- `downtime_requires_attention`: Productivity sets/clears it for open downtime that needs
-  operator attention, such as uncaused downtime or confirmation-deadline cases.
-
-Implementation prerequisite:
-
-Work Center currently has an older action-state concept in code. Before implementing
-Productivity attention updates, rename that Work Center contract to attention-state:
-
-- route path: `/work-centers/:workCenterId/action-state` -> `/work-centers/:workCenterId/attention-state`,
-- model/resource name: `WorkCenterActionState` -> `WorkCenterAttentionState`,
-- payload field: `activeActions` -> `activeAttentionTypes`,
-- allowed values: `downtime | operator | jobOrder | service` ->
-  `missing_job_order | missing_operator | downtime_requires_attention`,
-- event type: `work_center.action_state.changed` -> `work_center.attention_state.changed`,
-- permission name: `readActionState` -> `readAttentionState`.
-
-The rename should be a real domain rename, not just a route alias. Do not keep the old
-action names in new Productivity code.
 
 ### Production
 
@@ -243,22 +174,26 @@ Owns:
 - state durations.
 
 Productivity uses Telemetry historian endpoints for calculation. Every tag retains full
-history in Telemetry, so run mode transitions between polls are never lost and past
+history in Telemetry, so run mode transitions between reconciliations are never lost and past
 OEE results can be recalculated after job order, stop, reason, quantity, scrap, or
 product-standard corrections.
 
 Run mode detection uses the Work Center tag binding as the source of truth:
 
 - Work Center provides `runModeTagId` for each work center that should be monitored by
-  Productivity attention and run-mode downtime logic.
-- Productivity consumes `tag.value.recorded` events from the Telemetry stream and handles
-  only events whose `tagId` matches a configured run mode tag. The payload includes
-  `behavior` (`counter | speed | binary`) so subscribers can interpret the sample without
-  re-fetching the tag.
+  Productivity run-mode downtime logic.
+- Productivity consumes `tag.value.recorded` events from the Telemetry stream only for
+  configured run-mode tags. Productivity must not consume production-counter or speed-tag
+  events for OEE calculation.
+- Produced count and speed for OEE are pulled from Telemetry historian summary endpoints at
+  query time over the relevant productivity windows, not from raw stream events.
 - On startup/restart, Productivity must fetch the latest historian sample from Telemetry
   via `GET /internal/v1/historian/:tagId/latest` and reconstruct any missed transitions
   via `GET /internal/v1/historian/:tagId/state-durations` so it can reconcile an
   already-stopped or already-running work center.
+- Do not poll "all work centers whose run mode is currently 0" as the primary downtime
+  source. Use run-mode events as the primary path and historian-based reconciliation as the
+  safety net for missed events, restarts, and long-lived stopped states.
 - Productivity must not subscribe directly to MQTT topics.
 
 ### Productivity
@@ -292,10 +227,10 @@ If no started job order intersects the requested range:
 denominator = 0
 ```
 
-The response must return the requested group item with zero factor percentages, zero
-duration/output fields, and a diagnostic such as `no_job_order_in_range`. Do not silently
-omit the group item, because the frontend needs to distinguish "no OEE context" from "API
-did not return this work center".
+The response must return the requested work center with zero factor percentages, zero
+duration/output fields, and a diagnostic such as `no_job_order_in_range`. Do not return
+`404` or omit the response body, because the frontend must distinguish "no OEE context in
+this interval" from "work center not found".
 
 ### Downtime and Uptime
 
@@ -361,8 +296,9 @@ Reason {
 
 Meaning:
 
-- `planned_stop`: can be used for planned stops.
-- `unplanned_stop`: can be used for unplanned stops.
+- `usages` defines where the reason can be selected. `planned_stop` means the reason is
+  valid for `PlannedStop`, `PlannedStopSchedule`, and `PlannedStopTemplate`.
+  `unplanned_stop` means the reason is valid for `UnplannedStop`.
 - `countsAsAvailabilityLoss`: keep the interval in the availability denominator and count
   it as availability loss.
 - `countsAsProductivityTime`: include the interval in productivity calculation windows;
@@ -371,6 +307,13 @@ Meaning:
   is globally available.
 - `requiresDescription` forces operators to enter a description when assigning this
   reason.
+
+Defaults:
+
+- `canStartManually=true`
+- `canBeScheduled=false`
+- `canConvertFromUnplanned=false`
+- `requiresDescription=false`
 
 Stop records store `reasonId`. OEE resolves the two calculation flags from the current
 `Reason` at calculation time. Reasons referenced by stops must not be hard-deleted; mark
@@ -466,6 +409,9 @@ The recurrence time is interpreted in `recurrence.timezone`. Store materialized
 ### PlannedStop
 
 One planned stop record represents one manual, scheduled, or converted planned stop.
+Every planned stop must have a `reasonId` at creation/materialization time. The selected
+reason must be valid for planned-stop usage. Manual starts additionally require
+`canStartManually=true`, and scheduled occurrences require `canBeScheduled=true`.
 
 ```ts
 PlannedStop {
@@ -524,6 +470,10 @@ Template planned stops are reusable operator actions. They are not downtime occu
 and do not affect OEE by themselves. Each template start creates a new `PlannedStop`
 occurrence, so multiple needs breaks on the same day are stored as separate planned stop
 records.
+
+Each template must have a `reasonId` whose reason is valid for planned-stop usage and has
+`canStartManually=true`, because starting the template immediately creates an active
+planned stop.
 
 Use a template when the plant needs a repeatable planned stop button that can be started
 at any time, but every use must still be stored as its own historical stop interval.
@@ -599,7 +549,7 @@ One unplanned stop record represents one run-mode or manual unplanned stop.
 For v1, live downtime features are supported only for work centers that have
 `tagBindings.runModeTagId`. This includes run-mode-created unplanned stops, manual
 unplanned stops, planned stop start/close flows, planned stop overrun handling, and
-downtime attention state. A work center without `runModeTagId` may still appear in OEE
+run-mode stop processing. A work center without `runModeTagId` may still appear in OEE
 through virtual-work-center aggregation, but Productivity must not create or manage live
 downtime records for that work center.
 
@@ -718,9 +668,8 @@ stopped; it is only an idempotency/duplication guard. Use the unique open-stop c
 and atomic create/update behavior so repeated stopped samples keep the same open stop
 instead of creating duplicates.
 
-Use Work Center attention settings only after the stop exists. They may classify the stop as
-a micro-stop, require reason confirmation, or create/update work-center attention state, but
-they must not be extra gates for opening the stop.
+Do not add extra business gates beyond the rules above. Stop creation must depend only on
+run mode and planned-stop coverage, not on later classification or UI workflow concerns.
 
 ### Run Mode Closes Unplanned Stop
 
@@ -894,150 +843,6 @@ Allow authorized users to correct a past stop interval by:
 Any correction must be auditable and must trigger recalculation for affected OEE
 queries if cached results exist.
 
-## Attention Evaluation Runtime
-
-Productivity owns the timing decisions behind Work Center attention-state. Implement
-this as an in-process `AttentionScheduler` module inside the Productivity API service.
-Do not create a separate worker service, per-work-center timer, per-condition process, or
-user-script execution model for v1.
-
-The runtime has two loops:
-
-- `AttentionDueLoop`: runs every `attentionDuePollIntervalMs` (default `5000`). It
-  queries only states where `isEnabled=true` and `nextEvaluationAt <= now`, ordered by
-  `nextEvaluationAt`, with a bounded batch size. It reevaluates those work centers and
-  posts a new Work Center attention-state snapshot only when `activeAttentionTypes`
-  changes.
-- `AttentionReconciliationLoop`: runs every `attentionReconciliationIntervalMs`
-  (default `60000`). It processes state records where `reconcileAfter <= now` and
-  rebuilds/evaluates them from Work Center, Production, downtime, and latest run-mode
-  data. It also runs a batched discovery pass over active work centers that have
-  `runModeTagId` to create missing state records. This is a safety net for missed events,
-  newly created work centers, and long-lived states. It is not the primary path. After each successful
-  reconciliation, set `reconcileAfter` to the next planned reconciliation time.
-
-Use bounded batches for both loops. Suggested defaults are `attentionDueBatchSize=100`
-and `attentionReconciliationBatchSize=100`; tune them per plant size.
-
-At startup, do not wait for new events. Run one batched bootstrap/reconciliation pass for
-active work centers that have `runModeTagId`:
-
-- load the work center and run-mode tag binding,
-- resolve the latest run-mode state from Telemetry,
-- load the active job order from Production,
-- load the active operator count from Work Center,
-- load open unplanned/planned downtime that can require attention,
-- upsert `WorkCenterAttentionEvaluationState`,
-- sync Work Center attention-state when the calculated output snapshot changes.
-
-If multiple Productivity API replicas are enabled later, only one scheduler-enabled
-instance may run these loops unless a database claim/lease is added.
-
-Internal collection:
-
-```ts
-WorkCenterAttentionEvaluationState {
-  _id: ObjectId
-  workCenterId: ObjectId
-  runModeTagId: ObjectId
-  attentionTagId?: ObjectId
-
-  runState: 'running' | 'stopped' | 'unknown'
-  runningSince?: Date
-  lastRunModeOccurredAt?: Date
-
-  activeJobOrderId?: ObjectId
-  missingJobOrderSince?: Date
-
-  activeOperatorCount: number
-  missingOperatorSince?: Date
-
-  openUnplannedStopId?: ObjectId
-  attentionDowntimeId?: ObjectId
-  attentionDowntimeType?: 'planned' | 'unplanned'
-  downtimeAttentionSince?: Date
-
-  activeAttentionTypes: Array<
-    'missing_job_order' |
-    'missing_operator' |
-    'downtime_requires_attention'
-  >
-
-  isEnabled: boolean
-  disabledReason?: 'archived' | 'missing_run_mode_tag'
-
-  nextEvaluationAt?: Date
-  reconcileAfter?: Date
-  lastEvaluatedAt?: Date
-  lastReconciledAt?: Date
-  syncPending: boolean
-  lastSyncError?: string
-  updatedAt: Date
-}
-```
-
-Indexes:
-
-- unique `{ workCenterId: 1 }`
-- `{ nextEvaluationAt: 1 }`
-- `{ reconcileAfter: 1 }`
-- `{ runModeTagId: 1 }`
-- `{ attentionTagId: 1 }`
-
-Event-driven updates:
-
-- `tag.value.recorded` for a work center's run-mode tag updates `runState`,
-  `runningSince`, and `lastRunModeOccurredAt`.
-- `job_order.started`, `job_order.ended`, `job_order.updated`, and
-  `job_order.deleted` update `activeJobOrderId` and missing-job-order state.
-- `work_center.operator.checked_in` and `work_center.operator.checked_out` update
-  `activeOperatorCount` and missing-operator state.
-- `unplanned_stop.opened`, `unplanned_stop.updated`, `unplanned_stop.closed`,
-  `planned_stop.started`, `planned_stop.updated`, and `planned_stop.closed` update
-  downtime attention state.
-- reason, approval, confirmation, and backdated downtime corrections must reevaluate
-  the affected work center and interval.
-- `work_center.created`, `work_center.updated`, `work_center.archived`,
-  `work_center.reactivated`, and `work_center.deleted` create, update, disable, or
-  remove the evaluation state.
-
-For downtime writes performed by Productivity itself, update the evaluation state after
-the database write succeeds. Do not depend on a Redis round trip to update same-service
-attention state.
-
-Evaluation rules:
-
-- If a monitored work center is running and has no active job order, set
-  `missingJobOrderSince` if it is empty. The next due time is
-  `missingJobOrderSince + attentionSettings.missingJobOrderThresholdMs`.
-- If a monitored work center is running and has no active operator check-in, set
-  `missingOperatorSince` if it is empty. The next due time is
-  `missingOperatorSince + attentionSettings.missingOperatorThresholdMs`.
-- If open downtime requires attention, set `downtimeAttentionSince` if it is empty. The
-  next due time is based on the relevant attention setting, such as
-  `uncausedDowntimeThresholdMs` or `downtimeConfirmationDeadlineMs`.
-- `nextEvaluationAt` is the nearest pending due time among active missing-job-order,
-  missing-operator, and downtime-attention candidates. If there is no pending due work,
-  store `null`/omit the field.
-
-Clear rules:
-
-- A stopped run state clears `missing_job_order` and `missing_operator`.
-- Starting or finding an active job order clears `missing_job_order`.
-- Operator check-in clears `missing_operator`.
-- Reason assignment, required description entry, approval, or confirmation clears
-  `downtime_requires_attention` when the downtime record no longer needs attention.
-- Archived, deleted, or run-mode-tag-missing work centers must clear Productivity
-  attention types, set `isEnabled=false`, and stop scheduling due evaluations.
-
-When Productivity changes `activeAttentionTypes`, it must post the full snapshot to:
-
-```http
-POST /internal/v1/work-centers/:id/attention-state
-```
-
-The snapshot must preserve unrelated attention types owned by other producers.
-
 ## OEE Calculation Rules
 
 ### Inputs
@@ -1045,7 +850,7 @@ The snapshot must preserve unrelated attention types owned by other producers.
 For a query:
 
 ```http
-GET /api/v1/oee?workCenterId=...&from=...&to=...&groupBy=none|day|jobOrder
+GET /api/v1/oee?workCenterId=...&from=...&to=...
 ```
 
 Productivity loads:
@@ -1054,7 +859,7 @@ Productivity loads:
 - started job orders intersecting the query range from Production,
 - product standard timelines from Production,
 - quantity adjustments and scrap entries from Production per job order,
-- run mode, production counter, and speed summaries from Telemetry,
+- run-mode state information plus production counter and speed summaries from Telemetry,
 - planned stops and unplanned stops from Productivity.
 
 For physical work centers, Productivity calculates OEE directly from that work center's
@@ -1173,47 +978,42 @@ raw calculation ratios in diagnostics when needed for debugging.
 ### OEE
 
 ```http
-GET /api/v1/oee?workCenterId=...&from=...&to=...&groupBy=none|day|jobOrder
-GET /api/v1/oee?workCenterIds=...&from=...&to=...&groupBy=workCenter
+GET /api/v1/oee?workCenterId=...&from=...&to=...
 ```
 
 Use query parameters instead of nesting OEE under `/work-centers/:id` because OEE is a
-reporting resource and often needs multi-work-center queries.
+reporting resource, but keep the v1 API scoped to one work center per request. The
+frontend sends one `workCenterId`, one ISO `from`, and one ISO `to`. Pagination and
+grouping do not apply to this endpoint.
 
 Response shape:
 
 ```ts
 {
   data: {
+    workCenterId: string
     from: string
     to: string
-    groupBy: string
-    items: Array<{
-      workCenterId: string
-      from: string
-      to: string
-      jobOrderId?: string
-      availability: {
-        percentage: number
-        denominatorMs: number
-        runningMs: number
-        lossMs: number
-      }
-      productivity: {
-        percentage: number
-        actualOutput?: number
-        idealOutput?: number
-      }
-      quality: {
-        percentage: number
-        good: number
-        total: number
-        scrap: number
-      }
-      oee: {
-        percentage: number
-      }
-    }>
+    availability: {
+      percentage: number
+      denominatorMs: number
+      runningMs: number
+      lossMs: number
+    }
+    productivity: {
+      percentage: number
+      actualOutput?: number
+      idealOutput?: number
+    }
+    quality: {
+      percentage: number
+      good: number
+      total: number
+      scrap: number
+    }
+    oee: {
+      percentage: number
+    }
     diagnostics: Array<{
       code: string
       workCenterId?: string
@@ -1293,39 +1093,24 @@ DELETE /api/v1/planned-stop-schedules/:id
 
 ```http
 GET /internal/v1/work-centers/:id
-GET /internal/v1/work-centers/:id/attention-state
-POST /internal/v1/work-centers/:id/attention-state
 ```
 
-The work center response must include type, productivity mode, tag bindings, attention
-settings, and `metricComposition` when the target work center is virtual.
+The work center response must include type, productivity mode, tag bindings, and
+`metricComposition` when the target work center is virtual.
 
 Run-mode operational scope is determined by `runModeTagId`. Productivity monitors work
 centers whose Work Center response includes `tagBindings.runModeTagId`.
 
-`runModeTagId` is mandatory for attention scheduler/evaluation state, automatic unplanned
-stop open/close from run-mode transitions, and live downtime flows that depend on the
-current machine run state. Work centers without `runModeTagId` are outside attention
-evaluation and run-mode downtime automation scope. If a previously monitored work center
-loses `runModeTagId`, Productivity must clear its attention types and disable the
-evaluation state with `disabledReason='missing_run_mode_tag'`.
+`runModeTagId` is mandatory for automatic unplanned stop open/close from run-mode
+transitions and live downtime flows that depend on the current machine run state. Work
+centers without `runModeTagId` are outside run-mode downtime automation scope. If a
+previously monitored work center loses `runModeTagId`, Productivity must stop creating or
+managing live run-mode downtime for that work center.
 
 A virtual work center may still be requested for OEE without its own `runModeTagId`.
 Virtual OEE is calculated by resolving its child work centers through `metricComposition`
 and combining their OEE results. The virtual work center itself must not create
 run-mode-derived downtime records.
-
-`attentionTagId` is an optional output binding for writing attention state to a plant tag
-later; if it is missing, Productivity still uses the Work Center attention-state API as
-the source of truth.
-
-Use attention-state to maintain broad active attention types for monitored work centers:
-
-- `missing_job_order` for running without an active job order,
-- `missing_operator` for running without an active operator check-in,
-- `downtime_requires_attention` for open downtime requiring attention.
-
-Preserve unrelated active attention types when posting a new snapshot.
 
 ### Production
 
@@ -1383,10 +1168,9 @@ Productivity must consume:
   `product_standard.updated`, `product_standard.deleted`;
 - stream `events.work_center`, types `work_center.created`, `work_center.updated`,
   `work_center.archived`, `work_center.reactivated`, `work_center.deleted`,
-  `work_center.operator.checked_in`, `work_center.operator.checked_out`,
   `work_center.metric_composition.changed`;
-- stream `events.telemetry`, type `tag.value.recorded` for run mode, production counter,
-  and speed tags bound to relevant work centers.
+- stream `events.telemetry`, type `tag.value.recorded` only for run-mode tags bound to
+  relevant work centers.
 
 Productivity must emit on stream `events.productivity`:
 
@@ -1405,6 +1189,11 @@ Productivity must emit on stream `events.productivity`:
 - `planned_stop_schedule.created`
 - `planned_stop_schedule.updated`
 - `planned_stop_schedule.deleted`
+
+`realtime-service` must subscribe to `events.productivity` and forward these events to
+client rooms the same way it already forwards other domain streams. At minimum, payloads
+that include `workCenterId` must reach the matching `wc:{workCenterId}` room so live
+downtime and productivity UI can update without polling.
 
 The first implementation may calculate OEE at query time. When caching is used, job
 order/stop/reason/production/telemetry changes must invalidate the affected range.
@@ -1429,8 +1218,8 @@ If a new product standard revision becomes effective while a job order is runnin
 - split the affected productivity windows at the revision `validFrom`,
 - use the previous standard until the revision boundary,
 - use the new standard from the revision boundary onward,
-- keep one OEE response item if the requested grouping requires it, but calculate the
-  item's target values from the split sub-intervals.
+- keep one OEE response for the requested interval, but calculate target values from the
+  split sub-intervals.
 
 ### Virtual Work Center OEE
 
@@ -1506,46 +1295,10 @@ If a planned stop remains active after `plannedEndAt`:
 If machine runs without an active job order:
 
 - do not calculate OEE for that time,
-- set Work Center attention type `missing_job_order` as active,
-- include Productivity diagnostic code `work_center_running_without_job_order` in OEE or
-  operational responses when needed.
+- include a diagnostic such as `work_center_running_without_job_order` when an API
+  response needs to explain why output exists without OEE context.
 
-This is an attention/diagnostic path, not a downtime-opening gate.
-
-Clear the Work Center `missing_job_order` attention type when the work center is no longer
-running without an active job order. Because Work Center attention-state ingestion is
-snapshot-based, Productivity must preserve unrelated attention types when adding or removing
-`missing_job_order`.
-
-### No Operator
-
-If machine runs without an active operator check-in:
-
-- do not change OEE calculation,
-- set Work Center attention type `missing_operator` as active after
-  `attentionSettings.missingOperatorThresholdMs`,
-- include Productivity diagnostic code `work_center_running_without_operator` in operational
-  responses when needed.
-
-Clear the Work Center `missing_operator` attention type when an operator checks in, when the
-work center is no longer running, or when the condition is otherwise resolved. Productivity
-must preserve unrelated attention types when adding or removing `missing_operator`.
-
-### Downtime Requires Attention
-
-If an open downtime needs operator input:
-
-- set Work Center attention type `downtime_requires_attention` as active after the relevant
-  attention threshold is reached,
-- use `attentionSettings.uncausedDowntimeThresholdMs` for open unplanned downtime without a
-  reason,
-- use `attentionSettings.downtimeConfirmationDeadlineMs` when a downtime reason or policy
-  requires confirmation before a deadline.
-
-Clear `downtime_requires_attention` when the open downtime no longer needs operator input,
-for example when a required reason, description, approval, or confirmation is completed.
-Productivity must preserve unrelated attention types when adding or removing
-`downtime_requires_attention`.
+This is a diagnostic/runtime context path, not a downtime-opening gate.
 
 If machine stops without an active job order:
 

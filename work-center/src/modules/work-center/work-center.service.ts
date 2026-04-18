@@ -13,10 +13,6 @@ import {
 import { addWorkCenterToUser, isWorkCenterReferencedByUsers } from '../../lib/internal-api.js'
 import { logger } from '../../lib/logger.js'
 import { type PaginationInput, paginate } from '../../utils/pagination.js'
-import {
-  hasNonEmptyActionState,
-  internalClearActionState,
-} from '../action-state/action-state.service.js'
 import { hasAnyCheckInRecords, hasOpenCheckIns } from '../operators/operators.service.js'
 import { hasActiveCalendars } from '../schedule/schedule.service.js'
 import { Shift } from '../shift/shift.model.js'
@@ -31,13 +27,7 @@ import {
 
 // ── Type enforcement helpers ─────────────────────────────────────────────────
 
-const PHYSICAL_ONLY_FIELDS = new Set([
-  'productivityMode',
-  'tagBindings',
-  'attentionSignalTagId',
-  'actionSettings',
-  'microStopThresholdMs',
-])
+const PHYSICAL_ONLY_FIELDS = new Set(['productivityMode', 'tagBindings', 'microStopThresholdMs'])
 
 const VIRTUAL_ONLY_FIELDS = new Set(['metricComposition', 'partialMetricComposition'])
 
@@ -386,18 +376,9 @@ export async function updateWorkCenter(
   if (existing.type === 'physical') {
     const finalProductivityMode = updateFields.productivityMode ?? existing.productivityMode
     const finalTagBindings = updateFields.tagBindings ?? existing.tagBindings
-    const finalAttentionSignalTagId =
-      'attentionSignalTagId' in updateFields
-        ? updateFields.attentionSignalTagId
-        : existing.attentionSignalTagId
-    const finalActionSettings =
-      'actionSettings' in updateFields ? updateFields.actionSettings : existing.actionSettings
 
     if (finalProductivityMode === 'speed_based' && !finalTagBindings?.speedTagId) {
       throw new CustomError(400, 'work_center.speed_tag_required')
-    }
-    if (finalActionSettings && !finalAttentionSignalTagId) {
-      throw new CustomError(400, 'work_center.action_settings_requires_attention_signal')
     }
   }
 
@@ -557,8 +538,6 @@ async function archiveWorkCenter(
     if (await hasOpenCheckIns(id)) {
       throw new CustomError(400, 'work_center.archive_blocked_open_checkins')
     }
-    // Persist clearing action-state snapshot
-    await internalClearActionState(id)
   }
 
   if (existing.type === 'virtual') {
@@ -618,10 +597,6 @@ export async function hardDeleteWorkCenter(id: string): Promise<void> {
     // Guard: any check-in records
     if (await hasAnyCheckInRecords(id)) {
       throw new CustomError(400, 'work_center.delete_blocked_checkin_records')
-    }
-    // Guard: non-empty action-state records (clearing snapshots don't count)
-    if (await hasNonEmptyActionState(id)) {
-      throw new CustomError(400, 'work_center.delete_blocked_action_state')
     }
   }
 

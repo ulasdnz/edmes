@@ -45,7 +45,6 @@ export const WORK_CENTER_PRIVILEGES: readonly Privilege[] = Object.freeze([
   { code: 'writeSchedules', text: 'Write Schedules' },
   { code: 'readOperators', text: 'Read Operators' },
   { code: 'writeOperators', text: 'Write Operators' },
-  { code: 'readActionState', text: 'Read Action State' },
 ])
 
 export const PRODUCTION_PRIVILEGES: readonly Privilege[] = Object.freeze([

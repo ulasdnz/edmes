@@ -22,18 +22,6 @@ const tagBindingsSchema = z
   })
   .strict()
 
-// ── Action settings (physical, requires attentionSignalTagId) ────────────────
-
-const actionSettingsSchema = z
-  .object({
-    jobOrderMissingThresholdMs: z.number().int().min(0),
-    operatorMissingThresholdMs: z.number().int().min(0),
-    uncausedDowntimeThresholdMs: z.number().int().min(0),
-    downtimeConfirmationDeadlineMs: z.number().int().min(0),
-    serviceOverrunThresholdMs: z.number().int().min(0),
-  })
-  .strict()
-
 // ── Metric composition (virtual) ─────────────────────────────────────────────
 
 const contributorSchema = z
@@ -114,8 +102,6 @@ const physicalCreateSchema = z
     type: z.literal('physical'),
     productivityMode: z.enum(['count_based', 'speed_based']),
     tagBindings: tagBindingsSchema,
-    attentionSignalTagId: objectIdSchema.nullable().optional(),
-    actionSettings: actionSettingsSchema.optional(),
     microStopThresholdMs: z.number().int().min(0).optional(),
   })
   .refine(
@@ -126,18 +112,6 @@ const physicalCreateSchema = z
       return true
     },
     { message: 'work_center.speed_tag_required', path: ['tagBindings', 'speedTagId'] },
-  )
-  .refine(
-    data => {
-      if (data.actionSettings && !data.attentionSignalTagId) {
-        return false
-      }
-      return true
-    },
-    {
-      message: 'work_center.action_settings_requires_attention_signal',
-      path: ['actionSettings'],
-    },
   )
 
 const virtualCreateSchema = z.object({
@@ -164,8 +138,6 @@ const physicalReplaceSchema = z
     shiftIds: shiftIdsSchema.optional(),
     productivityMode: z.enum(['count_based', 'speed_based']),
     tagBindings: tagBindingsSchema,
-    attentionSignalTagId: objectIdSchema.nullable().optional(),
-    actionSettings: actionSettingsSchema.nullable().optional(),
     microStopThresholdMs: z.number().int().min(0).optional(),
   })
   .strict()
@@ -177,18 +149,6 @@ const physicalReplaceSchema = z
       return true
     },
     { message: 'work_center.speed_tag_required', path: ['tagBindings', 'speedTagId'] },
-  )
-  .refine(
-    data => {
-      if (data.actionSettings && !data.attentionSignalTagId) {
-        return false
-      }
-      return true
-    },
-    {
-      message: 'work_center.action_settings_requires_attention_signal',
-      path: ['actionSettings'],
-    },
   )
 
 const virtualReplaceSchema = z
@@ -220,8 +180,6 @@ export const patchWorkCenterSchema = z
     // Physical fields
     productivityMode: z.enum(['count_based', 'speed_based']).optional(),
     tagBindings: tagBindingsSchema.optional(),
-    attentionSignalTagId: objectIdSchema.nullable().optional(),
-    actionSettings: actionSettingsSchema.nullable().optional(),
     microStopThresholdMs: z.number().int().min(0).optional(),
     // Virtual fields
     metricComposition: metricCompositionSchema.nullable().optional(),
