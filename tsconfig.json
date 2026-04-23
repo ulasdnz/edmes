@@ -9,6 +9,7 @@
     { "path": "packages/health" },
     { "path": "packages/events" },
     { "path": "packages/privileges" },
-    { "path": "telemetry" }
+    { "path": "telemetry" },
+    { "path": "performance" }
   ]
 }

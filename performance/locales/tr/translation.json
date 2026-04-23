@@ -1,0 +1,21 @@
+{
+  "success": {
+    "create": "Başarıyla oluşturuldu",
+    "update": "Başarıyla güncellendi",
+    "delete": "Başarıyla silindi"
+  },
+  "error": {
+    "not_found": "Kaynak bulunamadı",
+    "empty_patch": "En az bir alan sağlanmalıdır",
+    "immutable_field": "Bu alan değiştirilemez",
+    "invalid_id": "Geçersiz tanımlayıcı",
+    "invalid_code": "Geçersiz kod biçimi",
+    "duplicate": "Aynı benzersiz anahtarla kayıt mevcut",
+    "referenced": "Kayıt başka varlıklar tarafından referans gösteriliyor",
+    "reason_system_default_immutable": "Sistem varsayılanı sebepler değiştirilemez veya silinemez",
+    "reason_stop_flags_require_stop_usage": "Duruş ile ilgili bayraklar duruş kullanımı gerektirir",
+    "micro_stop_missing": "Sistem yönetimli MICRO_STOP sebebi eksik",
+    "micro_stop_invalid": "Sistem yönetimli MICRO_STOP sebebi gerekli değişmezleri karşılamıyor",
+    "upsert_failed": "Kayıt güncellenemedi veya oluşturulamadı"
+  }
+}

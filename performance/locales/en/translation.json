@@ -1,0 +1,21 @@
+{
+  "success": {
+    "create": "Created successfully",
+    "update": "Updated successfully",
+    "delete": "Deleted successfully"
+  },
+  "error": {
+    "not_found": "Resource not found",
+    "empty_patch": "At least one field must be provided",
+    "immutable_field": "This field cannot be changed",
+    "invalid_id": "Invalid identifier",
+    "invalid_code": "Invalid code format",
+    "duplicate": "A record with the same unique key already exists",
+    "referenced": "Record is referenced by other entities",
+    "reason_system_default_immutable": "System-default reasons cannot be modified or deleted",
+    "reason_stop_flags_require_stop_usage": "Stop-related flags require a stop usage",
+    "micro_stop_missing": "System-managed MICRO_STOP reason is missing",
+    "micro_stop_invalid": "System-managed MICRO_STOP reason violates required invariants",
+    "upsert_failed": "Failed to upsert record"
+  }
+}

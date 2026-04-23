@@ -6,6 +6,7 @@ packages:
   - production
   - realtime
   - telemetry
+  - performance
 
 ignoredBuiltDependencies:
   - '@scarf/scarf'

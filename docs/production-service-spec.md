@@ -244,7 +244,7 @@ Persist edilen alanlar:
 - `amount: number`
 - `startTime: Date`
 - `endTime: Date`
-- `causeId?: ObjectId | null`
+- `reasonId?: ObjectId | null`
 - `description?: string | null`
 - `createdBy: ObjectId`
 - `updatedBy?: ObjectId | null`
@@ -257,7 +257,7 @@ Kurallar:
 - Referenced `JobOrder` start edilmiş olmalıdır (`running` veya `finished`)
 - `JobOrder` finished olduktan sonra da `ScrapEntry` create, patch ve delete yapılabilir; finished state bu kayıtları dondurmaz
 - `updatedBy`, patch işlemlerinde authenticated user üzerinden server tarafında doldurulur
-- Create sırasında request body `jobOrderId`, `shiftId`, `amount`, `startTime`, `endTime`, `causeId`, `description`, `props` taşır
+- Create sırasında request body `jobOrderId`, `shiftId`, `amount`, `startTime`, `endTime`, `reasonId`, `description`, `props` taşır
 - `shiftId` create body içinde zorunludur
 - `startTime` ve `endTime` zorunludur
 - `endTime > startTime` olmalıdır
@@ -275,6 +275,9 @@ Formül: `actualGoodQuantity = grossProduction - scrap + quantity adjustments`
 - `grossProduction` owner'ı `operations-service`tir
 - `production-service` raw production counter veya speed history tutmaz
 - `actualGoodQuantity` response tarafında zorunlu alan değildir; UI bu değeri `grossProduction - scrap + quantity adjustments` ile kendisi hesaplar
+- `actualGoodQuantity` OEE quality kaynağı değildir. Performance OEE quality hesabı
+  `ScrapEntry.reasonId` ve Performance Reason `affectsOee` politikasına göre
+  `oeeAffectingScrap` / `excludedScrap` ayrımı yapar.
 - `runtimeState` kalıcı alan değildir; UI bu değeri `startTime` ve `endTime` üzerinden kendisi hesaplar
 
 ## Public API
@@ -387,7 +390,7 @@ Tüm collection `GET` endpoint'leri `work-center-service` ile aynı pagination s
 - `DELETE /quantity-adjustments/{id}`
 
 - `GET /scrap-entries`
-  - filters: `_id`, `jobOrderId`, `workCenterId`, `productId`, `shiftId`, `causeId`, `createdBy`, `startTimeFrom`, `startTimeTo`, `endTimeFrom`, `endTimeTo`, `createdAtFrom`, `createdAtTo`
+  - filters: `_id`, `jobOrderId`, `workCenterId`, `productId`, `shiftId`, `reasonId`, `createdBy`, `startTimeFrom`, `startTimeTo`, `endTimeFrom`, `endTimeTo`, `createdAtFrom`, `createdAtTo`
   - search fields: `description`
   - allowed sort: `startTime`, `endTime`, `amount`, `createdAt`, `updatedAt`
 - `GET /scrap-entries/{id}`
@@ -402,7 +405,10 @@ Tüm collection `GET` endpoint'leri `work-center-service` ile aynı pagination s
 - Public list/get operations for work-center-bound records only return items whose `workCenterId` is in the caller's `workCenterIds`.
 - Public create, update, delete, start, and end operations for work-center-bound records are allowed only when the target `workCenterId` is in the caller's `workCenterIds`.
 - `Uom`, `ProductCategory`, `Product`, and `ProductionPlan` use permission-only visibility.
-- Internal routes use the system-bypass convention.
+- Internal routes use the system-bypass convention. Service-to-service internal endpoints,
+  including Performance OEE batch endpoints, run with system identity and must not apply
+  end-user `workCenterIds` filtering. Public controllers must still enforce
+  `req.user.workCenterIds` before create/update/delete mutations.
 
 ## Permissions
 
@@ -449,18 +455,102 @@ Kurallar:
 
 - ilk started `JobOrder` sonrasında work center üretim ölçüm konfigürasyonu değiştirilemez
 
-### Operations -> Production
+### Performance -> Production
 
-Amaç: gross production ve cause ownership boundary.
+Amaç: scrap reason ownership boundary.
 
 Kurallar:
 
 - `grossProduction` owner'ı `operations-service`tir
-- `ScrapEntry.causeId` opsiyonel external referanstır
-- `causeId` master data owner'ı `operations-service`tir
-- Bu spec kapsamında `causeId` için synchronous validation zorunlu değildir; opaque reference olarak saklanabilir
+- `ScrapEntry.reasonId` opsiyonel external referanstır
+- `reasonId` master data owner'ı `performance-service` Reason kataloğudur
+- `reasonId` verilirse Performance Reason `usages` içinde `scrap` olmalıdır
+- `reasonId` yoksa Performance OEE quality hesabında scrap OEE-affecting kabul edilir
+- Production create/update path'leri mümkün olduğunda `reasonId` için Performance internal
+  validation kullanmalıdır; Performance OEE hesaplaması yine defensive davranmalı ve
+  bilinmeyen/missing reason'ı OEE-affecting saymalıdır
 - `shiftId` references `work-center-service.Shift` — production must validate shift existence via `GET /internal/v1/shifts/:id` on write paths (create/update).
 - **Delete guard:** Production exposes `GET /internal/v1/shifts/:id/references` so work-center can block shift delete when any `QuantityAdjustment` or `ScrapEntry` references the shift.
+
+### Performance OEE Hot Path -> Production
+
+Amaç: Performance OEE hesaplamasının çok sayıda küçük internal HTTP çağrısı yapmadan
+Production verilerini alması.
+
+Bu endpointler Performance OEE için required internal contract'tır. Public collection
+list endpointlerinin veya tekil service/controller fonksiyonlarının loop içinde
+çağrılması bu contract'ın yerine geçmez. Implementation bulk Mongo query, grouping ve
+projection/minimal response shape kullanmalıdır. TypeScript tarafında bu shape'ler `type`
+veya schema-inferred type olarak modellenmeli; mevcut modül convention'ı yoksa Java-style
+`dto` dosyaları oluşturulmamalıdır.
+
+#### Product Standard Timeline Batch
+
+```http
+POST /internal/v1/product-standards/timelines:batch
+```
+
+Request:
+
+```ts
+{
+  items: Array<{
+    jobOrderId: string
+    workCenterId: string
+    productId: string
+    from: string
+    to: string
+  }>
+}
+```
+
+Response:
+
+```ts
+{
+  items: Array<{
+    jobOrderId: string
+    standards: ProductStandard[]
+    qualityFlags: string[]
+  }>
+}
+```
+
+Davranış, tekil timeline endpoint'iyle aynı standard seçim semantiğini korur: `from`
+anında geçerli baseline standard ve aralık içindeki sonraki revision'lar dönmelidir.
+
+#### Job Order Records Batch
+
+```http
+POST /internal/v1/job-order-records:batch
+```
+
+Request:
+
+```ts
+{
+  items: Array<{
+    jobOrderId: string
+    from: string
+    to: string
+  }>
+  include: Array<'quantity_adjustments' | 'scrap_entries'>
+}
+```
+
+Response:
+
+```ts
+{
+  quantityAdjustmentsByJobOrderId: Record<string, QuantityAdjustment[]>
+  scrapEntriesByJobOrderId: Record<string, ScrapEntry[]>
+}
+```
+
+Bu endpoint tek job order için de çoklu job order için de aynı şekilde kullanılmalıdır.
+Performance tarafında tekil/çoklu ayrımıyla farklı endpointlere dallanma yapılmamalıdır.
+Response yalnız OEE'nin ihtiyaç duyduğu alanları içermelidir; gereksiz Mongo alanları
+yüklenmemeli ve serialize edilmemelidir.
 
 ## Cross-Cutting Rules
 
@@ -482,7 +572,8 @@ Every event includes `eventId`, `type`, `occurredAt`, `traceId`, and relevant id
 ## External Dependencies
 
 - `work-center-service`: `WorkCenter` varlığı, fiziksel/virtual ayrımı ve `productivityMode`
-- `operations-service`: `grossProduction` owner'ı ve `ScrapEntry.causeId` için cause master data owner'ı
+- `operations-service`: `grossProduction` owner'ı
+- `performance-service`: `ScrapEntry.reasonId` için reason master data owner'ı
 - `user-service` / auth context: public route authentication, permission çözümü ve `createdBy` / `startedBy` / `endedBy` actor kimliği
 - `work-center-service` (shift module): `shiftId` kimliği ve shift definition owner'ı
 

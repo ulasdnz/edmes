@@ -94,11 +94,50 @@ export const TELEMETRY_PRIVILEGES: readonly Privilege[] = Object.freeze([
   { code: 'readDiscovery', text: 'Read Discovery Data' },
 ])
 
+export const PERFORMANCE_PRIVILEGES: readonly Privilege[] = Object.freeze([
+  { code: 'readOee', text: 'Read OEE' },
+  { code: 'accessOeeScreen', text: 'Access OEE Screen' },
+  { code: 'readReasons', text: 'Read Reasons' },
+  { code: 'writeReasons', text: 'Write Reasons' },
+  { code: 'createReasons', text: 'Create Reasons' },
+  { code: 'deleteReasons', text: 'Delete Reasons' },
+  { code: 'accessReasonsScreen', text: 'Access Reasons Screen' },
+  { code: 'readPlannedStops', text: 'Read Planned Stops' },
+  { code: 'writePlannedStops', text: 'Write Planned Stops' },
+  { code: 'createPlannedStops', text: 'Create Planned Stops' },
+  { code: 'deletePlannedStops', text: 'Delete Planned Stops' },
+  { code: 'executePlannedStops', text: 'Execute Planned Stops' },
+  { code: 'accessPlannedStopsScreen', text: 'Access Planned Stops Screen' },
+  { code: 'readPlannedStopTemplates', text: 'Read Planned Stop Templates' },
+  { code: 'writePlannedStopTemplates', text: 'Write Planned Stop Templates' },
+  { code: 'createPlannedStopTemplates', text: 'Create Planned Stop Templates' },
+  { code: 'deletePlannedStopTemplates', text: 'Delete Planned Stop Templates' },
+  { code: 'executePlannedStopTemplates', text: 'Execute Planned Stop Templates' },
+  { code: 'accessPlannedStopTemplatesScreen', text: 'Access Planned Stop Templates Screen' },
+  { code: 'readPlannedStopSchedules', text: 'Read Planned Stop Schedules' },
+  { code: 'writePlannedStopSchedules', text: 'Write Planned Stop Schedules' },
+  { code: 'createPlannedStopSchedules', text: 'Create Planned Stop Schedules' },
+  { code: 'deletePlannedStopSchedules', text: 'Delete Planned Stop Schedules' },
+  { code: 'accessPlannedStopSchedulesScreen', text: 'Access Planned Stop Schedules Screen' },
+  { code: 'readUnplannedStops', text: 'Read Unplanned Stops' },
+  { code: 'writeUnplannedStops', text: 'Write Unplanned Stops' },
+  { code: 'createUnplannedStops', text: 'Create Unplanned Stops' },
+  { code: 'deleteUnplannedStops', text: 'Delete Unplanned Stops' },
+  { code: 'executeUnplannedStops', text: 'Execute Unplanned Stops' },
+  { code: 'closeUnplannedStops', text: 'Close Unplanned Stops' },
+  { code: 'convertUnplannedStops', text: 'Convert Unplanned Stops (to Planned)' },
+  { code: 'accessUnplannedStopsScreen', text: 'Access Unplanned Stops Screen' },
+  { code: 'readPerformancePolicy', text: 'Read Performance Policy' },
+  { code: 'writePerformancePolicy', text: 'Write Performance Policy' },
+  { code: 'accessPerformancePolicyScreen', text: 'Access Performance Policy Screen' },
+])
+
 export const PRIVILEGES: readonly Privilege[] = Object.freeze([
   ...USER_PRIVILEGES,
   ...WORK_CENTER_PRIVILEGES,
   ...PRODUCTION_PRIVILEGES,
   ...TELEMETRY_PRIVILEGES,
+  ...PERFORMANCE_PRIVILEGES,
 ])
 
 export const VALID_PRIVILEGE_CODES: ReadonlySet<string> = new Set(PRIVILEGES.map(p => p.code))
