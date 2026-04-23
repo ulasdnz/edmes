@@ -14,14 +14,23 @@ import type {
   QuantityAdjustmentListInput,
 } from './quantity-adjustment.validators.js'
 
+function assertVisible(workCenterId: string, visibleIds?: string[]): void {
+  if (!visibleIds) return
+  if (!visibleIds.includes(workCenterId)) {
+    throw new CustomError(404, 'error.not_found')
+  }
+}
+
 export async function create(
   data: CreateQuantityAdjustmentInput,
   userId: string,
+  visibleIds?: string[],
 ): Promise<IQuantityAdjustment> {
   if (data.shiftId) await assertShiftExists(String(data.shiftId))
 
   const jo = await JobOrder.findById(data.jobOrderId)
   if (!jo) throw new CustomError(404, 'error.not_found')
+  assertVisible(jo.workCenterId.toString(), visibleIds)
   if (!jo.startTime) throw new CustomError(400, 'error.job_order_not_started_for_adjustment')
 
   if (data.amount === 0) throw new CustomError(400, 'error.amount_zero')
@@ -93,11 +102,13 @@ export async function update(
   id: string,
   data: PatchQuantityAdjustmentInput,
   userId: string,
+  visibleIds?: string[],
 ): Promise<IQuantityAdjustment> {
   if (data.shiftId) await assertShiftExists(String(data.shiftId))
 
   const qa = await QuantityAdjustment.findById(id)
   if (!qa) throw new CustomError(404, 'error.not_found')
+  assertVisible(qa.workCenterId.toString(), visibleIds)
 
   if (data.amount !== undefined && data.amount === 0) {
     throw new CustomError(400, 'error.amount_zero')
@@ -105,7 +116,7 @@ export async function update(
 
   if (data.time) {
     const jo = await JobOrder.findById(qa.jobOrderId)
-    if (jo && jo.startTime && data.time < jo.startTime) {
+    if (jo?.startTime && data.time < jo.startTime) {
       throw new CustomError(400, 'error.job_order_time_before_start')
     }
   }
@@ -120,9 +131,11 @@ export async function update(
   return doc
 }
 
-export async function remove(id: string): Promise<IQuantityAdjustment> {
-  const doc = await QuantityAdjustment.findOneAndDelete({ _id: id })
+export async function remove(id: string, visibleIds?: string[]): Promise<IQuantityAdjustment> {
+  const doc = await QuantityAdjustment.findById(id)
   if (!doc) throw new CustomError(404, 'error.not_found')
+  assertVisible(doc.workCenterId.toString(), visibleIds)
+  await QuantityAdjustment.deleteOne({ _id: id })
   emitQuantityAdjustmentDeleted(id, doc.jobOrderId.toString(), doc.workCenterId.toString())
   return doc
 }

@@ -12,6 +12,7 @@ import { sharedCacheWrapDedup } from '../../lib/cache.js'
 import { httpLoggerMiddleware, logger, morganMiddleware } from '../../lib/logger.js'
 import { generateOpenApiDocument } from '../../lib/openapi/setup.js'
 import { redisClient } from '../../lib/redis.js'
+import runModeMonitorsRoutes from '../../modules/internal/run-mode-monitors.routes.js'
 import operatorRoutes from '../../modules/operators/operators.routes.js'
 import scheduleRoutes from '../../modules/schedule/schedule.routes.js'
 import shiftRoutes from '../../modules/shift/shift.routes.js'
@@ -71,7 +72,7 @@ export const initExpress = async () => {
     try {
       const { default: swaggerUi } = await import('swagger-ui-express')
       app.use('/docs', swaggerUi.serve, swaggerUi.setup(openApiSpec))
-    } catch (error) {
+    } catch (_error) {
       logger.debug('Swagger UI not available — swagger-ui-express is not installed', {
         event: 'server.swagger.unavailable',
       })
@@ -101,6 +102,9 @@ export const initExpress = async () => {
     setUserId(SYSTEM_IDENTITY)
     next()
   })
+  // Internal-only routes mounted BEFORE shared routes so their specific paths
+  // win over generic `:id` param routes (e.g. GET /work-centers/:id).
+  internalRouter.use(runModeMonitorsRoutes)
   mountSharedRoutes(internalRouter)
 
   app.use('/internal/v1', internalRouter)

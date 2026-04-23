@@ -13,7 +13,7 @@ function assertVisible(workCenterId: string, visibleIds?: string[]): void {
 }
 
 export const create = async (req: Request, res: Response<SuccessResponse<IQuantityAdjustment>>) => {
-  const doc = await service.create(req.body, req.user!.id)
+  const doc = await service.create(req.body, req.user?.id, req.user?.workCenterIds)
   res.status(201).json({ message: req.t('success.create'), data: doc })
 }
 
@@ -22,12 +22,12 @@ export const getById = async (
   res: Response<SuccessResponse<IQuantityAdjustment>>,
 ) => {
   const doc = await service.getById(req.params.id)
-  assertVisible(doc.workCenterId.toString(), req.user!.workCenterIds)
+  assertVisible(doc.workCenterId.toString(), req.user?.workCenterIds)
   res.json({ data: doc })
 }
 
 export const list = async (req: Request, res: Response<PaginatedResult<IQuantityAdjustment>>) => {
-  const result = await service.list(req.query as never, req.user!.workCenterIds)
+  const result = await service.list(req.query as never, req.user?.workCenterIds)
   res.json(result)
 }
 
@@ -35,7 +35,7 @@ export const update = async (
   req: Request<{ id: string }>,
   res: Response<SuccessResponse<IQuantityAdjustment>>,
 ) => {
-  const doc = await service.update(req.params.id, req.body, req.user!.id)
+  const doc = await service.update(req.params.id, req.body, req.user?.id, req.user?.workCenterIds)
   res.json({ message: req.t('success.update'), data: doc })
 }
 
@@ -43,6 +43,6 @@ export const remove = async (
   req: Request<{ id: string }>,
   res: Response<SuccessResponse<IQuantityAdjustment>>,
 ) => {
-  const doc = await service.remove(req.params.id)
+  const doc = await service.remove(req.params.id, req.user?.workCenterIds)
   res.json({ message: req.t('success.delete'), data: doc })
 }

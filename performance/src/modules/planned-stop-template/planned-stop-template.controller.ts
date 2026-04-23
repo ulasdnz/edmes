@@ -1,0 +1,56 @@
+import type { Request, Response } from 'express'
+import type { SuccessResponse } from '../../core/types/api.types.js'
+import type { IPlannedStopTemplate } from './planned-stop-template.model.js'
+import * as service from './planned-stop-template.service.js'
+
+export const create = async (
+  req: Request,
+  res: Response<SuccessResponse<IPlannedStopTemplate>>,
+) => {
+  const doc = await service.create(req.body, req.user?.id)
+  res.status(201).json({ message: req.t('success.create'), data: doc })
+}
+
+export const getById = async (
+  req: Request<{ id: string }>,
+  res: Response<SuccessResponse<IPlannedStopTemplate>>,
+) => {
+  const doc = await service.getById(req.params.id)
+  res.json({ data: doc })
+}
+
+export const list = async (
+  req: Request,
+  res: Response<SuccessResponse<IPlannedStopTemplate[]>>,
+) => {
+  const data = await service.list(req.query as never)
+  res.json({ data })
+}
+
+export const update = async (
+  req: Request<{ id: string }>,
+  res: Response<SuccessResponse<IPlannedStopTemplate>>,
+) => {
+  const doc = await service.update(req.params.id, req.body, req.user?.id)
+  res.json({ message: req.t('success.update'), data: doc })
+}
+
+export const remove = async (
+  req: Request<{ id: string }>,
+  res: Response<SuccessResponse<IPlannedStopTemplate>>,
+) => {
+  const doc = await service.remove(req.params.id)
+  res.json({ message: req.t('success.delete'), data: doc })
+}
+
+export const startFromTemplate = async (req: Request<{ id: string }>, res: Response) => {
+  const doc = await service.startFromTemplate(req.params.id, req.body, req.user?.id)
+  res.status(201).json({ message: req.t('success.create'), data: doc })
+}
+
+export const closeFromTemplate = async (req: Request<{ id: string }>, res: Response) => {
+  const doc = await service.closeFromTemplate(req.body.plannedStopId, req.user?.id, {
+    actualEndAt: req.body.actualEndAt,
+  })
+  res.json({ message: req.t('success.update'), data: doc })
+}

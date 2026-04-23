@@ -84,6 +84,18 @@ describe('QuantityAdjustmentService', () => {
       )
     })
 
+    it('rejects create when job order work center is not visible', async () => {
+      const otherWc = new Types.ObjectId()
+      const jo = await createStartedJobOrder({
+        code: `JO-CV-${Date.now()}`,
+        workCenterId: otherWc,
+      })
+
+      await expect(
+        qaService.create(buildInput(jo._id.toString()), userId, [wcId.toString()]),
+      ).rejects.toThrow('error.not_found')
+    })
+
     it('throws 400 if amount is zero', async () => {
       const jo = await createStartedJobOrder()
       await expect(
@@ -221,6 +233,19 @@ describe('QuantityAdjustmentService', () => {
       )
     })
 
+    it('rejects update when adjustment work center is not visible', async () => {
+      const otherWc = new Types.ObjectId()
+      const jo = await createStartedJobOrder({
+        code: `JO-UV-${Date.now()}`,
+        workCenterId: otherWc,
+      })
+      const created = await qaService.create(buildInput(jo._id.toString()), userId)
+
+      await expect(
+        qaService.update(created._id.toString(), { amount: 10 }, userId, [wcId.toString()]),
+      ).rejects.toThrow('error.not_found')
+    })
+
     it('throws 400 if updated amount is zero', async () => {
       const jo = await createStartedJobOrder()
       const created = await qaService.create(buildInput(jo._id.toString()), userId)
@@ -255,6 +280,19 @@ describe('QuantityAdjustmentService', () => {
       const fakeId = new Types.ObjectId().toString()
       await expect(qaService.remove(fakeId)).rejects.toThrow('error.not_found')
     })
+
+    it('rejects remove when adjustment work center is not visible', async () => {
+      const otherWc = new Types.ObjectId()
+      const jo = await createStartedJobOrder({
+        code: `JO-RV-${Date.now()}`,
+        workCenterId: otherWc,
+      })
+      const created = await qaService.create(buildInput(jo._id.toString()), userId)
+
+      await expect(qaService.remove(created._id.toString(), [wcId.toString()])).rejects.toThrow(
+        'error.not_found',
+      )
+    })
   })
 
   // ── Emit verification ────────────────────────────────────────────────
@@ -273,7 +311,7 @@ describe('QuantityAdjustmentService', () => {
 
     it('passes all three params as strings via .toString()', async () => {
       const jo = await createStartedJobOrder()
-      const doc = await qaService.create(buildInput(jo._id.toString()), userId)
+      const _doc = await qaService.create(buildInput(jo._id.toString()), userId)
       const args = vi.mocked(emitQuantityAdjustmentCreated).mock.calls[0]
 
       expect(typeof args[0]).toBe('string')

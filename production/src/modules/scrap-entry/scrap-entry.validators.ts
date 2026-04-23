@@ -3,16 +3,18 @@ import { z } from 'zod'
 import { paginationSchema } from '../../utils/pagination.js'
 import { objectIdSchema } from '../../utils/validators.js'
 
-export const createScrapEntrySchema = z.object({
-  jobOrderId: objectIdSchema,
-  shiftId: objectIdSchema,
-  amount: z.number().positive(),
-  startTime: utcDateSchema,
-  endTime: utcDateSchema,
-  causeId: objectIdSchema.nullable().optional(),
-  description: z.string().max(500).nullable().optional(),
-  props: z.record(z.string(), z.string()).optional(),
-}).strict()
+export const createScrapEntrySchema = z
+  .object({
+    jobOrderId: objectIdSchema,
+    shiftId: objectIdSchema,
+    amount: z.number().positive(),
+    startTime: utcDateSchema,
+    endTime: utcDateSchema,
+    reasonId: objectIdSchema.nullable().optional(),
+    description: z.string().max(500).nullable().optional(),
+    props: z.record(z.string(), z.string()).optional(),
+  })
+  .strict()
 
 export const patchScrapEntrySchema = z
   .object({
@@ -20,7 +22,7 @@ export const patchScrapEntrySchema = z
     amount: z.number().positive().optional(),
     startTime: utcDateSchema.optional(),
     endTime: utcDateSchema.optional(),
-    causeId: objectIdSchema.nullable().optional(),
+    reasonId: objectIdSchema.nullable().optional(),
     description: z.string().max(500).nullable().optional(),
     props: z.record(z.string(), z.string()).optional(),
   })
@@ -35,7 +37,7 @@ export const scrapEntryListSchema = paginationSchema.extend({
   workCenterId: objectIdSchema.optional(),
   productId: objectIdSchema.optional(),
   shiftId: objectIdSchema.optional(),
-  causeId: objectIdSchema.optional(),
+  reasonId: objectIdSchema.optional(),
   createdBy: objectIdSchema.optional(),
   startTimeFrom: utcDateSchema.optional(),
   startTimeTo: utcDateSchema.optional(),

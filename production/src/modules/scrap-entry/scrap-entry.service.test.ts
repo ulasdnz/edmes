@@ -23,6 +23,7 @@ vi.mock('../../lib/internal-api.js', () => ({
 const wcId = new Types.ObjectId()
 const productId = new Types.ObjectId()
 const shiftId = new Types.ObjectId()
+const reasonId = new Types.ObjectId()
 const userId = new Types.ObjectId().toString()
 
 const joStart = new Date('2026-03-01T08:00:00Z')
@@ -48,6 +49,7 @@ const buildInput = (jobOrderId: string, overrides: Record<string, unknown> = {})
   amount: 3,
   startTime: new Date('2026-03-01T09:00:00Z'),
   endTime: new Date('2026-03-01T10:00:00Z'),
+  reasonId: reasonId.toString(),
   ...overrides,
 })
 
@@ -61,6 +63,7 @@ describe('ScrapEntryService', () => {
       expect(doc.amount).toBe(3)
       expect(doc.workCenterId.toString()).toBe(wcId.toString())
       expect(doc.productId.toString()).toBe(productId.toString())
+      expect(doc.reasonId?.toString()).toBe(reasonId.toString())
       expect(doc.createdBy.toString()).toBe(userId)
     })
 
@@ -85,6 +88,18 @@ describe('ScrapEntryService', () => {
       await expect(scrapService.create(buildInput(jo._id.toString()), userId)).rejects.toThrow(
         'error.job_order_not_started_for_adjustment',
       )
+    })
+
+    it('rejects create when job order work center is not visible', async () => {
+      const otherWc = new Types.ObjectId()
+      const jo = await createStartedJobOrder({
+        code: `JO-CV-${Date.now()}`,
+        workCenterId: otherWc,
+      })
+
+      await expect(
+        scrapService.create(buildInput(jo._id.toString()), userId, [wcId.toString()]),
+      ).rejects.toThrow('error.not_found')
     })
 
     it('throws 400 if endTime <= startTime', async () => {
@@ -213,6 +228,29 @@ describe('ScrapEntryService', () => {
       expect(result.data.length).toBe(1)
     })
 
+    it('filters by reasonId', async () => {
+      const jo = await createStartedJobOrder()
+      const otherReasonId = new Types.ObjectId()
+      await scrapService.create(buildInput(jo._id.toString()), userId)
+      await scrapService.create(
+        buildInput(jo._id.toString(), {
+          reasonId: otherReasonId.toString(),
+          startTime: new Date('2026-03-01T11:00:00Z'),
+          endTime: new Date('2026-03-01T12:00:00Z'),
+        }),
+        userId,
+      )
+
+      const result = await scrapService.list({
+        page: 1,
+        limit: 10,
+        reasonId: reasonId.toString(),
+      })
+
+      expect(result.data.length).toBe(1)
+      expect(result.data[0]?.reasonId?.toString()).toBe(reasonId.toString())
+    })
+
     it('filters by visibleIds (work center scoping)', async () => {
       const otherWc = new Types.ObjectId()
       const jo1 = await createStartedJobOrder({ code: `JO-V1-${Date.now()}` })
@@ -272,6 +310,19 @@ describe('ScrapEntryService', () => {
       )
     })
 
+    it('rejects update when scrap entry work center is not visible', async () => {
+      const otherWc = new Types.ObjectId()
+      const jo = await createStartedJobOrder({
+        code: `JO-UV-${Date.now()}`,
+        workCenterId: otherWc,
+      })
+      const created = await scrapService.create(buildInput(jo._id.toString()), userId)
+
+      await expect(
+        scrapService.update(created._id.toString(), { amount: 10 }, userId, [wcId.toString()]),
+      ).rejects.toThrow('error.not_found')
+    })
+
     it('throws 400 if updated endTime <= startTime', async () => {
       const jo = await createStartedJobOrder()
       const created = await scrapService.create(buildInput(jo._id.toString()), userId)
@@ -313,6 +364,19 @@ describe('ScrapEntryService', () => {
       const fakeId = new Types.ObjectId().toString()
       await expect(scrapService.remove(fakeId)).rejects.toThrow('error.not_found')
     })
+
+    it('rejects remove when scrap entry work center is not visible', async () => {
+      const otherWc = new Types.ObjectId()
+      const jo = await createStartedJobOrder({
+        code: `JO-RV-${Date.now()}`,
+        workCenterId: otherWc,
+      })
+      const created = await scrapService.create(buildInput(jo._id.toString()), userId)
+
+      await expect(scrapService.remove(created._id.toString(), [wcId.toString()])).rejects.toThrow(
+        'error.not_found',
+      )
+    })
   })
 
   // ── Emit verification ────────────────────────────────────────────────
@@ -331,7 +395,7 @@ describe('ScrapEntryService', () => {
 
     it('passes all three params as strings via .toString()', async () => {
       const jo = await createStartedJobOrder()
-      const doc = await scrapService.create(buildInput(jo._id.toString()), userId)
+      const _doc = await scrapService.create(buildInput(jo._id.toString()), userId)
       const args = vi.mocked(emitScrapEntryCreated).mock.calls[0]
 
       expect(typeof args[0]).toBe('string')

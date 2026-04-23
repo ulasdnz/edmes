@@ -12,7 +12,7 @@ const scrapEntrySchema = new Schema(
     amount: { type: Number, required: true },
     startTime: { type: Date, required: true },
     endTime: { type: Date, required: true },
-    causeId: { type: Schema.Types.ObjectId, default: null },
+    reasonId: { type: Schema.Types.ObjectId, default: null },
     description: { type: String, default: null },
     props: { type: Map, of: String, default: () => new Map() },
     createdBy: { type: Schema.Types.ObjectId, required: true },

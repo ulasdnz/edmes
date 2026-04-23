@@ -14,11 +14,23 @@ import type {
   ScrapEntryListInput,
 } from './scrap-entry.validators.js'
 
-export async function create(data: CreateScrapEntryInput, userId: string): Promise<IScrapEntry> {
+function assertVisible(workCenterId: string, visibleIds?: string[]): void {
+  if (!visibleIds) return
+  if (!visibleIds.includes(workCenterId)) {
+    throw new CustomError(404, 'error.not_found')
+  }
+}
+
+export async function create(
+  data: CreateScrapEntryInput,
+  userId: string,
+  visibleIds?: string[],
+): Promise<IScrapEntry> {
   if (data.shiftId) await assertShiftExists(String(data.shiftId))
 
   const jo = await JobOrder.findById(data.jobOrderId)
   if (!jo) throw new CustomError(404, 'error.not_found')
+  assertVisible(jo.workCenterId.toString(), visibleIds)
   if (!jo.startTime) throw new CustomError(400, 'error.job_order_not_started_for_adjustment')
 
   if (data.amount <= 0) throw new CustomError(400, 'error.amount_not_positive')
@@ -107,11 +119,13 @@ export async function update(
   id: string,
   data: PatchScrapEntryInput,
   userId: string,
+  visibleIds?: string[],
 ): Promise<IScrapEntry> {
   if (data.shiftId) await assertShiftExists(String(data.shiftId))
 
   const scrap = await ScrapEntry.findById(id)
   if (!scrap) throw new CustomError(404, 'error.not_found')
+  assertVisible(scrap.workCenterId.toString(), visibleIds)
 
   const newStartTime = data.startTime ?? scrap.startTime
   const newEndTime = data.endTime ?? scrap.endTime
@@ -122,7 +136,7 @@ export async function update(
 
   if (data.startTime) {
     const jo = await JobOrder.findById(scrap.jobOrderId)
-    if (jo && jo.startTime && data.startTime < jo.startTime) {
+    if (jo?.startTime && data.startTime < jo.startTime) {
       throw new CustomError(400, 'error.job_order_time_before_start')
     }
   }
@@ -137,9 +151,11 @@ export async function update(
   return doc
 }
 
-export async function remove(id: string): Promise<IScrapEntry> {
-  const doc = await ScrapEntry.findOneAndDelete({ _id: id })
+export async function remove(id: string, visibleIds?: string[]): Promise<IScrapEntry> {
+  const doc = await ScrapEntry.findById(id)
   if (!doc) throw new CustomError(404, 'error.not_found')
+  assertVisible(doc.workCenterId.toString(), visibleIds)
+  await ScrapEntry.deleteOne({ _id: id })
   emitScrapEntryDeleted(id, doc.jobOrderId.toString(), doc.workCenterId.toString())
   return doc
 }
