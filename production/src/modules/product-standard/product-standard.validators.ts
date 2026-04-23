@@ -3,14 +3,16 @@ import { z } from 'zod'
 import { paginationSchema } from '../../utils/pagination.js'
 import { objectIdSchema } from '../../utils/validators.js'
 
-export const createProductStandardSchema = z.object({
-  productId: objectIdSchema,
-  workCenterId: objectIdSchema,
-  validFrom: utcDateSchema.optional(),
-  idealOutputPerMinute: z.number().positive(),
-  counterMultiplier: z.number().positive().nullable().optional(),
-  idealSpeed: z.number().positive().nullable().optional(),
-}).strict()
+export const createProductStandardSchema = z
+  .object({
+    productId: objectIdSchema,
+    workCenterId: objectIdSchema,
+    validFrom: utcDateSchema.optional(),
+    idealOutputPerMinute: z.number().positive(),
+    counterMultiplier: z.number().positive().nullable().optional(),
+    idealSpeed: z.number().positive().nullable().optional(),
+  })
+  .strict()
 
 export const patchProductStandardSchema = z
   .object({
@@ -34,6 +36,33 @@ export const productStandardListSchema = paginationSchema.extend({
   createdAtTo: utcDateSchema.optional(),
 })
 
+export const timelinesBatchSchema = z
+  .object({
+    items: z
+      .array(
+        z
+          .object({
+            jobOrderId: objectIdSchema,
+            workCenterId: objectIdSchema,
+            productId: objectIdSchema,
+            from: utcDateSchema,
+            to: utcDateSchema,
+          })
+          .strict()
+          .refine(
+            v =>
+              !(v.from instanceof Date) ||
+              !(v.to instanceof Date) ||
+              v.from.getTime() <= v.to.getTime(),
+            { message: 'error.invalid_range', path: ['from'] },
+          ),
+      )
+      .min(1)
+      .max(500),
+  })
+  .strict()
+
 export type CreateProductStandardInput = z.infer<typeof createProductStandardSchema>
 export type PatchProductStandardInput = z.infer<typeof patchProductStandardSchema>
 export type ProductStandardListInput = z.infer<typeof productStandardListSchema>
+export type TimelinesBatchInput = z.infer<typeof timelinesBatchSchema>

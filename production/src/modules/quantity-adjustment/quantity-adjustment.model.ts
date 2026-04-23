@@ -19,6 +19,8 @@ const quantityAdjustmentSchema = new Schema(
   { timestamps: true, strict: true },
 )
 
+quantityAdjustmentSchema.index({ jobOrderId: 1, time: 1 })
+
 quantityAdjustmentSchema.set('toObject', {
   transform: (_doc: unknown, ret: Record<string, unknown>) => {
     delete ret.__v

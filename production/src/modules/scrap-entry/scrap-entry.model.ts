@@ -21,6 +21,8 @@ const scrapEntrySchema = new Schema(
   { timestamps: true, strict: true },
 )
 
+scrapEntrySchema.index({ jobOrderId: 1, startTime: 1, endTime: 1 })
+
 scrapEntrySchema.set('toObject', {
   transform: (_doc: unknown, ret: Record<string, unknown>) => {
     delete ret.__v
