@@ -354,4 +354,184 @@ describe('calculateOee — stage orchestration', () => {
       )
     }
   })
+
+  it('net_run_segments: gross produced for quality uses full JO window (extra telemetry call), not run-segment windows', async () => {
+    // JO: 06:00–18:00 (720 min). Planned non-effective stop: 10:00–12:00 (120 min).
+    // Run segments: 06:00–10:00 (240 min) + 12:00–18:00 (360 min) = 600 min.
+    // Telemetry reports 100 units/min uniformly throughout.
+    //   Productivity call (run-segment windows): 600 min × 100 = 60 000 units
+    //   Quality call (full JO window): 720 min × 100 = 72 000 units gross
+    // Without fix: grossProducedAcrossExecution would be derived from productivity.actualOutput
+    //   (which is over run-segment windows) → under-counts by 12 000.
+    // With fix: a second producedSummary call over the full JO window returns 72 000.
+
+    const stopStart = new Date('2026-01-01T10:00:00.000Z')
+    const stopEnd = new Date('2026-01-01T12:00:00.000Z')
+
+    vi.mocked(policyService.resolveForWorkCenter).mockResolvedValue({
+      ...BASE_POLICY,
+      actualOutputWindowMode: 'net_run_segments',
+    })
+
+    vi.mocked(oeeRepository.findStopsForOee).mockResolvedValue({
+      planned: [
+        {
+          _id: 'stop1',
+          workCenterId: WC_ID,
+          reasonId: 'reason1',
+          source: 'planned',
+          start: stopStart,
+          end: stopEnd,
+        },
+      ],
+      unplanned: [],
+      microStopReasonId: 'ffffffffffffffffffffffff',
+    })
+
+    vi.mocked(productionClient.findJobOrderRecordsBatch).mockResolvedValue({
+      quantityAdjustmentsByJobOrderId: {},
+      scrapEntriesByJobOrderId: {},
+    })
+
+    // producedSummary is called twice:
+    //   call 0 → productivity (run-segment windows): two windows, each value=30 000, total=60 000
+    //   call 1 → quality (full JO window): one window, value=72 000, total=72 000
+    let producedSummaryCallCount = 0
+    vi.mocked(telemetryClient.producedSummary).mockImplementation(async (_tagId, windows) => {
+      producedSummaryCallCount++
+      if (producedSummaryCallCount === 1) {
+        // Productivity call: two run-segment windows (240 min + 360 min at 100/min)
+        return {
+          windows: windows.map(w => ({
+            from: typeof w.from === 'string' ? w.from : (w.from as Date).toISOString(),
+            to: typeof w.to === 'string' ? w.to : (w.to as Date).toISOString(),
+            value: 30_000,
+            qualityFlags: [],
+          })),
+          total: 60_000,
+        }
+      }
+      // Quality call: full JO window (720 min at 100/min = 72 000)
+      return {
+        windows: windows.map(w => ({
+          from: typeof w.from === 'string' ? w.from : (w.from as Date).toISOString(),
+          to: typeof w.to === 'string' ? w.to : (w.to as Date).toISOString(),
+          value: 72_000,
+          qualityFlags: [],
+        })),
+        total: 72_000,
+      }
+    })
+
+    const result = await calculateOee({ workCenterId: WC_ID, range: RANGE })
+
+    // Must have issued exactly 2 calls to producedSummary
+    expect(telemetryClient.producedSummary).toHaveBeenCalledTimes(2)
+
+    // The second call must use the full JO window (single window: 06:00–18:00)
+    const qualityCall = vi.mocked(telemetryClient.producedSummary).mock.calls[1]
+    const qualityWindows = qualityCall[1]
+    expect(qualityWindows).toHaveLength(1)
+    expect(new Date(qualityWindows[0].from as never).toISOString()).toBe('2026-01-01T06:00:00.000Z')
+    expect(new Date(qualityWindows[0].to as never).toISOString()).toBe('2026-01-01T18:00:00.000Z')
+
+    // gross produced must be 72 000 (from full JO window), not 60 000 (from run segments)
+    // total = grossProduced + quantityAdjustment = 72 000 + 0 = 72 000
+    expect(result.quality.total).toBe(72_000)
+  })
+
+  it('net_run_segments speed_based: gross produced for quality uses full JO window (extra speedSummary call)', async () => {
+    // Same scenario as above but speed_based mode.
+    const stopStart = new Date('2026-01-01T10:00:00.000Z')
+    const stopEnd = new Date('2026-01-01T12:00:00.000Z')
+
+    vi.mocked(workCenterClient.getById).mockResolvedValue({
+      ...BASE_WC,
+      productivityMode: 'speed_based',
+    })
+
+    vi.mocked(policyService.resolveForWorkCenter).mockResolvedValue({
+      ...BASE_POLICY,
+      actualOutputWindowMode: 'net_run_segments',
+    })
+
+    vi.mocked(oeeRepository.findStopsForOee).mockResolvedValue({
+      planned: [
+        {
+          _id: 'stop1',
+          workCenterId: WC_ID,
+          reasonId: 'reason1',
+          source: 'planned',
+          start: stopStart,
+          end: stopEnd,
+        },
+      ],
+      unplanned: [],
+      microStopReasonId: 'ffffffffffffffffffffffff',
+    })
+
+    vi.mocked(productionClient.findJobOrderRecordsBatch).mockResolvedValue({
+      quantityAdjustmentsByJobOrderId: {},
+      scrapEntriesByJobOrderId: {},
+    })
+
+    // valueArea is unit×ms; output = valueArea * counterMultiplier / 60000.
+    // counterMultiplier=1 (from BASE_STANDARDS). To yield 60 000 output units from two
+    // run-segment windows (each 30 000 output units): valueArea per window = 30 000 * 60 000 = 1 800 000 000.
+    // To yield 72 000 output from the full JO window: valueArea = 72 000 * 60 000 = 4 320 000 000.
+    let speedSummaryCallCount = 0
+    vi.mocked(telemetryClient.speedSummary).mockImplementation(async (_tagId, windows) => {
+      speedSummaryCallCount++
+      if (speedSummaryCallCount === 1) {
+        // Productivity call: run-segment windows
+        return {
+          windows: windows.map(w => ({
+            from: typeof w.from === 'string' ? w.from : (w.from as Date).toISOString(),
+            to: typeof w.to === 'string' ? w.to : (w.to as Date).toISOString(),
+            valueArea: 1_800_000_000,
+            durationMs: 0,
+            timeWeightedAverage: 0,
+            sampleCount: 0,
+          })),
+          total: { durationMs: 0, timeWeightedAverage: 0, valueArea: 3_600_000_000 },
+        }
+      }
+      // Quality call: full JO window (720 min × 100/min × 60000 ms/min = 4 320 000 000)
+      return {
+        windows: windows.map(w => ({
+          from: typeof w.from === 'string' ? w.from : (w.from as Date).toISOString(),
+          to: typeof w.to === 'string' ? w.to : (w.to as Date).toISOString(),
+          valueArea: 4_320_000_000,
+          durationMs: 0,
+          timeWeightedAverage: 0,
+          sampleCount: 0,
+        })),
+        total: { durationMs: 0, timeWeightedAverage: 0, valueArea: 4_320_000_000 },
+      }
+    })
+
+    const result = await calculateOee({ workCenterId: WC_ID, range: RANGE })
+
+    expect(telemetryClient.speedSummary).toHaveBeenCalledTimes(2)
+    expect(telemetryClient.producedSummary).not.toHaveBeenCalled()
+
+    const qualityCall = vi.mocked(telemetryClient.speedSummary).mock.calls[1]
+    const qualityWindows = qualityCall[1]
+    expect(qualityWindows).toHaveLength(1)
+
+    expect(result.quality.total).toBe(72_000)
+  })
+
+  it('execution_span: no extra telemetry call for quality (gross produced reused from productivity)', async () => {
+    // execution_span: actualOutputWindows === jobOrderWindows → no extra call needed.
+    vi.mocked(policyService.resolveForWorkCenter).mockResolvedValue({
+      ...BASE_POLICY,
+      actualOutputWindowMode: 'execution_span',
+    })
+
+    await calculateOee({ workCenterId: WC_ID, range: RANGE })
+
+    // Only 1 producedSummary call (productivity); quality reuses the result
+    expect(telemetryClient.producedSummary).toHaveBeenCalledTimes(1)
+  })
 })

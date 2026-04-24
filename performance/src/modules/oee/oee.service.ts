@@ -12,6 +12,34 @@ import type { OeeRange } from './oee.types.js'
 import { calculateProductivity } from './productivity.calc.js'
 import { calculateQuality } from './quality.calc.js'
 
+type StandardSubWindow = { start: Date; end: Date; counterMultiplier: number | null }
+
+function splitAtStandardBoundaries(
+  windowStart: Date,
+  windowEnd: Date,
+  standards: Array<{ validFrom: string | Date; counterMultiplier?: number | null }>,
+): StandardSubWindow[] {
+  if (standards.length === 0) return []
+  const sorted = [...standards].sort(
+    (a, b) => new Date(a.validFrom).getTime() - new Date(b.validFrom).getTime(),
+  )
+  const result: StandardSubWindow[] = []
+  for (let i = 0; i < sorted.length; i++) {
+    const stdStart = new Date(sorted[i].validFrom)
+    const stdEnd =
+      i + 1 < sorted.length ? new Date(sorted[i + 1].validFrom) : new Date(8640000000000000)
+    const clipped = clip({ start: windowStart, end: windowEnd }, { start: stdStart, end: stdEnd })
+    if (clipped) {
+      result.push({
+        start: clipped.start,
+        end: clipped.end,
+        counterMultiplier: sorted[i].counterMultiplier ?? null,
+      })
+    }
+  }
+  return result
+}
+
 export type OeeInput = {
   workCenterId: string
   range: OeeRange
@@ -209,13 +237,63 @@ export async function calculateOee(input: OeeInput): Promise<OeeOutput> {
   )
   const knownReasonIds = await reasonService.findExistingIds(allScrapReasonIds)
 
+  // ── Stage 5.5: gross produced over full JO windows (for quality) ──────────
+  // In execution_span mode, actualOutputWindows === jobOrderWindows, so productivity's
+  // actualOutput already accounts for the full JO span → derive gross directly.
+  // In net_run_segments mode, productivity used only run-segment sub-windows, which exclude
+  // time during stops. Quality must reflect the FULL JO window (production during stops still
+  // happened and counts toward gross output). Issue one extra telemetry call per tag.
+  const grossProducedPerJo: Record<string, number> = {}
+
+  if (policy.actualOutputWindowMode === 'net_run_segments') {
+    const joWindowsForTelemetry = clippedJobWindows.map(jw => ({ from: jw.start, to: jw.end }))
+
+    const [joProducedResult, joSpeedResult] = await Promise.all([
+      isCountBased && producedCounterTagId
+        ? telemetryClient.producedSummary(producedCounterTagId, joWindowsForTelemetry)
+        : Promise.resolve(null),
+      !isCountBased && speedTagId
+        ? telemetryClient.speedSummary(speedTagId, joWindowsForTelemetry)
+        : Promise.resolve(null),
+    ])
+
+    for (let i = 0; i < clippedJobWindows.length; i++) {
+      const jw = clippedJobWindows[i]
+      if (joProducedResult) {
+        grossProducedPerJo[jw.jobOrderId] = joProducedResult.windows[i]?.value ?? 0
+      } else if (joSpeedResult) {
+        const standards = productStandardsByJobOrderId[jw.jobOrderId] ?? []
+        const ssw = joSpeedResult.windows[i]
+        if (ssw) {
+          let speedTotal = 0
+          const subWindows = splitAtStandardBoundaries(jw.start, jw.end, standards)
+          for (const sub of subWindows) {
+            const sswFrom = new Date(ssw.from).getTime()
+            const sswTo = new Date(ssw.to).getTime()
+            const overlapStart = Math.max(sswFrom, sub.start.getTime())
+            const overlapEnd = Math.min(sswTo, sub.end.getTime())
+            if (overlapEnd > overlapStart) {
+              const fraction = (overlapEnd - overlapStart) / (sswTo - sswFrom)
+              speedTotal += (ssw.valueArea * fraction * (sub.counterMultiplier ?? 1)) / 60000
+            }
+          }
+          grossProducedPerJo[jw.jobOrderId] = speedTotal
+        } else {
+          grossProducedPerJo[jw.jobOrderId] = 0
+        }
+      } else {
+        grossProducedPerJo[jw.jobOrderId] = 0
+      }
+    }
+  } else {
+    for (const jo of productivity.jobOrders) {
+      if (!jo.notCalculable) {
+        grossProducedPerJo[jo.jobOrderId] = jo.actualOutput - jo.quantityAdjustment
+      }
+    }
+  }
+
   // ── Stage 6: quality ──────────────────────────────────────────────────────
-  // grossProducedAcrossExecution: sum of per-JO gross produced over jobOrderWindows (execution_span).
-  // For execution_span mode, productivity.jobOrders[].actualOutput already uses JO windows → reuse.
-  // For net_run_segments mode, productivity used actualOutputWindows (run segments) which differ from
-  // JO windows; we reuse productivity's actualOutput minus quantityAdjustment to recover grossProduced.
-  // This avoids an extra telemetry call and is correct because:
-  //   actualOutput = grossProduced + quantityAdjustment (both computed over the same window set per JO).
   const scrapEntriesByJo = clippedJobWindows.map(jw => {
     const entries = (scrapEntriesByJobOrderId[jw.jobOrderId] ?? []).map(e => ({
       amount: e.amount,
@@ -230,7 +308,7 @@ export async function calculateOee(input: OeeInput): Promise<OeeOutput> {
   let quantityAdjustmentSum = 0
   for (const jo of productivity.jobOrders) {
     if (!jo.notCalculable) {
-      grossProducedAcrossExecution += jo.actualOutput - jo.quantityAdjustment
+      grossProducedAcrossExecution += grossProducedPerJo[jo.jobOrderId] ?? 0
       quantityAdjustmentSum += jo.quantityAdjustment
     }
   }
