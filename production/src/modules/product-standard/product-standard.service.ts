@@ -17,6 +17,14 @@ import type {
   TimelinesBatchInput,
 } from './product-standard.validators.js'
 
+type AppliedJobOrder = {
+  _id: mongoose.Types.ObjectId
+  productId: mongoose.Types.ObjectId
+  workCenterId: mongoose.Types.ObjectId
+  startTime: Date | null
+}
+type AppliedJobOrderModel = mongoose.Model<AppliedJobOrder>
+
 async function validateCreateStandard(data: CreateProductStandardInput): Promise<void> {
   const product = await Product.findById(data.productId)
   if (!product) throw new CustomError(404, 'error.not_found')
@@ -37,10 +45,9 @@ async function isApplied(standardId: string): Promise<boolean> {
   const standard = await ProductStandard.findById(standardId).lean()
   if (!standard) return false
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let JobOrder: mongoose.Model<any>
+  let JobOrder: AppliedJobOrderModel
   try {
-    JobOrder = mongoose.model('JobOrder')
+    JobOrder = mongoose.model('JobOrder') as unknown as AppliedJobOrderModel
   } catch (err) {
     logger.error('JobOrder model not registered during isApplied check', {
       event: 'product_standard.model_not_registered',
@@ -244,19 +251,29 @@ export async function findTimelinesBatch(
   }
 
   const standardsByGroup = new Map<string, StandardDoc[]>()
+  const projection = '_id productId workCenterId validFrom idealOutputPerMinute counterMultiplier'
 
   await Promise.all(
     Array.from(groups.entries()).map(async ([key, group]) => {
-      const docs = await ProductStandard.find({
-        productId: group.productId,
-        workCenterId: group.workCenterId,
-        validFrom: { $lte: group.maxTo },
-      })
-        .sort({ validFrom: -1 })
-        .select('_id productId workCenterId validFrom idealOutputPerMinute counterMultiplier')
-        .lean<StandardDoc[]>()
-
-      standardsByGroup.set(key, docs)
+      const [groupBaseline, groupRevisions] = await Promise.all([
+        ProductStandard.findOne({
+          productId: group.productId,
+          workCenterId: group.workCenterId,
+          validFrom: { $lte: group.minFrom },
+        })
+          .sort({ validFrom: -1 })
+          .select(projection)
+          .lean<StandardDoc>(),
+        ProductStandard.find({
+          productId: group.productId,
+          workCenterId: group.workCenterId,
+          validFrom: { $gt: group.minFrom, $lte: group.maxTo },
+        })
+          .sort({ validFrom: 1 })
+          .select(projection)
+          .lean<StandardDoc[]>(),
+      ])
+      standardsByGroup.set(key, groupBaseline ? [groupBaseline, ...groupRevisions] : groupRevisions)
     }),
   )
 

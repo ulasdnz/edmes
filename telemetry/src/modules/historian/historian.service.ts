@@ -2,8 +2,18 @@ import { CustomError } from '../../core/errors/index.js'
 import { getHistorianCollection } from '../ingestion/historian.repository.js'
 import Tag from '../tag/tag.model.js'
 import { calculateStateDurations } from './calculations/binary.calc.js'
-import { calculateProduced } from './calculations/counter.calc.js'
-import { calculateSpeedAvg } from './calculations/speed.calc.js'
+import {
+  calculateProduced,
+  calculateProducedMulti,
+  type ProducedMultiResult,
+  type ProducedWindowInput,
+} from './calculations/counter.calc.js'
+import {
+  calculateSpeedAvg,
+  calculateSpeedAvgMulti,
+  type SpeedMultiResult,
+  type SpeedWindowInput,
+} from './calculations/speed.calc.js'
 
 const SERIES_INTERVAL_CANDIDATES_MS = [
   1_000, 5_000, 10_000, 30_000, 60_000, 300_000, 600_000, 900_000, 1_800_000, 3_600_000, 14_400_000,
@@ -303,6 +313,28 @@ export const getSpeedAvg = async (tagId: string, from: Date, to: Date) => {
     throw new CustomError(400, 'historian.speed_only')
   }
   return calculateSpeedAvg(tagId, from, to)
+}
+
+export const getProducedSummary = async (
+  tagId: string,
+  windows: ProducedWindowInput[],
+): Promise<ProducedMultiResult> => {
+  const tag = await ensureTagExists(tagId)
+  if (tag.behavior !== 'counter') {
+    throw new CustomError(400, 'historian.counter_only')
+  }
+  return calculateProducedMulti(tagId, windows)
+}
+
+export const getSpeedSummary = async (
+  tagId: string,
+  windows: SpeedWindowInput[],
+): Promise<SpeedMultiResult> => {
+  const tag = await ensureTagExists(tagId)
+  if (tag.behavior !== 'speed') {
+    throw new CustomError(400, 'historian.speed_only')
+  }
+  return calculateSpeedAvgMulti(tagId, windows)
 }
 
 export const getStateDurations = async (tagId: string, from: Date, to: Date) => {

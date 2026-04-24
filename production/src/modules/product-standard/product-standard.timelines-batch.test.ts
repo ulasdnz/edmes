@@ -91,6 +91,7 @@ describe('findTimelinesBatch', () => {
     await seedStandard(productId, workCenterId, new Date('2026-03-01T00:00:00Z'), 10)
 
     const findSpy = vi.spyOn(ProductStandard, 'find')
+    const findOneSpy = vi.spyOn(ProductStandard, 'findOne')
 
     await findTimelinesBatch({
       items: [
@@ -118,8 +119,11 @@ describe('findTimelinesBatch', () => {
       ],
     })
 
+    // Per group: one findOne for the baseline + one find for in-range revisions.
+    expect(findOneSpy).toHaveBeenCalledTimes(1)
     expect(findSpy).toHaveBeenCalledTimes(1)
     findSpy.mockRestore()
+    findOneSpy.mockRestore()
   })
 
   it('returns no_standard_for_interval when no baseline exists', async () => {

@@ -39,9 +39,22 @@ export const rollupQuerySchema = rangeQuerySchema.extend({
   fn: z.enum(['avg', 'min', 'max', 'sum', 'count']),
 })
 
-export const parseInterval = (interval: string): number => INTERVAL_MAP[interval]!
+const windowSchema = z
+  .object({ from: utcDateSchema, to: utcDateSchema })
+  .refine(w => w.to.getTime() > w.from.getTime(), { message: 'validation.range_invalid' })
+
+export const multiWindowSchema = z.object({
+  windows: z.array(windowSchema).min(1).max(500),
+})
+
+export const parseInterval = (interval: string): number => {
+  const intervalMs = INTERVAL_MAP[interval]
+  if (intervalMs === undefined) throw new Error('validation.invalid_interval')
+  return intervalMs
+}
 
 export type RangeQuery = z.infer<typeof rangeQuerySchema>
 export type SamplesQuery = z.infer<typeof samplesQuerySchema>
 export type SeriesQuery = z.infer<typeof seriesQuerySchema>
 export type RollupQuery = z.infer<typeof rollupQuerySchema>
+export type MultiWindowBody = z.infer<typeof multiWindowSchema>

@@ -54,4 +54,20 @@ describe('jobOrderRecordsBatchSchema', () => {
     })
     expect(result.success).toBe(false)
   })
+
+  it('rejects duplicate jobOrderIds across items', () => {
+    const duplicateId = new Types.ObjectId().toString()
+    const result = jobOrderRecordsBatchSchema.safeParse({
+      include: ['quantity_adjustments'],
+      items: [
+        { ...validItem(), jobOrderId: duplicateId },
+        {
+          jobOrderId: duplicateId,
+          from: '2026-03-06T00:00:00.000Z',
+          to: '2026-03-06T12:00:00.000Z',
+        },
+      ],
+    })
+    expect(result.success).toBe(false)
+  })
 })

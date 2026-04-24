@@ -5,48 +5,154 @@ interface SpeedDoc {
   value: number
 }
 
-export const calculateSpeedAvg = async (
-  tagId: string,
-  rangeStart: Date,
-  rangeEnd: Date,
-): Promise<{ totalArea: number; weightedAvg: number; durationSec: number }> => {
-  const collection = getHistorianCollection(tagId)
+export interface SpeedWindowInput {
+  from: Date
+  to: Date
+}
 
-  const baseline = await collection.findOne<SpeedDoc>(
-    { occurredAt: { $lt: rangeStart } },
-    { sort: { occurredAt: -1 } },
-  )
+export interface SpeedWindowResult {
+  from: Date
+  to: Date
+  durationMs: number
+  timeWeightedAverage: number
+  valueArea: number
+  sampleCount: number
+}
 
-  const docs = await collection
-    .find<SpeedDoc>({ occurredAt: { $gte: rangeStart, $lte: rangeEnd } })
-    .sort({ occurredAt: 1 })
-    .toArray()
+export interface SpeedMultiResult {
+  windows: SpeedWindowResult[]
+  total: {
+    durationMs: number
+    timeWeightedAverage: number
+    valueArea: number
+  }
+}
 
+const lowerBoundByTime = (docs: SpeedDoc[], t: number): number => {
+  let lo = 0
+  let hi = docs.length
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1
+    if (docs[mid].occurredAt.getTime() < t) lo = mid + 1
+    else hi = mid
+  }
+  return lo
+}
+
+const upperBoundByTime = (docs: SpeedDoc[], t: number): number => {
+  let lo = 0
+  let hi = docs.length
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1
+    if (docs[mid].occurredAt.getTime() <= t) lo = mid + 1
+    else hi = mid
+  }
+  return lo
+}
+
+const computeWindow = (
+  from: Date,
+  to: Date,
+  docs: SpeedDoc[],
+  baseline: SpeedDoc | null,
+): SpeedWindowResult => {
   const points: { time: Date; value: number }[] = []
 
   if (baseline) {
-    points.push({ time: rangeStart, value: baseline.value })
+    points.push({ time: from, value: baseline.value })
   } else if (docs.length > 0) {
-    points.push({ time: rangeStart, value: 0 })
+    points.push({ time: from, value: 0 })
   } else {
-    return { totalArea: 0, weightedAvg: 0, durationSec: 0 }
+    return {
+      from,
+      to,
+      durationMs: 0,
+      timeWeightedAverage: 0,
+      valueArea: 0,
+      sampleCount: 0,
+    }
   }
 
   for (const doc of docs) {
     points.push({ time: doc.occurredAt, value: doc.value })
   }
 
-  points.push({ time: rangeEnd, value: points[points.length - 1].value })
+  points.push({ time: to, value: points[points.length - 1].value })
 
-  let totalArea = 0
+  let valueArea = 0
   for (let i = 0; i < points.length - 1; i++) {
-    const durationMs = points[i + 1].time.getTime() - points[i].time.getTime()
-    const durationSec = durationMs / 1000
-    totalArea += points[i].value * durationSec
+    const dur = points[i + 1].time.getTime() - points[i].time.getTime()
+    valueArea += points[i].value * dur
   }
 
-  const totalDurationSec = (rangeEnd.getTime() - rangeStart.getTime()) / 1000
-  const weightedAvg = totalDurationSec > 0 ? totalArea / totalDurationSec : 0
+  const durationMs = to.getTime() - from.getTime()
+  const timeWeightedAverage = durationMs > 0 ? valueArea / durationMs : 0
 
-  return { totalArea, weightedAvg, durationSec: totalDurationSec }
+  return { from, to, durationMs, valueArea, timeWeightedAverage, sampleCount: docs.length }
+}
+
+export const calculateSpeedAvgMulti = async (
+  tagId: string,
+  windows: SpeedWindowInput[],
+): Promise<SpeedMultiResult> => {
+  if (windows.length === 0) {
+    return { windows: [], total: { durationMs: 0, timeWeightedAverage: 0, valueArea: 0 } }
+  }
+
+  const collection = getHistorianCollection(tagId)
+
+  const overallFrom = windows.reduce(
+    (min, w) => (w.from.getTime() < min.getTime() ? w.from : min),
+    windows[0].from,
+  )
+  const overallTo = windows.reduce(
+    (max, w) => (w.to.getTime() > max.getTime() ? w.to : max),
+    windows[0].to,
+  )
+
+  const baseline = await collection.findOne<SpeedDoc>(
+    { occurredAt: { $lt: overallFrom } },
+    { sort: { occurredAt: -1 } },
+  )
+
+  const allDocs = await collection
+    .find<SpeedDoc>({ occurredAt: { $gte: overallFrom, $lte: overallTo } })
+    .sort({ occurredAt: 1 })
+    .toArray()
+
+  const results: SpeedWindowResult[] = windows.map(w => {
+    const startIdx = lowerBoundByTime(allDocs, w.from.getTime())
+    const endIdx = upperBoundByTime(allDocs, w.to.getTime())
+    const docsInWindow = allDocs.slice(startIdx, endIdx)
+    const windowBaseline = startIdx > 0 ? allDocs[startIdx - 1] : baseline
+    return computeWindow(w.from, w.to, docsInWindow, windowBaseline)
+  })
+
+  const totalDurationMs = results.reduce((s, r) => s + r.durationMs, 0)
+  const totalValueArea = results.reduce((s, r) => s + r.valueArea, 0)
+  const totalAvg = totalDurationMs > 0 ? totalValueArea / totalDurationMs : 0
+
+  return {
+    windows: results,
+    total: {
+      durationMs: totalDurationMs,
+      timeWeightedAverage: totalAvg,
+      valueArea: totalValueArea,
+    },
+  }
+}
+
+export const calculateSpeedAvg = async (
+  tagId: string,
+  rangeStart: Date,
+  rangeEnd: Date,
+): Promise<{ totalArea: number; weightedAvg: number; durationSec: number }> => {
+  const result = await calculateSpeedAvgMulti(tagId, [{ from: rangeStart, to: rangeEnd }])
+  const w = result.windows[0]
+  if (!w) return { totalArea: 0, weightedAvg: 0, durationSec: 0 }
+  return {
+    totalArea: w.valueArea / 1000,
+    weightedAvg: w.timeWeightedAverage,
+    durationSec: w.durationMs / 1000,
+  }
 }

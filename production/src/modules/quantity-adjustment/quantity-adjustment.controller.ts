@@ -12,8 +12,14 @@ function assertVisible(workCenterId: string, visibleIds?: string[]): void {
   }
 }
 
+function requireUserId(req: Request): string {
+  const userId = req.user?.id
+  if (!userId) throw new CustomError(401, 'auth.unauthorized')
+  return userId
+}
+
 export const create = async (req: Request, res: Response<SuccessResponse<IQuantityAdjustment>>) => {
-  const doc = await service.create(req.body, req.user?.id, req.user?.workCenterIds)
+  const doc = await service.create(req.body, requireUserId(req), req.user?.workCenterIds)
   res.status(201).json({ message: req.t('success.create'), data: doc })
 }
 
@@ -35,7 +41,12 @@ export const update = async (
   req: Request<{ id: string }>,
   res: Response<SuccessResponse<IQuantityAdjustment>>,
 ) => {
-  const doc = await service.update(req.params.id, req.body, req.user?.id, req.user?.workCenterIds)
+  const doc = await service.update(
+    req.params.id,
+    req.body,
+    requireUserId(req),
+    req.user?.workCenterIds,
+  )
   res.json({ message: req.t('success.update'), data: doc })
 }
 

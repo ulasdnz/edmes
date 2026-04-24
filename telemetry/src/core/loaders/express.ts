@@ -13,6 +13,7 @@ import { httpLoggerMiddleware, logger, morganMiddleware } from '../../lib/logger
 import { redisClient } from '../../lib/redis.js'
 import discoveryRoutes from '../../modules/discovery/discovery.routes.js'
 import edgeDeviceRoutes from '../../modules/edge-device/edge-device.routes.js'
+import historianInternalRoutes from '../../modules/historian/historian.internal.routes.js'
 import historianRoutes from '../../modules/historian/historian.routes.js'
 import tagRoutes from '../../modules/tag/tag.routes.js'
 import tagTypeRoutes from '../../modules/tag-type/tag-type.routes.js'
@@ -74,6 +75,7 @@ export const initExpress = async () => {
     next()
   })
   mountSharedRoutes(internalRouter)
+  internalRouter.use(historianInternalRoutes)
 
   app.use('/internal/v1', internalRouter)
 

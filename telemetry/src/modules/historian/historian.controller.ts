@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express'
 import * as historianService from './historian.service.js'
-import { parseInterval } from './historian.validators.js'
+import { type MultiWindowBody, parseInterval } from './historian.validators.js'
 
 export const getCompactValues = async (req: Request<{ tagId: string }>, res: Response) => {
   const { from, to } = req.query as unknown as { from: Date; to: Date }
@@ -74,6 +74,18 @@ export const getStateDurations = async (req: Request<{ tagId: string }>, res: Re
 export const getLatest = async (req: Request<{ tagId: string }>, res: Response) => {
   const data = await historianService.getLatest(req.params.tagId)
   res.json({ data })
+}
+
+export const getProducedSummary = async (req: Request<{ tagId: string }>, res: Response) => {
+  const { windows } = req.body as MultiWindowBody
+  const result = await historianService.getProducedSummary(req.params.tagId, windows)
+  res.json({ data: result })
+}
+
+export const getSpeedSummary = async (req: Request<{ tagId: string }>, res: Response) => {
+  const { windows } = req.body as MultiWindowBody
+  const result = await historianService.getSpeedSummary(req.params.tagId, windows)
+  res.json({ data: result })
 }
 
 export const getRollup = async (req: Request<{ tagId: string }>, res: Response) => {

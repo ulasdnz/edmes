@@ -22,7 +22,10 @@ export const jobOrderRecordsBatchSchema = z
           ),
       )
       .min(1)
-      .max(500),
+      .max(500)
+      .refine(items => new Set(items.map(i => i.jobOrderId)).size === items.length, {
+        message: 'error.duplicate_job_order_id',
+      }),
     include: z.array(z.enum(['quantity_adjustments', 'scrap_entries'])).min(1),
   })
   .strict()
