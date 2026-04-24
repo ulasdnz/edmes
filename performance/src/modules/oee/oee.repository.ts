@@ -8,6 +8,7 @@ export type FindStopsInput = {
   workCenterId: string
   from: Date
   to: Date
+  excludeSystemReasonCodes?: string[]
 }
 
 export type FindStopsResult = {

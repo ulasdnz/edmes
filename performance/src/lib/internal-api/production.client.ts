@@ -86,6 +86,8 @@ interface RawJobOrder {
   code: string
 }
 
+// Returns job orders whose interval overlaps [from, to] AND whose runtimeState is 'running'
+// (startTime set, endTime null). Completed orders that overlap the range are excluded.
 export async function findStartedJobOrders({
   workCenterId,
   from,
@@ -99,6 +101,7 @@ export async function findStartedJobOrders({
     workCenterId,
     activeFrom: from.toISOString(),
     activeTo: to.toISOString(),
+    runtimeState: 'running',
     limit: '500',
     page: '1',
   })

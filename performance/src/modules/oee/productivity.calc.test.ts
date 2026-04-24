@@ -110,6 +110,36 @@ describe('calculateProductivity — count_based', () => {
     expect(result.jobOrders[0].notCalculable).toBe(false)
   })
 
+  it('quantity adjustments outside JO window are excluded from sum', () => {
+    // JO window is [T0, T1]. One adjustment inside, two outside.
+    const insideTime = new Date(T0.getTime() + 10 * 60 * 1000)
+    const beforeTime = new Date(T0.getTime() - 1)
+    const afterTime = new Date(T1.getTime() + 1)
+
+    const input = makeInput({
+      producedSummaryByTagId: {
+        'tag-counter': {
+          windows: [{ from: T0.toISOString(), to: T1.toISOString(), value: 900, qualityFlags: [] }],
+          total: 900,
+        },
+      },
+      quantityAdjustmentsByJobOrderId: {
+        [JO_ID]: [
+          { _id: 'adj-inside', amount: -50, time: insideTime },
+          { _id: 'adj-before', amount: 999, time: beforeTime },
+          { _id: 'adj-after', amount: 999, time: afterTime },
+        ],
+      },
+    })
+
+    const result = calculateProductivity(input)
+
+    expect(result.status).toBe('ok')
+    // Only the inside adjustment (-50) is counted
+    expect(result.jobOrders[0].quantityAdjustment).toBeCloseTo(-50, 5)
+    expect(result.jobOrders[0].actualOutput).toBeCloseTo(850, 5)
+  })
+
   it('count-based with quantity adjustment: amount=-50 applied inside window', () => {
     const input = makeInput({
       producedSummaryByTagId: {
@@ -207,7 +237,10 @@ describe('calculateProductivity — count_based', () => {
     expect(result.jobOrders[0].notCalculable).toBe(true)
   })
 
-  it('allowProductivityOver100=false caps per-JO ratio at 1.0 before aggregation', () => {
+  it('allowProductivityOver100=false: total_ratio caps aggregated ratio at 1.0 but per-JO ratio is raw', () => {
+    // target=1000, actual=2000 → raw per-JO ratio=2.0
+    // total_ratio aggregation: Σactual/Σtarget=2.0, capped at 1.0 at response boundary
+    // per-JO breakdown shows raw 2.0 (cap does not apply to per-JO field for total_ratio)
     const input = makeInput({
       allowProductivityOver100: false,
       producedSummaryByTagId: {
@@ -229,7 +262,75 @@ describe('calculateProductivity — count_based', () => {
 
     expect(result.status).toBe('ok')
     expect(result.ratio).toBeCloseTo(1.0, 5)
-    expect(result.jobOrders[0].ratio).toBeCloseTo(1.0, 5)
+    expect(result.jobOrders[0].ratio).toBeCloseTo(2.0, 5)
+  })
+
+  it('allowProductivityOver100=false with run_time_weighted_ratio caps per-JO ratio before aggregation', () => {
+    // JO1: raw ratio=1.5, runMs=3600000 → capped to 1.0 before weighting
+    // JO2: raw ratio=0.6, runMs=3600000
+    // weighted = (1.0*3600000 + 0.6*3600000) / (3600000+3600000) = 0.8
+    const JO_ID_2 = 'eeeeeeeeeeeeeeeeeeeeeeee'
+    const input: ProductivityInput = {
+      jobOrders: [
+        { jobOrderId: JO_ID, workCenterId: WC_ID, productId: PROD_ID, start: T0, end: T1 },
+        { jobOrderId: JO_ID_2, workCenterId: WC_ID, productId: PROD_ID, start: T1, end: T2 },
+      ],
+      clippedJobWindows: [
+        { jobOrderId: JO_ID, workCenterId: WC_ID, productId: PROD_ID, start: T0, end: T1 },
+        { jobOrderId: JO_ID_2, workCenterId: WC_ID, productId: PROD_ID, start: T1, end: T2 },
+      ],
+      productionRunWindows: [
+        { from: T0, to: T1 },
+        { from: T1, to: T2 },
+      ],
+      productStandardsByJobOrderId: {
+        [JO_ID]: [
+          {
+            _id: 'std1',
+            validFrom: new Date('2026-01-01T00:00:00.000Z').toISOString(),
+            idealOutputPerMinute: 1000 / 60,
+            counterMultiplier: 1,
+            idealSpeed: null,
+          },
+        ],
+        [JO_ID_2]: [
+          {
+            _id: 'std2',
+            validFrom: new Date('2026-01-01T00:00:00.000Z').toISOString(),
+            idealOutputPerMinute: 1000 / 60,
+            counterMultiplier: 1,
+            idealSpeed: null,
+          },
+        ],
+      },
+      quantityAdjustmentsByJobOrderId: {},
+      producedSummaryByTagId: {
+        'tag-counter': {
+          windows: [
+            // JO1 actual=1500 → ratio=1.5; JO2 actual=600 → ratio=0.6
+            { from: T0.toISOString(), to: T1.toISOString(), value: 1500, qualityFlags: [] },
+            { from: T1.toISOString(), to: T2.toISOString(), value: 600, qualityFlags: [] },
+          ],
+          total: 2100,
+        },
+      },
+      speedSummaryByTagId: {},
+      productivityMode: 'count_based',
+      producedCounterTagId: 'tag-counter',
+      speedTagId: undefined,
+      actualOutputWindowMode: 'execution_span',
+      productivityAggregationMode: 'run_time_weighted_ratio',
+      allowProductivityOver100: false,
+    }
+
+    const result = calculateProductivity(input)
+
+    expect(result.status).toBe('ok')
+    // per-JO raw ratios exposed (not capped in breakdown)
+    expect(result.jobOrders[0].ratio).toBeCloseTo(1.5, 5)
+    expect(result.jobOrders[1].ratio).toBeCloseTo(0.6, 5)
+    // aggregated: cap JO1 to 1.0 before weighting → (1.0+0.6)/2 = 0.8
+    expect(result.ratio).toBeCloseTo(0.8, 5)
   })
 
   it('run_time_weighted_ratio aggregation: two JOs with different productionRunMs', () => {
@@ -296,7 +397,7 @@ describe('calculateProductivity — count_based', () => {
     // JO2: target=1000, actual=200, ratio=0.2, runMs=3600000
     // weighted = (0.8*3600000 + 0.2*3600000) / (3600000+3600000) = 0.5
     expect(result.status).toBe('ok')
-    expect(result.productivityAggregationMode).toBe('run_time_weighted_ratio')
+    expect(result.aggregationMode).toBe('run_time_weighted_ratio')
     // with equal run times, weighted average = simple average
     expect(result.ratio).toBeCloseTo(0.5, 3)
   })

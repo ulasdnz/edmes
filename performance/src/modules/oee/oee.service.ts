@@ -9,7 +9,7 @@ import { calculateAvailability } from './availability.calc.js'
 import { normalize } from './interval-normalizer.js'
 import * as oeeRepository from './oee.repository.js'
 import type { OeeRange } from './oee.types.js'
-import { calculateProductivity, isNonOverlapping } from './productivity.calc.js'
+import { calculateProductivity } from './productivity.calc.js'
 
 export type OeeInput = {
   workCenterId: string
@@ -36,7 +36,12 @@ export async function calculateOee(input: OeeInput): Promise<OeeOutput> {
         usages: ['planned_stop', 'unplanned_stop', 'scrap'],
       }),
       productionClient.findStartedJobOrders({ workCenterId, from: range.from, to: range.to }),
-      oeeRepository.findStopsForOee({ workCenterId, from: range.from, to: range.to }),
+      oeeRepository.findStopsForOee({
+        workCenterId,
+        from: range.from,
+        to: range.to,
+        excludeSystemReasonCodes: ['MICRO_STOP'],
+      }),
     ])
 
   // Early returns
@@ -132,12 +137,7 @@ export async function calculateOee(input: OeeInput): Promise<OeeOutput> {
     allActualWindows.push(...wins)
   }
 
-  // Sort and deduplicate so we assert non-overlapping (net_run_segments from normalize is already non-overlapping)
   const sortedWindows = [...allActualWindows].sort((a, b) => a.from.getTime() - b.from.getTime())
-
-  // Defensively assert non-overlapping contract before calling telemetry
-  // (isNonOverlapping is the contract checker exported for tests)
-  void isNonOverlapping // referenced to satisfy the import
 
   const [producedSummaryResult, speedSummaryResult] = await Promise.all([
     isCountBased && producedCounterTagId

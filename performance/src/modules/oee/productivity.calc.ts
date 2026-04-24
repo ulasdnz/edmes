@@ -25,7 +25,7 @@ export type ProductivityResult = {
   fullJobTargetOutput: number
   quantityAdjustment: number
   actualOutputWindowMode: 'execution_span' | 'net_run_segments'
-  productivityAggregationMode: 'total_ratio' | 'run_time_weighted_ratio'
+  aggregationMode: 'total_ratio' | 'run_time_weighted_ratio'
   jobOrders: JobOrderProductivityBreakdown[]
 }
 
@@ -268,12 +268,14 @@ export function calculateProductivity(input: ProductivityInput): ProductivityRes
       grossProduced = speedTotal
     }
 
-    const adjustments = quantityAdjustmentsByJobOrderId[jo.jobOrderId] ?? []
+    const adjustments = (quantityAdjustmentsByJobOrderId[jo.jobOrderId] ?? []).filter(a => {
+      const t = new Date(a.time).getTime()
+      return t >= jo.start.getTime() && t <= jo.end.getTime()
+    })
     const quantityAdjustment = adjustments.reduce((sum, a) => sum + a.amount, 0)
     const actualOutput = grossProduced + quantityAdjustment
 
-    let ratio = effectiveTargetOutput > 0 ? actualOutput / effectiveTargetOutput : 0
-    if (!allowProductivityOver100 && ratio > 1) ratio = 1
+    const ratio = effectiveTargetOutput > 0 ? actualOutput / effectiveTargetOutput : 0
 
     breakdowns.push({
       jobOrderId: jo.jobOrderId,
@@ -297,7 +299,7 @@ export function calculateProductivity(input: ProductivityInput): ProductivityRes
       fullJobTargetOutput: 0,
       quantityAdjustment: 0,
       actualOutputWindowMode,
-      productivityAggregationMode,
+      aggregationMode: productivityAggregationMode,
       jobOrders: [],
     }
   }
@@ -314,10 +316,14 @@ export function calculateProductivity(input: ProductivityInput): ProductivityRes
   if (productivityAggregationMode === 'total_ratio') {
     aggregatedRatio = totalEffectiveTarget > 0 ? totalActual / totalEffectiveTarget : 0
   } else {
-    // run_time_weighted_ratio
+    // run_time_weighted_ratio: cap per-JO ratio at 1 before weighting when allowProductivityOver100=false
     const totalRunMs = breakdowns.reduce((s, b) => s + b.productionRunMs, 0)
     if (totalRunMs > 0) {
-      aggregatedRatio = breakdowns.reduce((s, b) => s + b.ratio * b.productionRunMs, 0) / totalRunMs
+      aggregatedRatio =
+        breakdowns.reduce((s, b) => {
+          const r = !allowProductivityOver100 && b.ratio > 1 ? 1 : b.ratio
+          return s + r * b.productionRunMs
+        }, 0) / totalRunMs
     } else {
       aggregatedRatio = 0
     }
@@ -333,7 +339,7 @@ export function calculateProductivity(input: ProductivityInput): ProductivityRes
     fullJobTargetOutput: totalFullJobTarget,
     quantityAdjustment: totalQtyAdj,
     actualOutputWindowMode,
-    productivityAggregationMode,
+    aggregationMode: productivityAggregationMode,
     jobOrders: breakdowns,
   }
 }

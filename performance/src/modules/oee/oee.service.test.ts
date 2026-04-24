@@ -125,6 +125,9 @@ describe('calculateOee — stage orchestration', () => {
     expect(reasonService.findIds).toHaveBeenCalledOnce()
     expect(productionClient.findStartedJobOrders).toHaveBeenCalledOnce()
     expect(oeeRepository.findStopsForOee).toHaveBeenCalledOnce()
+    expect(vi.mocked(oeeRepository.findStopsForOee).mock.calls[0][0]).toMatchObject({
+      excludeSystemReasonCodes: ['MICRO_STOP'],
+    })
   })
 
   it('Stage 3 runs only after job orders are known (standards + records called with JO ids)', async () => {
@@ -214,5 +217,52 @@ describe('calculateOee — stage orchestration', () => {
     expect(calls.length).toBeGreaterThan(0)
     const windows = calls[0][1]
     expect(isNonOverlapping(windows as never)).toBe(true)
+  })
+
+  it('net_run_segments: windows passed to producedSummary are non-overlapping when stop splits JO', async () => {
+    const { isNonOverlapping } = await import('./productivity.calc.js')
+
+    // 12-hour JO with a 2-hour planned stop in the middle → two run segments
+    const stopStart = new Date('2026-01-01T10:00:00.000Z')
+    const stopEnd = new Date('2026-01-01T12:00:00.000Z')
+
+    vi.mocked(policyService.resolveForWorkCenter).mockResolvedValue({
+      ...BASE_POLICY,
+      actualOutputWindowMode: 'net_run_segments',
+    })
+
+    vi.mocked(oeeRepository.findStopsForOee).mockResolvedValue({
+      planned: [
+        {
+          _id: 'stop1',
+          workCenterId: WC_ID,
+          reasonId: 'reason1',
+          source: 'planned',
+          start: stopStart,
+          end: stopEnd,
+        },
+      ],
+      unplanned: [],
+      microStopReasonId: 'ffffffffffffffffffffffff',
+    })
+
+    await calculateOee({ workCenterId: WC_ID, range: RANGE })
+
+    const calls = vi.mocked(telemetryClient.producedSummary).mock.calls
+    expect(calls.length).toBeGreaterThan(0)
+    const windows = calls[0][1] as Array<{ from: Date; to: Date }>
+    // Must produce at least 2 sub-windows (before and after the stop)
+    expect(windows.length).toBeGreaterThanOrEqual(2)
+    // All must be non-overlapping
+    expect(isNonOverlapping(windows as never)).toBe(true)
+    // Each window's end <= next window's start
+    const sorted = [...windows].sort(
+      (a, b) => new Date(a.from).getTime() - new Date(b.from).getTime(),
+    )
+    for (let i = 1; i < sorted.length; i++) {
+      expect(new Date(sorted[i].from).getTime()).toBeGreaterThanOrEqual(
+        new Date(sorted[i - 1].to).getTime(),
+      )
+    }
   })
 })
