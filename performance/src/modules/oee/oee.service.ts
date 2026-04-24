@@ -10,6 +10,7 @@ import { normalize } from './interval-normalizer.js'
 import * as oeeRepository from './oee.repository.js'
 import type { OeeRange } from './oee.types.js'
 import { calculateProductivity } from './productivity.calc.js'
+import { calculateQuality } from './quality.calc.js'
 
 export type OeeInput = {
   workCenterId: string
@@ -19,7 +20,8 @@ export type OeeInput = {
 export type OeeOutput = {
   availability: ReturnType<typeof calculateAvailability>
   productivity: ReturnType<typeof calculateProductivity>
-  // TODO(phase 9): quality, overall oee, response shaping
+  quality: ReturnType<typeof calculateQuality>
+  // TODO(phase 9): overall oee, response shaping
 }
 
 export async function calculateOee(input: OeeInput): Promise<OeeOutput> {
@@ -73,7 +75,18 @@ export async function calculateOee(input: OeeInput): Promise<OeeOutput> {
       productivityAggregationMode: policy.productivityAggregationMode,
       allowProductivityOver100: policy.allowProductivityOver100,
     })
-    return { availability: noContextAvailability, productivity: noContextProductivity }
+    const noContextQuality = calculateQuality({
+      grossProducedAcrossExecution: 0,
+      quantityAdjustmentSum: 0,
+      scrapEntriesByJobOrder: [],
+      nonOeeReasonIds: new Set(),
+      knownReasonIds: new Set(),
+    })
+    return {
+      availability: noContextAvailability,
+      productivity: noContextProductivity,
+      quality: noContextQuality,
+    }
   }
 
   // ── Stage 2: normalize ────────────────────────────────────────────────────
@@ -89,6 +102,8 @@ export async function calculateOee(input: OeeInput): Promise<OeeOutput> {
   const availability = calculateAvailability({ clippedJobWindows, calculationStops })
 
   // ── Stage 3: parallel production batch fetches ────────────────────────────
+  // Telemetry call budget: execution_span → ≤2 calls total; net_run_segments → ≤4 calls total
+  // (2 for productivity actualOutput + 2 for quality grossProducedAcrossExecution).
   const [productStandardsByJobOrderId, jobOrderRecords] = await Promise.all([
     productionClient.findProductStandardTimelinesBatch(
       clippedJobWindows.map(jw => ({
@@ -173,10 +188,65 @@ export async function calculateOee(input: OeeInput): Promise<OeeOutput> {
     allowProductivityOver100: policy.allowProductivityOver100,
   })
 
+  // ── Stage 3.5: collect known scrap reason ids (1 Mongo query, parallel-eligible) ──
+  const scrapEntriesByJobOrderId = jobOrderRecords.scrapEntriesByJobOrderId as Record<
+    string,
+    Array<{
+      amount: number
+      reasonId: string | null
+      startTime: Date | string
+      endTime: Date | string
+    }>
+  >
+
+  const allScrapReasonIds = Array.from(
+    new Set(
+      Object.values(scrapEntriesByJobOrderId)
+        .flat()
+        .map(e => e.reasonId)
+        .filter((id): id is string => id !== null),
+    ),
+  )
+  const knownReasonIds = await reasonService.findExistingIds(allScrapReasonIds)
+
+  // ── Stage 6: quality ──────────────────────────────────────────────────────
+  // grossProducedAcrossExecution: sum of per-JO gross produced over jobOrderWindows (execution_span).
+  // For execution_span mode, productivity.jobOrders[].actualOutput already uses JO windows → reuse.
+  // For net_run_segments mode, productivity used actualOutputWindows (run segments) which differ from
+  // JO windows; we reuse productivity's actualOutput minus quantityAdjustment to recover grossProduced.
+  // This avoids an extra telemetry call and is correct because:
+  //   actualOutput = grossProduced + quantityAdjustment (both computed over the same window set per JO).
+  const scrapEntriesByJo = clippedJobWindows.map(jw => {
+    const entries = (scrapEntriesByJobOrderId[jw.jobOrderId] ?? []).map(e => ({
+      amount: e.amount,
+      reasonId: e.reasonId,
+      startTime: new Date(e.startTime),
+      endTime: new Date(e.endTime),
+    }))
+    return { clippedJobOrderWindow: { start: jw.start, end: jw.end }, entries }
+  })
+
+  let grossProducedAcrossExecution = 0
+  let quantityAdjustmentSum = 0
+  for (const jo of productivity.jobOrders) {
+    if (!jo.notCalculable) {
+      grossProducedAcrossExecution += jo.actualOutput - jo.quantityAdjustment
+      quantityAdjustmentSum += jo.quantityAdjustment
+    }
+  }
+
+  const quality = calculateQuality({
+    grossProducedAcrossExecution,
+    quantityAdjustmentSum,
+    scrapEntriesByJobOrder: scrapEntriesByJo,
+    nonOeeReasonIds,
+    knownReasonIds,
+  })
+
   return {
     availability,
     productivity,
-    // TODO(phase 8): quality calc
+    quality,
     // TODO(phase 9): overall oee, final response shape
   }
 }

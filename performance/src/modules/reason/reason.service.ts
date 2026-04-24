@@ -118,6 +118,14 @@ async function isReferenced(reasonId: string): Promise<boolean> {
   return results.some(Boolean)
 }
 
+export async function findExistingIds(ids: string[]): Promise<Set<string>> {
+  if (ids.length === 0) return new Set()
+  const docs = await Reason.find({ _id: { $in: ids } })
+    .select({ _id: 1 })
+    .lean<{ _id: Types.ObjectId }[]>()
+  return new Set(docs.map(d => d._id.toString()))
+}
+
 export async function findIds({
   affectsOee,
   usages,

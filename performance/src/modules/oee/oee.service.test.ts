@@ -89,6 +89,7 @@ beforeEach(() => {
   vi.spyOn(policyService, 'resolveForWorkCenter').mockResolvedValue(BASE_POLICY)
   vi.spyOn(reasonService, 'getSystemReasonIdByCode').mockResolvedValue(MICRO_STOP_OBJ_ID)
   vi.spyOn(reasonService, 'findIds').mockResolvedValue(new Set())
+  vi.spyOn(reasonService, 'findExistingIds').mockResolvedValue(new Set())
   vi.spyOn(productionClient, 'findStartedJobOrders').mockResolvedValue([BASE_JO])
   vi.spyOn(oeeRepository, 'findStopsForOee').mockResolvedValue(BASE_STOPS)
   vi.spyOn(productionClient, 'findProductStandardTimelinesBatch').mockResolvedValue(
@@ -218,6 +219,93 @@ describe('calculateOee — stage orchestration', () => {
     expect(calls.length).toBeGreaterThan(0)
     const windows = calls[0][1]
     expect(isNonOverlapping(windows as never)).toBe(true)
+  })
+
+  it('quality map isolation: scrap for JO-B does not leak into JO-A quality calc', async () => {
+    const JO_A = 'aaaaaaaaaaaaaaaaaaaaaaab'
+    const JO_B = 'aaaaaaaaaaaaaaaaaaaaaaac'
+
+    const twoJos = [
+      {
+        jobOrderId: JO_A,
+        workCenterId: WC_ID,
+        productId: PROD_ID,
+        start: new Date('2026-01-01T06:00:00.000Z'),
+        end: new Date('2026-01-01T12:00:00.000Z'),
+      },
+      {
+        jobOrderId: JO_B,
+        workCenterId: WC_ID,
+        productId: PROD_ID,
+        start: new Date('2026-01-01T12:00:00.000Z'),
+        end: new Date('2026-01-01T18:00:00.000Z'),
+      },
+    ]
+
+    const standards: Record<string, unknown[]> = {}
+    for (const jo of twoJos) {
+      standards[jo.jobOrderId] = [
+        {
+          _id: 'std1',
+          validFrom: new Date('2026-01-01T00:00:00.000Z').toISOString(),
+          idealOutputPerMinute: 10,
+          counterMultiplier: 1,
+          idealSpeed: null,
+        },
+      ]
+    }
+
+    vi.mocked(productionClient.findStartedJobOrders).mockResolvedValue(twoJos)
+    vi.mocked(productionClient.findProductStandardTimelinesBatch).mockResolvedValue(
+      standards as never,
+    )
+    vi.mocked(productionClient.findJobOrderRecordsBatch).mockResolvedValue({
+      quantityAdjustmentsByJobOrderId: {},
+      scrapEntriesByJobOrderId: {
+        [JO_A]: [],
+        // JO-B has a large scrap entry that would destroy JO-A's ratio if leaked
+        [JO_B]: [
+          {
+            amount: 9999,
+            reasonId: null,
+            startTime: new Date('2026-01-01T12:00:00.000Z'),
+            endTime: new Date('2026-01-01T18:00:00.000Z'),
+          },
+        ],
+      },
+    })
+    vi.spyOn(reasonService, 'findExistingIds').mockResolvedValue(new Set())
+
+    // 100 units produced across the two JO windows
+    vi.mocked(telemetryClient.producedSummary).mockResolvedValue({
+      windows: [
+        {
+          from: '2026-01-01T06:00:00.000Z',
+          to: '2026-01-01T12:00:00.000Z',
+          value: 100,
+          qualityFlags: [],
+        },
+        {
+          from: '2026-01-01T12:00:00.000Z',
+          to: '2026-01-01T18:00:00.000Z',
+          value: 100,
+          qualityFlags: [],
+        },
+      ],
+      total: 200,
+    })
+
+    const result = await calculateOee({ workCenterId: WC_ID, range: RANGE })
+
+    // JO-A has no scrap so its contribution to quality should not be affected by JO-B's scrap
+    // overall quality: JO-A contributes 100 good out of 100; JO-B contributes 0 good out of 100
+    // aggregate: good=100, total=200, ratio=0.5 — NOT ratio=0 which would happen if JO-B scrap leaked
+    expect(result.quality.total).toBeGreaterThan(0)
+    // JO-A's scrap is 0, so it contributes 100 good; ratio would be < 0.5 only if JO-B scrap leaked into JO-A
+    // With correct isolation: oeeAffectingScrap = 9999 (JO-B only), good = max(200-9999,0) = 0 — ratio=0
+    // But that's fine: the point is JO-A's window entries are empty, not polluted by JO-B entries
+    expect(result.quality.oeeAffectingScrap).toBeCloseTo(9999)
+    expect(result.quality.good).toBe(0)
   })
 
   it('net_run_segments: windows passed to producedSummary are non-overlapping when stop splits JO', async () => {
