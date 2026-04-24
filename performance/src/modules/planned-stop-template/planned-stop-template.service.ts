@@ -235,29 +235,30 @@ export async function startFromTemplate(
   // stop exists, closing the open unplanned stop is idempotent and safe
   // to retry; a crash between create and close leaves the unplanned open
   // briefly, which the next run-mode event or reconciler converges.
-  let created: Awaited<ReturnType<typeof PlannedStop.create>> | undefined
-  try {
-    created = await PlannedStop.create({
-      workCenterId: wcObjectId,
-      reasonId: template.reasonId,
-      plannedOwnerId: plannedOwner,
-      source: 'template',
-      startMode: 'manual',
-      status: 'active',
-      plannedStartAt: actualStartAt,
-      plannedEndAt,
-      actualStartAt,
-      operatorId: new Types.ObjectId(userId),
-      templateId: template._id,
-      description: data.description ?? template.description ?? null,
-      createdBy: new Types.ObjectId(userId),
-    })
-  } catch (err) {
-    if (err && typeof err === 'object' && (err as { code?: number }).code === 11000) {
-      throw new CustomError(409, 'error.planned_stop_active_exists')
+  const created = await (async () => {
+    try {
+      return await PlannedStop.create({
+        workCenterId: wcObjectId,
+        reasonId: template.reasonId,
+        plannedOwnerId: plannedOwner,
+        source: 'template',
+        startMode: 'manual',
+        status: 'active',
+        plannedStartAt: actualStartAt,
+        plannedEndAt,
+        actualStartAt,
+        operatorId: new Types.ObjectId(userId),
+        templateId: template._id,
+        description: data.description ?? template.description ?? null,
+        createdBy: new Types.ObjectId(userId),
+      })
+    } catch (err) {
+      if (err && typeof err === 'object' && (err as { code?: number }).code === 11000) {
+        throw new CustomError(409, 'error.planned_stop_active_exists')
+      }
+      throw err
     }
-    throw err
-  }
+  })()
 
   await closeOpenUnplanned(data.workCenterId, actualStartAt, { closedBy: userId })
 

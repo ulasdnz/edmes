@@ -7,7 +7,7 @@ export const create = async (
   req: Request,
   res: Response<SuccessResponse<IPlannedStopTemplate>>,
 ) => {
-  const doc = await service.create(req.body, req.user?.id)
+  const doc = await service.create(req.body, req.user!.id)
   res.status(201).json({ message: req.t('success.create'), data: doc })
 }
 
@@ -31,7 +31,7 @@ export const update = async (
   req: Request<{ id: string }>,
   res: Response<SuccessResponse<IPlannedStopTemplate>>,
 ) => {
-  const doc = await service.update(req.params.id, req.body, req.user?.id)
+  const doc = await service.update(req.params.id, req.body, req.user!.id)
   res.json({ message: req.t('success.update'), data: doc })
 }
 
@@ -44,12 +44,12 @@ export const remove = async (
 }
 
 export const startFromTemplate = async (req: Request<{ id: string }>, res: Response) => {
-  const doc = await service.startFromTemplate(req.params.id, req.body, req.user?.id)
+  const doc = await service.startFromTemplate(req.params.id, req.body, req.user!.id)
   res.status(201).json({ message: req.t('success.create'), data: doc })
 }
 
 export const closeFromTemplate = async (req: Request<{ id: string }>, res: Response) => {
-  const doc = await service.closeFromTemplate(req.body.plannedStopId, req.user?.id, {
+  const doc = await service.closeFromTemplate(req.body.plannedStopId, req.user!.id, {
     actualEndAt: req.body.actualEndAt,
   })
   res.json({ message: req.t('success.update'), data: doc })

@@ -5,7 +5,7 @@ import type { IPlannedStop } from './planned-stop.model.js'
 import * as service from './planned-stop.service.js'
 
 export const create = async (req: Request, res: Response<SuccessResponse<IPlannedStop>>) => {
-  const doc = await service.create(req.body, req.user?.id)
+  const doc = await service.create(req.body, req.user!.id)
   res.status(201).json({ message: req.t('success.create'), data: doc })
 }
 
@@ -29,7 +29,7 @@ export const update = async (
   req: Request<{ id: string }>,
   res: Response<SuccessResponse<IPlannedStop>>,
 ) => {
-  const doc = await service.update(req.params.id, req.body, req.user?.id)
+  const doc = await service.update(req.params.id, req.body, req.user!.id)
   res.json({ message: req.t('success.update'), data: doc })
 }
 
@@ -37,7 +37,7 @@ export const start = async (
   req: Request<{ id: string }>,
   res: Response<SuccessResponse<IPlannedStop>>,
 ) => {
-  const doc = await service.start(req.params.id, req.user?.id, req.body ?? {})
+  const doc = await service.start(req.params.id, req.user!.id, req.body ?? {})
   res.json({ message: req.t('success.update'), data: doc })
 }
 
@@ -45,7 +45,7 @@ export const close = async (
   req: Request<{ id: string }>,
   res: Response<SuccessResponse<IPlannedStop>>,
 ) => {
-  const doc = await service.close(req.params.id, req.body ?? {}, req.user?.id)
+  const doc = await service.close(req.params.id, req.body ?? {}, req.user!.id)
   res.json({ message: req.t('success.update'), data: doc })
 }
 
@@ -53,7 +53,7 @@ export const cancel = async (
   req: Request<{ id: string }>,
   res: Response<SuccessResponse<IPlannedStop>>,
 ) => {
-  const doc = await service.cancel(req.params.id, req.user?.id)
+  const doc = await service.cancel(req.params.id, req.user!.id)
   res.json({ message: req.t('success.update'), data: doc })
 }
 

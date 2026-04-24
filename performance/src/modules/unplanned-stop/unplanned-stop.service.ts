@@ -101,7 +101,7 @@ export async function closeIfOpen(
 
   if (!closed.reasonId) {
     const policy = await resolveForWorkCenter(workCenterId)
-    const durationMs = closed.endAt?.getTime() - closed.startAt.getTime()
+    const durationMs = closed.endAt!.getTime() - closed.startAt.getTime()
     if (durationMs <= policy.microStopThresholdMs) {
       const microStopReasonId = await getSystemReasonIdByCode('MICRO_STOP')
       const tagged = await UnplannedStop.findOneAndUpdate(
@@ -221,7 +221,7 @@ export async function close(
 
   if (!doc.reasonId) {
     const policy = await resolveForWorkCenter(doc.workCenterId.toString())
-    const durationMs = doc.endAt?.getTime() - doc.startAt.getTime()
+    const durationMs = doc.endAt!.getTime() - doc.startAt.getTime()
     if (durationMs <= policy.microStopThresholdMs) {
       const microStopReasonId = await getSystemReasonIdByCode('MICRO_STOP')
       const tagged = await UnplannedStop.findOneAndUpdate(
