@@ -35,9 +35,9 @@ export interface ScrapEntryRecord {
   workCenterId?: string
   productId?: string
   amount: number
-  reasonId?: string | null
-  startTime?: string | Date
-  endTime?: string | Date
+  reasonId: string | null
+  startTime: string | Date
+  endTime: string | Date
 }
 
 export interface JobOrderRecordsBatchResult {

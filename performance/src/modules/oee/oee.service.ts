@@ -9,36 +9,8 @@ import { calculateAvailability } from './availability.calc.js'
 import { normalize } from './interval-normalizer.js'
 import * as oeeRepository from './oee.repository.js'
 import type { OeeRange } from './oee.types.js'
-import { calculateProductivity } from './productivity.calc.js'
+import { calculateProductivity, splitAtBoundaries } from './productivity.calc.js'
 import { calculateQuality } from './quality.calc.js'
-
-type StandardSubWindow = { start: Date; end: Date; counterMultiplier: number | null }
-
-function splitAtStandardBoundaries(
-  windowStart: Date,
-  windowEnd: Date,
-  standards: Array<{ validFrom: string | Date; counterMultiplier?: number | null }>,
-): StandardSubWindow[] {
-  if (standards.length === 0) return []
-  const sorted = [...standards].sort(
-    (a, b) => new Date(a.validFrom).getTime() - new Date(b.validFrom).getTime(),
-  )
-  const result: StandardSubWindow[] = []
-  for (let i = 0; i < sorted.length; i++) {
-    const stdStart = new Date(sorted[i].validFrom)
-    const stdEnd =
-      i + 1 < sorted.length ? new Date(sorted[i + 1].validFrom) : new Date(8640000000000000)
-    const clipped = clip({ start: windowStart, end: windowEnd }, { start: stdStart, end: stdEnd })
-    if (clipped) {
-      result.push({
-        start: clipped.start,
-        end: clipped.end,
-        counterMultiplier: sorted[i].counterMultiplier ?? null,
-      })
-    }
-  }
-  return result
-}
 
 export type OeeInput = {
   workCenterId: string
@@ -167,7 +139,7 @@ export async function calculateOee(input: OeeInput): Promise<OeeOutput> {
     return result
   }
 
-  // ── Stage 5: telemetry — batched per tag (1 call per tag) ─────────────────
+  // ── Stage 5: telemetry + known reason ids — all parallel ─────────────────
   const isCountBased = workCenter.productivityMode === 'count_based'
   const producedCounterTagId = workCenter.tagBindings?.producedCounterTagId
   const speedTagId = workCenter.tagBindings?.speedTagId
@@ -181,13 +153,25 @@ export async function calculateOee(input: OeeInput): Promise<OeeOutput> {
 
   const sortedWindows = [...allActualWindows].sort((a, b) => a.from.getTime() - b.from.getTime())
 
-  const [producedSummaryResult, speedSummaryResult] = await Promise.all([
+  const scrapEntriesByJobOrderId = jobOrderRecords.scrapEntriesByJobOrderId
+
+  const allScrapReasonIds = Array.from(
+    new Set(
+      Object.values(scrapEntriesByJobOrderId)
+        .flat()
+        .map(e => e.reasonId)
+        .filter((id): id is string => id !== null),
+    ),
+  )
+
+  const [producedSummaryResult, speedSummaryResult, knownReasonIds] = await Promise.all([
     isCountBased && producedCounterTagId
       ? telemetryClient.producedSummary(producedCounterTagId, sortedWindows)
       : Promise.resolve(null),
     !isCountBased && speedTagId
       ? telemetryClient.speedSummary(speedTagId, sortedWindows)
       : Promise.resolve(null),
+    reasonService.findExistingIds(allScrapReasonIds),
   ])
 
   const producedSummaryByTagId: Record<string, typeof producedSummaryResult> = {}
@@ -216,28 +200,7 @@ export async function calculateOee(input: OeeInput): Promise<OeeOutput> {
     allowProductivityOver100: policy.allowProductivityOver100,
   })
 
-  // ── Stage 3.5: collect known scrap reason ids (1 Mongo query, parallel-eligible) ──
-  const scrapEntriesByJobOrderId = jobOrderRecords.scrapEntriesByJobOrderId as Record<
-    string,
-    Array<{
-      amount: number
-      reasonId: string | null
-      startTime: Date | string
-      endTime: Date | string
-    }>
-  >
-
-  const allScrapReasonIds = Array.from(
-    new Set(
-      Object.values(scrapEntriesByJobOrderId)
-        .flat()
-        .map(e => e.reasonId)
-        .filter((id): id is string => id !== null),
-    ),
-  )
-  const knownReasonIds = await reasonService.findExistingIds(allScrapReasonIds)
-
-  // ── Stage 5.5: gross produced over full JO windows (for quality) ──────────
+  // ── Stage 6: gross produced over full JO windows (for quality) ────────────
   // In execution_span mode, actualOutputWindows === jobOrderWindows, so productivity's
   // actualOutput already accounts for the full JO span → derive gross directly.
   // In net_run_segments mode, productivity used only run-segment sub-windows, which exclude
@@ -260,13 +223,14 @@ export async function calculateOee(input: OeeInput): Promise<OeeOutput> {
     for (let i = 0; i < clippedJobWindows.length; i++) {
       const jw = clippedJobWindows[i]
       if (joProducedResult) {
+        // windows[i] aligns with clippedJobWindows[i]: telemetry preserves input window order
         grossProducedPerJo[jw.jobOrderId] = joProducedResult.windows[i]?.value ?? 0
       } else if (joSpeedResult) {
         const standards = productStandardsByJobOrderId[jw.jobOrderId] ?? []
         const ssw = joSpeedResult.windows[i]
         if (ssw) {
           let speedTotal = 0
-          const subWindows = splitAtStandardBoundaries(jw.start, jw.end, standards)
+          const subWindows = splitAtBoundaries(jw.start, jw.end, standards)
           for (const sub of subWindows) {
             const sswFrom = new Date(ssw.from).getTime()
             const sswTo = new Date(ssw.to).getTime()
@@ -274,7 +238,9 @@ export async function calculateOee(input: OeeInput): Promise<OeeOutput> {
             const overlapEnd = Math.min(sswTo, sub.end.getTime())
             if (overlapEnd > overlapStart) {
               const fraction = (overlapEnd - overlapStart) / (sswTo - sswFrom)
-              speedTotal += (ssw.valueArea * fraction * (sub.counterMultiplier ?? 1)) / 60000
+              // counterMultiplier ?? 1: null means no unit conversion, treat as 1
+              speedTotal +=
+                (ssw.valueArea * fraction * (sub.standard.counterMultiplier ?? 1)) / 60000
             }
           }
           grossProducedPerJo[jw.jobOrderId] = speedTotal
@@ -293,7 +259,7 @@ export async function calculateOee(input: OeeInput): Promise<OeeOutput> {
     }
   }
 
-  // ── Stage 6: quality ──────────────────────────────────────────────────────
+  // ── Stage 7: quality ──────────────────────────────────────────────────────
   const scrapEntriesByJo = clippedJobWindows.map(jw => {
     const entries = (scrapEntriesByJobOrderId[jw.jobOrderId] ?? []).map(e => ({
       amount: e.amount,

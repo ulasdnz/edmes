@@ -50,7 +50,7 @@ export type ProductivityInput = {
 
 // Split a window [start, end) at validFrom boundaries of standards sorted ascending.
 // Returns sub-windows each associated with the standard valid at that time.
-function splitAtBoundaries(
+export function splitAtBoundaries(
   windowStart: Date,
   windowEnd: Date,
   standards: ProductStandardTimeline[],

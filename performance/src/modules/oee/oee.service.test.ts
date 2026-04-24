@@ -10,6 +10,7 @@ import * as reasonService from '../reason/reason.service.js'
 import * as oeeRepository from './oee.repository.js'
 import { calculateOee } from './oee.service.js'
 import type { OeeRange } from './oee.types.js'
+import * as qualityCalc from './quality.calc.js'
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -259,24 +260,26 @@ describe('calculateOee — stage orchestration', () => {
     vi.mocked(productionClient.findProductStandardTimelinesBatch).mockResolvedValue(
       standards as never,
     )
+
+    const joAScrap: never[] = []
+    const joBScrap = [
+      {
+        _id: 'scrap-b-1',
+        amount: 9999,
+        reasonId: null,
+        startTime: new Date('2026-01-01T12:00:00.000Z'),
+        endTime: new Date('2026-01-01T18:00:00.000Z'),
+      },
+    ]
     vi.mocked(productionClient.findJobOrderRecordsBatch).mockResolvedValue({
       quantityAdjustmentsByJobOrderId: {},
       scrapEntriesByJobOrderId: {
-        [JO_A]: [],
-        // JO-B has a large scrap entry that would destroy JO-A's ratio if leaked
-        [JO_B]: [
-          {
-            amount: 9999,
-            reasonId: null,
-            startTime: new Date('2026-01-01T12:00:00.000Z'),
-            endTime: new Date('2026-01-01T18:00:00.000Z'),
-          },
-        ],
+        [JO_A]: joAScrap,
+        // JO-B has a large scrap entry that would push JO-A's good below total if leaked
+        [JO_B]: joBScrap,
       },
     })
-    vi.spyOn(reasonService, 'findExistingIds').mockResolvedValue(new Set())
 
-    // 100 units produced across the two JO windows
     vi.mocked(telemetryClient.producedSummary).mockResolvedValue({
       windows: [
         {
@@ -295,17 +298,27 @@ describe('calculateOee — stage orchestration', () => {
       total: 200,
     })
 
-    const result = await calculateOee({ workCenterId: WC_ID, range: RANGE })
+    const calculateQualitySpy = vi.spyOn(qualityCalc, 'calculateQuality')
 
-    // JO-A has no scrap so its contribution to quality should not be affected by JO-B's scrap
-    // overall quality: JO-A contributes 100 good out of 100; JO-B contributes 0 good out of 100
-    // aggregate: good=100, total=200, ratio=0.5 — NOT ratio=0 which would happen if JO-B scrap leaked
-    expect(result.quality.total).toBeGreaterThan(0)
-    // JO-A's scrap is 0, so it contributes 100 good; ratio would be < 0.5 only if JO-B scrap leaked into JO-A
-    // With correct isolation: oeeAffectingScrap = 9999 (JO-B only), good = max(200-9999,0) = 0 — ratio=0
-    // But that's fine: the point is JO-A's window entries are empty, not polluted by JO-B entries
-    expect(result.quality.oeeAffectingScrap).toBeCloseTo(9999)
-    expect(result.quality.good).toBe(0)
+    await calculateOee({ workCenterId: WC_ID, range: RANGE })
+
+    expect(calculateQualitySpy).toHaveBeenCalledOnce()
+    const callArg = calculateQualitySpy.mock.calls[0][0]
+
+    // JO-A entry must have zero scrap entries; JO-B's scrap must not bleed into JO-A's slot
+    const joAEntry = callArg.scrapEntriesByJobOrder.find(
+      e => e.clippedJobOrderWindow.start.getTime() === twoJos[0].start.getTime(),
+    )
+    const joBEntry = callArg.scrapEntriesByJobOrder.find(
+      e => e.clippedJobOrderWindow.start.getTime() === twoJos[1].start.getTime(),
+    )
+
+    expect(joAEntry).toBeDefined()
+    expect(joAEntry!.entries).toHaveLength(0)
+
+    expect(joBEntry).toBeDefined()
+    expect(joBEntry!.entries).toHaveLength(1)
+    expect(joBEntry!.entries[0].amount).toBe(9999)
   })
 
   it('net_run_segments: windows passed to producedSummary are non-overlapping when stop splits JO', async () => {
