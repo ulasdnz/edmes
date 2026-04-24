@@ -118,6 +118,19 @@ async function isReferenced(reasonId: string): Promise<boolean> {
   return results.some(Boolean)
 }
 
+export async function findIds({
+  affectsOee,
+  usages,
+}: {
+  affectsOee: boolean
+  usages: string[]
+}): Promise<Set<string>> {
+  const docs = await Reason.find({ affectsOee, usages: { $in: usages } })
+    .select({ _id: 1 })
+    .lean<{ _id: Types.ObjectId }[]>()
+  return new Set(docs.map(d => d._id.toString()))
+}
+
 export async function remove(id: string, userId: string): Promise<IReason> {
   const existing = await Reason.findById(id).select({ isSystemDefault: 1 }).lean()
   if (!existing) throw new CustomError(404, 'error.not_found')
