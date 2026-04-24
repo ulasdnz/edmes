@@ -65,8 +65,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T | null> {
       })
       return null
     }
-    const body = (await res.json()) as { data: T }
-    return body.data
+    const body = (await res.json()) as { data?: T }
+    return body.data ?? null
   } catch (err) {
     logger.warn('Production internal fetch errored', {
       event: 'internal_api.production.fetch_errored',

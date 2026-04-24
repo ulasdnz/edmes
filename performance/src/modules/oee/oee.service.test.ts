@@ -116,17 +116,18 @@ afterEach(() => {
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 describe('calculateOee — stage orchestration', () => {
-  it('Stage 1 issues 6 parallel calls', async () => {
+  it('Stage 1 issues 5 parallel calls (microStopReasonId resolved once inside repository)', async () => {
     await calculateOee({ workCenterId: WC_ID, range: RANGE })
 
     expect(workCenterClient.getById).toHaveBeenCalledOnce()
     expect(policyService.resolveForWorkCenter).toHaveBeenCalledOnce()
-    expect(reasonService.getSystemReasonIdByCode).toHaveBeenCalledOnce()
+    // getSystemReasonIdByCode must NOT be called from the service — only from inside the repo
+    expect(reasonService.getSystemReasonIdByCode).not.toHaveBeenCalled()
     expect(reasonService.findIds).toHaveBeenCalledOnce()
     expect(productionClient.findStartedJobOrders).toHaveBeenCalledOnce()
     expect(oeeRepository.findStopsForOee).toHaveBeenCalledOnce()
     expect(vi.mocked(oeeRepository.findStopsForOee).mock.calls[0][0]).toMatchObject({
-      excludeSystemReasonCodes: ['MICRO_STOP'],
+      excludeUnplannedSystemReasonCodes: ['MICRO_STOP'],
     })
   })
 
@@ -209,7 +210,7 @@ describe('calculateOee — stage orchestration', () => {
   })
 
   it('non-overlapping windows contract: windows passed to producedSummary are non-overlapping', async () => {
-    const { isNonOverlapping } = await import('./productivity.calc.js')
+    const { isNonOverlapping } = await import('./_test-utils.js')
 
     await calculateOee({ workCenterId: WC_ID, range: RANGE })
 
@@ -220,7 +221,7 @@ describe('calculateOee — stage orchestration', () => {
   })
 
   it('net_run_segments: windows passed to producedSummary are non-overlapping when stop splits JO', async () => {
-    const { isNonOverlapping } = await import('./productivity.calc.js')
+    const { isNonOverlapping } = await import('./_test-utils.js')
 
     // 12-hour JO with a 2-hour planned stop in the middle → two run segments
     const stopStart = new Date('2026-01-01T10:00:00.000Z')

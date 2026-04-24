@@ -125,6 +125,7 @@ export async function findIds({
   affectsOee: boolean
   usages: string[]
 }): Promise<Set<string>> {
+  // $in matches reasons whose usages array contains AT LEAST ONE of the provided values (OR semantics).
   const docs = await Reason.find({ affectsOee, usages: { $in: usages } })
     .select({ _id: 1 })
     .lean<{ _id: Types.ObjectId }[]>()

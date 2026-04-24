@@ -8,7 +8,8 @@ export type FindStopsInput = {
   workCenterId: string
   from: Date
   to: Date
-  excludeSystemReasonCodes?: string[]
+  // Applied to the unplanned query only — micro-stops are conceptually unplanned.
+  excludeUnplannedSystemReasonCodes?: string[]
 }
 
 export type FindStopsResult = {

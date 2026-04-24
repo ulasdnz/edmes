@@ -48,15 +48,6 @@ export type ProductivityInput = {
   allowProductivityOver100: boolean
 }
 
-export function isNonOverlapping(windows: Array<{ from: Date; to: Date }>): boolean {
-  if (windows.length <= 1) return true
-  const sorted = [...windows].sort((a, b) => a.from.getTime() - b.from.getTime())
-  for (let i = 1; i < sorted.length; i++) {
-    if (sorted[i].from.getTime() < sorted[i - 1].to.getTime()) return false
-  }
-  return true
-}
-
 // Split a window [start, end) at validFrom boundaries of standards sorted ascending.
 // Returns sub-windows each associated with the standard valid at that time.
 function splitAtBoundaries(
@@ -126,30 +117,6 @@ function sumProducedForJo(
     }
   }
   return total
-}
-
-// actualOutput from speed summary for a JO's windows.
-// Conversion: actualOutput = Σ (valueArea_subWindow × counterMultiplier) / 60000
-// where valueArea is in (speed_unit × ms), divide by 60000 to convert ms→minutes
-// so actualOutput is in the same unit as idealOutputPerMinute × minutes.
-function sumSpeedForJo(
-  joWindows: Array<{ from: Date; to: Date }>,
-  summary: SpeedSummary,
-  counterMultiplier: number,
-): number {
-  let total = 0
-  for (const sw of summary.windows) {
-    const swFrom = new Date(sw.from)
-    const swTo = new Date(sw.to)
-    for (const jw of joWindows) {
-      if (swFrom.getTime() < jw.to.getTime() && swTo.getTime() > jw.from.getTime()) {
-        total += sw.valueArea * counterMultiplier
-        break
-      }
-    }
-  }
-  // valueArea is unit×ms; divide by 60000 to get unit×min equivalent
-  return total / 60000
 }
 
 function productionRunMsForJo(jo: JobWindow, productionRunWindows: OeeRange[]): number {

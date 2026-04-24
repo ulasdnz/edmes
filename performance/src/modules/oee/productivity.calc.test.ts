@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import {
-  calculateProductivity,
-  isNonOverlapping,
-  type ProductivityInput,
-} from './productivity.calc.js'
+import { isNonOverlapping } from './_test-utils.js'
+import { calculateProductivity, type ProductivityInput } from './productivity.calc.js'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -490,6 +487,53 @@ describe('calculateProductivity — speed_based', () => {
 
     expect(result.status).toBe('ok')
     expect(result.ratio).toBeCloseTo(1.0, 3)
+  })
+
+  it('speed-based regression: missing /60000 conversion would produce ratio ~60000x too large', () => {
+    // 60-min window, idealOutputPerMinute=100, counterMultiplier=1
+    // valueArea = 100 (units/min) × 3600000ms = 360000000 unit·ms
+    // correct actualOutput = 360000000 / 60000 = 6000 → ratio = 6000/6000 = 1.0
+    // without /60000: actualOutput = 360000000 → ratio = 60000 (obviously wrong)
+    const valueArea = 100 * 60 * 60 * 1000
+    const input = makeInput({
+      productivityMode: 'speed_based',
+      producedCounterTagId: undefined,
+      speedTagId: 'tag-speed',
+      productStandardsByJobOrderId: {
+        [JO_ID]: [
+          {
+            _id: 'std1',
+            validFrom: new Date('2026-01-01T00:00:00.000Z').toISOString(),
+            idealOutputPerMinute: 100,
+            counterMultiplier: 1,
+            idealSpeed: 100,
+          },
+        ],
+      },
+      speedSummaryByTagId: {
+        'tag-speed': {
+          windows: [
+            {
+              from: T0.toISOString(),
+              to: T1.toISOString(),
+              durationMs: 60 * 60 * 1000,
+              timeWeightedAverage: 100,
+              valueArea,
+              sampleCount: 60,
+            },
+          ],
+          total: { durationMs: 60 * 60 * 1000, timeWeightedAverage: 100, valueArea },
+        },
+      },
+    })
+
+    const result = calculateProductivity(input)
+
+    expect(result.status).toBe('ok')
+    // Without /60000 the ratio would be ~60000; correct value is 1.0
+    expect(result.ratio).toBeCloseTo(1.0, 3)
+    expect(result.jobOrders[0].actualOutput).toBeCloseTo(6000, 1)
+    expect(result.jobOrders[0].effectiveTargetOutput).toBeCloseTo(6000, 1)
   })
 
   it('product standard change mid-job: windows split; target computed correctly', () => {

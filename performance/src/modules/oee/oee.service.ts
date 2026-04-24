@@ -25,24 +25,23 @@ export type OeeOutput = {
 export async function calculateOee(input: OeeInput): Promise<OeeOutput> {
   const { workCenterId, range } = input
 
-  // ── Stage 1: 6 parallel fetches ────────────────────────────────────────────
-  const [workCenter, policy, microStopReasonId, nonOeeReasonIds, jobOrders, rawStops] =
-    await Promise.all([
-      workCenterClient.getById(workCenterId),
-      policyService.resolveForWorkCenter(workCenterId),
-      reasonService.getSystemReasonIdByCode('MICRO_STOP'),
-      reasonService.findIds({
-        affectsOee: false,
-        usages: ['planned_stop', 'unplanned_stop', 'scrap'],
-      }),
-      productionClient.findStartedJobOrders({ workCenterId, from: range.from, to: range.to }),
-      oeeRepository.findStopsForOee({
-        workCenterId,
-        from: range.from,
-        to: range.to,
-        excludeSystemReasonCodes: ['MICRO_STOP'],
-      }),
-    ])
+  // ── Stage 1: 5 parallel fetches ────────────────────────────────────────────
+  // microStopReasonId is resolved once inside findStopsForOee and returned via rawStops.microStopReasonId.
+  const [workCenter, policy, nonOeeReasonIds, jobOrders, rawStops] = await Promise.all([
+    workCenterClient.getById(workCenterId),
+    policyService.resolveForWorkCenter(workCenterId),
+    reasonService.findIds({
+      affectsOee: false,
+      usages: ['planned_stop', 'unplanned_stop', 'scrap'],
+    }),
+    productionClient.findStartedJobOrders({ workCenterId, from: range.from, to: range.to }),
+    oeeRepository.findStopsForOee({
+      workCenterId,
+      from: range.from,
+      to: range.to,
+      excludeUnplannedSystemReasonCodes: ['MICRO_STOP'],
+    }),
+  ])
 
   // Early returns
   if (!workCenter) {
@@ -84,7 +83,7 @@ export async function calculateOee(input: OeeInput): Promise<OeeOutput> {
     planned: rawStops.planned,
     unplanned: rawStops.unplanned,
     nonOeeReasonIds,
-    microStopReasonId: microStopReasonId.toString(),
+    microStopReasonId: rawStops.microStopReasonId,
   })
 
   const availability = calculateAvailability({ clippedJobWindows, calculationStops })
