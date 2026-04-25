@@ -52,6 +52,7 @@ export interface UpdateScheduleInput {
 
 export interface ScheduleListInput {
   workCenterId?: string
+  accessibleWorkCenterIds?: string[]
   reasonId?: string
   isEnabled?: boolean
 }
@@ -113,7 +114,10 @@ export async function create(
     props: data.props,
     createdBy: new Types.ObjectId(userId),
   })
-  emitPlannedStopScheduleCreated(doc._id.toString())
+  emitPlannedStopScheduleCreated(
+    doc._id.toString(),
+    (doc.workCenterIds ?? []).map(id => id.toString()),
+  )
   return doc
 }
 
@@ -125,7 +129,11 @@ export async function getById(id: string): Promise<IPlannedStopSchedule> {
 
 export async function list(input: ScheduleListInput): Promise<IPlannedStopSchedule[]> {
   const query: Record<string, unknown> = {}
-  if (input.workCenterId) query.workCenterIds = new Types.ObjectId(input.workCenterId)
+  if (input.workCenterId) {
+    query.workCenterIds = new Types.ObjectId(input.workCenterId)
+  } else if (input.accessibleWorkCenterIds) {
+    query.workCenterIds = { $in: input.accessibleWorkCenterIds.map(id => new Types.ObjectId(id)) }
+  }
   if (input.reasonId) query.reasonId = new Types.ObjectId(input.reasonId)
   if (input.isEnabled !== undefined) query.isEnabled = input.isEnabled
 
@@ -185,14 +193,20 @@ export async function update(
     { returnDocument: 'after', runValidators: true },
   )
   if (!doc) throw new CustomError(404, 'error.not_found')
-  emitPlannedStopScheduleUpdated(doc._id.toString())
+  emitPlannedStopScheduleUpdated(
+    doc._id.toString(),
+    (doc.workCenterIds ?? []).map(id => id.toString()),
+  )
   return doc
 }
 
 export async function remove(id: string): Promise<IPlannedStopSchedule> {
   const doc = await PlannedStopSchedule.findOneAndDelete({ _id: id })
   if (!doc) throw new CustomError(404, 'error.not_found')
-  emitPlannedStopScheduleDeleted(doc._id.toString())
+  emitPlannedStopScheduleDeleted(
+    doc._id.toString(),
+    (doc.workCenterIds ?? []).map(id => id.toString()),
+  )
   return doc
 }
 

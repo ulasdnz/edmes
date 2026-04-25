@@ -3,7 +3,7 @@ import { Types } from 'mongoose'
 import {
   emitUnplannedStopClosed,
   emitUnplannedStopConverted,
-  emitUnplannedStopCreated,
+  emitUnplannedStopOpened,
   emitUnplannedStopUpdated,
 } from '../../jobs/events.js'
 import { type PaginatedResult, paginate } from '../../utils/pagination.js'
@@ -48,6 +48,7 @@ export interface UnplannedStopListInput {
   sort?: string
   search?: string
   workCenterId?: string
+  accessibleWorkCenterIds?: string[]
   state?: 'open' | 'closed' | 'converted'
   from?: Date
   to?: Date
@@ -69,7 +70,7 @@ export async function openFromRunMode(
       source: 'run_mode',
       startAt,
     })
-    emitUnplannedStopCreated(doc._id.toString(), workCenterId)
+    emitUnplannedStopOpened(doc._id.toString(), workCenterId)
     return doc
   } catch (err) {
     if (isDuplicateKeyError(err)) {
@@ -141,7 +142,7 @@ export async function createManual(
       createdBy: userObjectId,
       closedBy: data.endAt ? userObjectId : null,
     })
-    emitUnplannedStopCreated(doc._id.toString(), data.workCenterId)
+    emitUnplannedStopOpened(doc._id.toString(), data.workCenterId)
     if (data.endAt) {
       emitUnplannedStopClosed(doc._id.toString(), data.workCenterId)
     }
@@ -166,7 +167,11 @@ export async function list(
   const { page = 1, limit = 20, sort, search, state, from, to, ...filters } = input
 
   const query: Record<string, unknown> = {}
-  if (filters.workCenterId) query.workCenterId = new Types.ObjectId(filters.workCenterId)
+  if (filters.workCenterId) {
+    query.workCenterId = new Types.ObjectId(filters.workCenterId)
+  } else if (filters.accessibleWorkCenterIds) {
+    query.workCenterId = { $in: filters.accessibleWorkCenterIds.map(id => new Types.ObjectId(id)) }
+  }
   if (filters.reasonId) query.reasonId = new Types.ObjectId(filters.reasonId)
 
   if (state === 'open') query.endAt = null
@@ -305,7 +310,11 @@ export async function convertToPlanned(
   )
   if (!doc) throw new CustomError(409, 'error.unplanned_stop_already_converted')
 
-  emitUnplannedStopConverted(doc._id.toString(), doc.workCenterId.toString())
+  emitUnplannedStopConverted(
+    doc._id.toString(),
+    doc.workCenterId.toString(),
+    plannedStopObjectId.toString(),
+  )
   return doc
 }
 

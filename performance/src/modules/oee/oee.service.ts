@@ -1,16 +1,23 @@
 import { CustomError } from '@mes/core'
+import { SYSTEM_IDENTITY } from '../../constants/identity.js'
 import * as productionClient from '../../lib/internal-api/production.client.js'
 import * as telemetryClient from '../../lib/internal-api/telemetry.client.js'
+import { getUserWorkCenterIds } from '../../lib/internal-api/user.client.js'
 import * as workCenterClient from '../../lib/internal-api/work-center.client.js'
 import { clip } from '../../utils/intervals.js'
 import * as policyService from '../policy/policy.service.js'
 import * as reasonService from '../reason/reason.service.js'
+import type { AvailabilityResult, AvailabilityStatus } from './availability.calc.js'
 import { calculateAvailability } from './availability.calc.js'
+import type { Diagnostic } from './diagnostics.js'
 import { normalize } from './interval-normalizer.js'
 import * as oeeRepository from './oee.repository.js'
 import type { OeeRange } from './oee.types.js'
+import type { ProductivityResult, ProductivityStatus } from './productivity.calc.js'
 import { calculateProductivity, splitAtBoundaries } from './productivity.calc.js'
+import type { QualityResult, QualityStatus } from './quality.calc.js'
 import { calculateQuality } from './quality.calc.js'
+import { calculateVirtualOee } from './virtual-work-center.js'
 
 export type OeeInput = {
   workCenterId: string
@@ -18,10 +25,212 @@ export type OeeInput = {
 }
 
 export type OeeOutput = {
-  availability: ReturnType<typeof calculateAvailability>
-  productivity: ReturnType<typeof calculateProductivity>
-  quality: ReturnType<typeof calculateQuality>
-  // TODO(phase 9): overall oee, response shaping
+  availability: AvailabilityResult
+  productivity: ProductivityResult
+  quality: QualityResult
+}
+
+// ── Public API types ──────────────────────────────────────────────────────────
+
+type FactorStatus = 'ok' | 'no_context' | 'not_calculable'
+
+type OeeFactorResponse = {
+  percentage: number
+  status: FactorStatus
+  diagnostics: Diagnostic[]
+}
+
+type OeeStatus = 'ok' | 'no_context' | 'not_calculable'
+
+export type OeePublicResponse = {
+  workCenterId: string
+  range: { from: string; to: string }
+  availability: OeeFactorResponse
+  productivity: OeeFactorResponse
+  quality: OeeFactorResponse
+  oee: OeeFactorResponse & { status: OeeStatus }
+  diagnostics: Diagnostic[]
+}
+
+export type CalculateInput = {
+  workCenterId: string
+  from: Date
+  to: Date
+  userId: string
+}
+
+function toPercentage(ratio: number): number {
+  return Math.round(Math.max(0, ratio) * 100)
+}
+
+function resolveOeeStatus(a: FactorStatus, p: FactorStatus, q: FactorStatus): OeeStatus {
+  if (a === 'not_calculable' || p === 'not_calculable' || q === 'not_calculable') {
+    return 'not_calculable'
+  }
+  if (a === 'no_context' && p === 'no_context' && q === 'no_context') {
+    return 'no_context'
+  }
+  return 'ok'
+}
+
+export async function calculate(input: CalculateInput): Promise<OeePublicResponse> {
+  const { workCenterId, from, to, userId } = input
+  const range: OeeRange = { from, to }
+
+  if (userId !== SYSTEM_IDENTITY) {
+    const allowedIds = await getUserWorkCenterIds(userId)
+    if (!allowedIds.includes(workCenterId)) {
+      throw new CustomError(404, 'error.not_found')
+    }
+  }
+
+  const wc = await workCenterClient.getById(workCenterId)
+  if (!wc) {
+    throw new CustomError(404, 'error.not_found')
+  }
+
+  if (wc.type === 'virtual') {
+    const virtualResult = await calculateVirtualOee(
+      workCenterId,
+      range,
+      new Set<string>(),
+      async (wcId, r, visited) => {
+        const inner = await calculateOeeInternal(wcId, r, SYSTEM_IDENTITY, visited)
+        return inner
+      },
+    )
+
+    const aStatus = virtualResult.availability.status
+    const pStatus = virtualResult.productivity.status
+    const qStatus = virtualResult.quality.status
+    const oeeStatus = resolveOeeStatus(aStatus, pStatus, qStatus)
+
+    const oeeRatio =
+      oeeStatus === 'ok'
+        ? virtualResult.availability.ratio *
+          virtualResult.productivity.ratio *
+          virtualResult.quality.ratio
+        : 0
+
+    return {
+      workCenterId,
+      range: { from: from.toISOString(), to: to.toISOString() },
+      availability: {
+        percentage: toPercentage(virtualResult.availability.ratio),
+        status: aStatus,
+        diagnostics: virtualResult.availability.diagnostics,
+      },
+      productivity: {
+        percentage: toPercentage(virtualResult.productivity.ratio),
+        status: pStatus,
+        diagnostics: virtualResult.productivity.diagnostics,
+      },
+      quality: {
+        percentage: toPercentage(virtualResult.quality.ratio),
+        status: qStatus,
+        diagnostics: virtualResult.quality.diagnostics,
+      },
+      oee: {
+        percentage: toPercentage(oeeRatio),
+        status: oeeStatus,
+        diagnostics: [],
+      },
+      diagnostics: virtualResult.diagnostics,
+    }
+  }
+
+  const result = await calculateOee({ workCenterId, range })
+
+  const aStatus = result.availability.status as FactorStatus
+  const pStatus = result.productivity.status as FactorStatus
+  const qStatus = result.quality.status as FactorStatus
+  const oeeStatus = resolveOeeStatus(aStatus, pStatus, qStatus)
+
+  const oeeRatio =
+    oeeStatus === 'ok'
+      ? result.availability.ratio * result.productivity.ratio * result.quality.ratio
+      : 0
+
+  return {
+    workCenterId,
+    range: { from: from.toISOString(), to: to.toISOString() },
+    availability: {
+      percentage: toPercentage(result.availability.ratio),
+      status: aStatus,
+      diagnostics: result.availability.status === 'no_context' ? [] : [],
+    },
+    productivity: {
+      percentage: toPercentage(result.productivity.ratio),
+      status: pStatus,
+      diagnostics: result.productivity.jobOrders
+        .filter(jo => jo.notCalculable)
+        .map(() => ({ code: 'no_production_total' as const, severity: 'warning' as const })),
+    },
+    quality: {
+      percentage: toPercentage(result.quality.ratio),
+      status: qStatus,
+      diagnostics: result.quality.diagnostics,
+    },
+    oee: {
+      percentage: toPercentage(oeeRatio),
+      status: oeeStatus,
+      diagnostics: [],
+    },
+    diagnostics: [],
+  }
+}
+
+async function calculateOeeInternal(
+  workCenterId: string,
+  range: OeeRange,
+  _userId: string,
+  visited: Set<string>,
+): Promise<OeeOutput> {
+  const wc = await workCenterClient.getById(workCenterId)
+  if (wc?.type === 'virtual') {
+    const virtualResult = await calculateVirtualOee(
+      workCenterId,
+      range,
+      visited,
+      async (wcId, r, vis) => calculateOeeInternal(wcId, r, SYSTEM_IDENTITY, vis),
+    )
+    const aStatus = virtualResult.availability.status
+    const pStatus = virtualResult.productivity.status
+    const qStatus = virtualResult.quality.status
+    return {
+      availability: {
+        status: aStatus,
+        ratio: virtualResult.availability.ratio,
+        jobOrderTimeMs: 0,
+        oeeEligibleTimeMs: 0,
+        effectiveRunTimeMs: 0,
+        oeeAffectingStopMs: 0,
+        nonEffectiveStopMs: 0,
+      },
+      productivity: {
+        status: pStatus,
+        ratio: virtualResult.productivity.ratio,
+        actualOutput: 0,
+        effectiveTargetOutput: 0,
+        fullJobTargetOutput: 0,
+        quantityAdjustment: 0,
+        actualOutputWindowMode: 'execution_span',
+        aggregationMode: 'total_ratio',
+        jobOrders: [],
+      },
+      quality: {
+        status: qStatus === 'not_calculable' ? 'no_context' : qStatus,
+        ratio: virtualResult.quality.ratio,
+        good: 0,
+        total: 0,
+        oeeAffectingScrap: 0,
+        excludedScrap: 0,
+        totalScrap: 0,
+        diagnostics: [],
+      },
+    }
+  }
+  return calculateOee({ workCenterId, range })
 }
 
 export async function calculateOee(input: OeeInput): Promise<OeeOutput> {
@@ -51,8 +260,7 @@ export async function calculateOee(input: OeeInput): Promise<OeeOutput> {
   }
 
   if (workCenter.type === 'virtual') {
-    // TODO(phase 9): delegate to virtual-work-center.ts
-    throw new CustomError(501, 'error.virtual_work_center_not_implemented')
+    throw new CustomError(400, 'error.virtual_work_center_not_supported_here')
   }
 
   if (jobOrders.length === 0) {
@@ -291,6 +499,5 @@ export async function calculateOee(input: OeeInput): Promise<OeeOutput> {
     availability,
     productivity,
     quality,
-    // TODO(phase 9): overall oee, final response shape
   }
 }

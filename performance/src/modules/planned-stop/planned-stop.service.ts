@@ -55,6 +55,7 @@ export interface PlannedStopListInput {
   sort?: string
   search?: string
   workCenterId?: string
+  accessibleWorkCenterIds?: string[]
   status?: 'planned' | 'active' | 'closed' | 'cancelled'
   reasonId?: string
   from?: Date
@@ -155,7 +156,11 @@ export async function list(input: PlannedStopListInput): Promise<PaginatedResult
   const { page = 1, limit = 20, sort, search, from, to, ...filters } = input
 
   const query: Record<string, unknown> = {}
-  if (filters.workCenterId) query.workCenterId = new Types.ObjectId(filters.workCenterId)
+  if (filters.workCenterId) {
+    query.workCenterId = new Types.ObjectId(filters.workCenterId)
+  } else if (filters.accessibleWorkCenterIds) {
+    query.workCenterId = { $in: filters.accessibleWorkCenterIds.map(id => new Types.ObjectId(id)) }
+  }
   if (filters.reasonId) query.reasonId = new Types.ObjectId(filters.reasonId)
   if (filters.status) query.status = filters.status
 

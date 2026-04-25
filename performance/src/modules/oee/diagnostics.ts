@@ -7,6 +7,7 @@ export type DiagnosticCode =
   | 'no_production_total'
   | 'scrap_exceeds_total'
   | 'unknown_scrap_reason_treated_as_oee_affecting'
+  | 'virtual_work_center_cycle'
 
 export type Diagnostic = {
   code: DiagnosticCode
