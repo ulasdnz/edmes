@@ -23,19 +23,23 @@ const MICRO_STOP_TEMPLATE = {
 export async function bootstrapSystemReasons(): Promise<void> {
   const systemActor = new Types.ObjectId(SYSTEM_IDENTITY)
 
-  await Reason.updateOne(
-    { code: MICRO_STOP_CODE },
-    {
-      $setOnInsert: {
+  let doc = await Reason.findOne({ code: MICRO_STOP_CODE }).lean()
+  if (!doc) {
+    try {
+      await Reason.create({
         ...MICRO_STOP_TEMPLATE,
         createdBy: systemActor,
         updatedBy: null,
-      },
-    },
-    { upsert: true },
-  )
+      })
+    } catch (err: unknown) {
+      // Duplicate key — another concurrent insert raced us; re-fetch below.
+      if (typeof err !== 'object' || err === null || (err as { code?: number }).code !== 11000) {
+        throw err
+      }
+    }
+    doc = await Reason.findOne({ code: MICRO_STOP_CODE }).lean()
+  }
 
-  const doc = await Reason.findOne({ code: MICRO_STOP_CODE }).lean()
   if (!doc) {
     throw new Error('error.micro_stop_missing')
   }
