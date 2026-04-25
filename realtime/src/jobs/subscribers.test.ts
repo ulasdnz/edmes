@@ -101,12 +101,13 @@ describe('Subscribers.catchAllForwarding', () => {
     expect(capturedConfig.maxDeliveries).toBe(6)
   })
 
-  it('subscribes to all three streams', () => {
+  it('subscribes to all streams including events.performance', () => {
     const streams = Object.keys(capturedConfig.streams)
     expect(streams).toContain('events.user')
     expect(streams).toContain('events.work_center')
     expect(streams).toContain('events.production')
     expect(streams).toContain('events.telemetry')
+    expect(streams).toContain('events.performance')
   })
 
   it("uses '*' handler for all streams", () => {
@@ -115,6 +116,7 @@ describe('Subscribers.catchAllForwarding', () => {
       'events.work_center',
       'events.production',
       'events.telemetry',
+      'events.performance',
     ]) {
       const handlers = capturedConfig.streams[stream]
       expect(handlers['*']).toBeDefined()
