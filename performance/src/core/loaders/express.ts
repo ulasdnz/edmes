@@ -12,6 +12,7 @@ import { sharedCacheWrapDedup } from '../../lib/cache.js'
 import { httpLoggerMiddleware, logger, morganMiddleware } from '../../lib/logger.js'
 import { generateOpenApiDocument } from '../../lib/openapi/setup.js'
 import { redisClient } from '../../lib/redis.js'
+import oeeRoutes from '../../modules/oee/oee.routes.js'
 import plannedStopRoutes from '../../modules/planned-stop/planned-stop.routes.js'
 import plannedStopScheduleRoutes from '../../modules/planned-stop-schedule/planned-stop-schedule.routes.js'
 import plannedStopTemplateRoutes from '../../modules/planned-stop-template/planned-stop-template.routes.js'
@@ -85,6 +86,7 @@ export const initExpress = async () => {
   const apiRouter = Router()
   apiRouter.use(authenticate as express.RequestHandler)
   mountSharedRoutes(apiRouter)
+  apiRouter.use(oeeRoutes)
 
   app.use('/api/v1', apiRouter)
 

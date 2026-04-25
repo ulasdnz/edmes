@@ -37,25 +37,38 @@ export const emitPlannedStopCancelled = (plannedStopId: string, workCenterId: st
 export const emitPlannedStopDeleted = (plannedStopId: string, workCenterId: string) =>
   emit('planned_stop.deleted', { plannedStopId, workCenterId })
 
-export const emitPlannedStopTemplateCreated = (templateId: string) =>
-  emit('planned_stop_template.created', { templateId })
-export const emitPlannedStopTemplateUpdated = (templateId: string) =>
-  emit('planned_stop_template.updated', { templateId })
-export const emitPlannedStopTemplateDeleted = (templateId: string) =>
-  emit('planned_stop_template.deleted', { templateId })
+export const emitPlannedStopTemplateCreated = (templateId: string, workCenterIds: string[]) =>
+  emit('planned_stop_template.created', { templateId, workCenterIds })
+export const emitPlannedStopTemplateUpdated = (templateId: string, workCenterIds: string[]) =>
+  emit('planned_stop_template.updated', { templateId, workCenterIds })
+export const emitPlannedStopTemplateDeleted = (templateId: string, workCenterIds: string[]) =>
+  emit('planned_stop_template.deleted', { templateId, workCenterIds })
+export const emitPlannedStopTemplateStarted = (
+  templateId: string,
+  workCenterIds: string[],
+  plannedStopId: string,
+) => emit('planned_stop_template.started', { templateId, workCenterIds, plannedStopId })
 
-export const emitPlannedStopScheduleCreated = (scheduleId: string) =>
-  emit('planned_stop_schedule.created', { scheduleId })
-export const emitPlannedStopScheduleUpdated = (scheduleId: string) =>
-  emit('planned_stop_schedule.updated', { scheduleId })
-export const emitPlannedStopScheduleDeleted = (scheduleId: string) =>
-  emit('planned_stop_schedule.deleted', { scheduleId })
+export const emitPlannedStopScheduleCreated = (scheduleId: string, workCenterIds: string[]) =>
+  emit('planned_stop_schedule.created', { scheduleId, workCenterIds })
+export const emitPlannedStopScheduleUpdated = (scheduleId: string, workCenterIds: string[]) =>
+  emit('planned_stop_schedule.updated', { scheduleId, workCenterIds })
+export const emitPlannedStopScheduleDeleted = (scheduleId: string, workCenterIds: string[]) =>
+  emit('planned_stop_schedule.deleted', { scheduleId, workCenterIds })
 
-export const emitUnplannedStopCreated = (unplannedStopId: string, workCenterId: string) =>
-  emit('unplanned_stop.created', { unplannedStopId, workCenterId })
+export const emitUnplannedStopOpened = (unplannedStopId: string, workCenterId: string) =>
+  emit('unplanned_stop.opened', { unplannedStopId, workCenterId })
 export const emitUnplannedStopUpdated = (unplannedStopId: string, workCenterId: string) =>
   emit('unplanned_stop.updated', { unplannedStopId, workCenterId })
 export const emitUnplannedStopClosed = (unplannedStopId: string, workCenterId: string) =>
   emit('unplanned_stop.closed', { unplannedStopId, workCenterId })
-export const emitUnplannedStopConverted = (unplannedStopId: string, workCenterId: string) =>
-  emit('unplanned_stop.converted', { unplannedStopId, workCenterId })
+export const emitUnplannedStopConverted = (
+  unplannedStopId: string,
+  workCenterId: string,
+  convertedToPlannedStopId?: string,
+) =>
+  emit('unplanned_stop.converted', {
+    unplannedStopId,
+    workCenterId,
+    ...(convertedToPlannedStopId ? { convertedToPlannedStopId } : {}),
+  })

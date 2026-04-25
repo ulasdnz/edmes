@@ -28,6 +28,7 @@ const streams: Record<string, Record<string, typeof catchAll>> = {
   'events.work_center': { '*': catchAll },
   'events.production': { '*': catchAll },
   'events.telemetry': { '*': catchAll },
+  'events.performance': { '*': catchAll },
 }
 
 const consumer = createStreamConsumer({
