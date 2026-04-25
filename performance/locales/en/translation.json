@@ -27,7 +27,6 @@
     "converted_unplanned_missing_link": "Converted unplanned stop is missing its planned stop link",
     "no_production_total": "Production total could not be determined for this job order",
     "scrap_exceeds_total": "Scrap quantity exceeds total production",
-    "unknown_scrap_reason_treated_as_oee_affecting": "Unknown scrap reason was treated as OEE-affecting",
-    "virtual_work_center_cycle": "Cycle detected in virtual work center composition"
+    "unknown_scrap_reason_treated_as_oee_affecting": "Unknown scrap reason was treated as OEE-affecting"
   }
 }

@@ -102,37 +102,15 @@ function composeFactor(
 export async function calculateVirtualOee(
   workCenterId: string,
   range: OeeRange,
-  visitedWorkCenterIds: Set<string>,
   calculateOeeForWc: (
     wcId: string,
     range: OeeRange,
-    visited: Set<string>,
   ) => Promise<{
     availability: AvailabilityResult
     productivity: ProductivityResult
     quality: QualityResult
   }>,
 ): Promise<VirtualOeeResult> {
-  if (visitedWorkCenterIds.has(workCenterId)) {
-    return {
-      availability: {
-        status: 'not_calculable',
-        ratio: 0,
-        diagnostics: [{ code: 'virtual_work_center_cycle' as const, severity: 'error' }],
-      },
-      productivity: { status: 'not_calculable', ratio: 0, diagnostics: [] },
-      quality: { status: 'not_calculable', ratio: 0, diagnostics: [] },
-      oee: { status: 'not_calculable', ratio: 0, diagnostics: [] },
-      diagnostics: [
-        {
-          code: 'virtual_work_center_cycle' as const,
-          severity: 'error',
-          context: { workCenterId },
-        },
-      ],
-    }
-  }
-
   const wc = await workCenterClient.getById(workCenterId)
   if (!wc || !wc.metricComposition) {
     return {
@@ -150,9 +128,6 @@ export async function calculateVirtualOee(
     quality: FactorComposition
   }
 
-  const visited = new Set(visitedWorkCenterIds)
-  visited.add(workCenterId)
-
   const allContributorIds = new Set<string>([
     ...composition.availability.contributors.map(c => String(c.workCenterId)),
     ...composition.productivity.contributors.map(c => String(c.workCenterId)),
@@ -161,7 +136,7 @@ export async function calculateVirtualOee(
 
   const contributorResults: ContributorResult[] = await Promise.all(
     Array.from(allContributorIds).map(async wcId => {
-      const result = await calculateOeeForWc(wcId, range, visited)
+      const result = await calculateOeeForWc(wcId, range)
       return { workCenterId: wcId, ...result }
     }),
   )
@@ -209,22 +184,12 @@ export async function calculateVirtualOee(
 
   const oeeRatio = oeeStatus === 'ok' ? availability.ratio * productivity.ratio * quality.ratio : 0
 
-  const cycleDiagnostics: Diagnostic[] = []
-  for (const r of contributorResults) {
-    const nested = r as unknown as { diagnostics?: Diagnostic[] }
-    if (nested.diagnostics) {
-      cycleDiagnostics.push(
-        ...nested.diagnostics.filter(d => d.code === 'virtual_work_center_cycle'),
-      )
-    }
-  }
-
   return {
     availability,
     productivity,
     quality,
     oee: { status: oeeStatus, ratio: oeeRatio, diagnostics: [] },
-    diagnostics: cycleDiagnostics,
+    diagnostics: [],
   }
 }
 

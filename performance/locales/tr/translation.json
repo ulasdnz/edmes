@@ -27,7 +27,6 @@
     "converted_unplanned_missing_link": "Dönüştürülen plansız duruşun planlı duruş bağlantısı eksik",
     "no_production_total": "Bu iş emri için üretim toplamı belirlenemedi",
     "scrap_exceeds_total": "Hurda miktarı toplam üretimi aşıyor",
-    "unknown_scrap_reason_treated_as_oee_affecting": "Bilinmeyen hurda sebebi OEE etkileyen olarak değerlendirildi",
-    "virtual_work_center_cycle": "Sanal iş merkezi kompozisyonunda döngü tespit edildi"
+    "unknown_scrap_reason_treated_as_oee_affecting": "Bilinmeyen hurda sebebi OEE etkileyen olarak değerlendirildi"
   }
 }

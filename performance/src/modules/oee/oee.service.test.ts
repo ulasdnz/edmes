@@ -144,14 +144,14 @@ describe('calculateOee — stage orchestration', () => {
     expect(standardsCall[0].jobOrderId).toBe(JO_ID)
   })
 
-  it('virtual work center throws 501', async () => {
+  it('virtual work center throws 400 (handled by calculate() public API)', async () => {
     vi.mocked(workCenterClient.getById).mockResolvedValue({
       ...BASE_WC,
       type: 'virtual',
     })
 
     await expect(calculateOee({ workCenterId: WC_ID, range: RANGE })).rejects.toMatchObject({
-      statusCode: 501,
+      statusCode: 400,
     })
 
     // Stage 3 must NOT have been called for virtual WC

@@ -108,7 +108,7 @@ describe('calculateVirtualOee', () => {
 
     const calculateOeeForWc = vi.fn().mockResolvedValue(makeInnerResult(0.9, 0.8, 0.95))
 
-    const result = await calculateVirtualOee(WC_VIRTUAL, RANGE, new Set(), calculateOeeForWc)
+    const result = await calculateVirtualOee(WC_VIRTUAL, RANGE, calculateOeeForWc)
 
     expect(result.availability.ratio).toBe(0.9)
     expect(result.productivity.ratio).toBe(0.8)
@@ -143,7 +143,7 @@ describe('calculateVirtualOee', () => {
       return makeInnerResult(0, 0, 0)
     })
 
-    const result = await calculateVirtualOee(WC_VIRTUAL, RANGE, new Set(), calculateOeeForWc)
+    const result = await calculateVirtualOee(WC_VIRTUAL, RANGE, calculateOeeForWc)
 
     // WC_B is no_context → excluded from denominator; average of A(0.8) and C(0.6) = 0.7
     expect(result.availability.ratio).toBeCloseTo(0.7)
@@ -174,7 +174,7 @@ describe('calculateVirtualOee', () => {
       return makeInnerResult(0, 0, 0)
     })
 
-    const result = await calculateVirtualOee(WC_VIRTUAL, RANGE, new Set(), calculateOeeForWc)
+    const result = await calculateVirtualOee(WC_VIRTUAL, RANGE, calculateOeeForWc)
 
     expect(result.availability.status).toBe('not_calculable')
     expect(result.oee.status).toBe('not_calculable')
@@ -229,92 +229,22 @@ describe('calculateVirtualOee', () => {
       return null
     })
 
-    const calculateOeeForWc = vi
-      .fn()
-      .mockImplementation(async (wcId: string, _r: OeeRange, visited: Set<string>) => {
-        if (wcId === WC_MID) {
-          // WC_MID is virtual — recurse into calculateVirtualOee
-          return calculateVirtualOee(WC_MID, _r, visited, calculateOeeForWc)
-        }
-        if (wcId === WC_LEAF) return makeInnerResult(1.0, 0.9, 0.8)
-        return makeInnerResult(0, 0, 0)
-      })
+    const calculateOeeForWc = vi.fn().mockImplementation(async (wcId: string, _r: OeeRange) => {
+      if (wcId === WC_MID) {
+        // WC_MID is virtual — recurse into calculateVirtualOee
+        return calculateVirtualOee(WC_MID, _r, calculateOeeForWc)
+      }
+      if (wcId === WC_LEAF) return makeInnerResult(1.0, 0.9, 0.8)
+      return makeInnerResult(0, 0, 0)
+    })
 
-    const result = await calculateVirtualOee(WC_TOP, RANGE, new Set(), calculateOeeForWc)
+    const result = await calculateVirtualOee(WC_TOP, RANGE, calculateOeeForWc)
 
     expect(result.availability.ratio).toBeCloseTo(1.0)
     expect(result.productivity.ratio).toBeCloseTo(0.9)
     expect(result.quality.ratio).toBeCloseTo(0.8)
     expect(result.availability.status).toBe('ok')
     expect(result.oee.status).toBe('ok')
-  })
-
-  it('cycle detection: A → B → A does not infinite-recurse and returns not_calculable with diagnostic', async () => {
-    const WC_A2 = 'cccccccccccccccccccccccc'
-    const WC_B2 = 'dddddddddddddddddddddddd'
-
-    vi.mocked(workCenterClient.getById).mockImplementation(async (wcId: string) => {
-      if (wcId === WC_A2) {
-        return {
-          _id: WC_A2,
-          type: 'virtual',
-          metricComposition: {
-            availability: {
-              rule: 'primary_work_center',
-              contributors: [{ workCenterId: WC_B2, weight: null }],
-            },
-            productivity: {
-              rule: 'primary_work_center',
-              contributors: [{ workCenterId: WC_B2, weight: null }],
-            },
-            quality: {
-              rule: 'primary_work_center',
-              contributors: [{ workCenterId: WC_B2, weight: null }],
-            },
-          },
-        } as never
-      }
-      if (wcId === WC_B2) {
-        return {
-          _id: WC_B2,
-          type: 'virtual',
-          metricComposition: {
-            availability: {
-              rule: 'primary_work_center',
-              contributors: [{ workCenterId: WC_A2, weight: null }],
-            },
-            productivity: {
-              rule: 'primary_work_center',
-              contributors: [{ workCenterId: WC_A2, weight: null }],
-            },
-            quality: {
-              rule: 'primary_work_center',
-              contributors: [{ workCenterId: WC_A2, weight: null }],
-            },
-          },
-        } as never
-      }
-      return null
-    })
-
-    const calculateOeeForWc = vi
-      .fn()
-      .mockImplementation(async (wcId: string, r: OeeRange, visited: Set<string>) => {
-        return calculateVirtualOee(wcId, r, visited, calculateOeeForWc)
-      })
-
-    const result = await calculateVirtualOee(WC_A2, RANGE, new Set(), calculateOeeForWc)
-
-    // Must complete without stack overflow
-    expect(result.availability.status).toBe('not_calculable')
-    expect(result.oee.status).toBe('not_calculable')
-    expect(
-      result.diagnostics.some(
-        d =>
-          d.code === 'virtual_work_center_cycle' &&
-          (d.context as { workCenterId?: string })?.workCenterId === WC_A2,
-      ),
-    ).toBe(true)
   })
 
   it('weighted rule with missing weights treats them as equal weights', async () => {
@@ -340,23 +270,9 @@ describe('calculateVirtualOee', () => {
       return makeInnerResult(0, 0, 0)
     })
 
-    const result = await calculateVirtualOee(WC_VIRTUAL, RANGE, new Set(), calculateOeeForWc)
+    const result = await calculateVirtualOee(WC_VIRTUAL, RANGE, calculateOeeForWc)
 
     // Equal weights: (0.8 + 0.6) / 2 = 0.7
     expect(result.availability.ratio).toBeCloseTo(0.7)
-  })
-
-  it('cycle detection returns not_calculable with diagnostic', async () => {
-    const visited = new Set([WC_VIRTUAL])
-    const calculateOeeForWc = vi.fn()
-
-    const result = await calculateVirtualOee(WC_VIRTUAL, RANGE, visited, calculateOeeForWc)
-
-    expect(result.availability.status).toBe('not_calculable')
-    expect(result.oee.status).toBe('not_calculable')
-    expect(result.diagnostics.some(d => (d.code as string) === 'virtual_work_center_cycle')).toBe(
-      true,
-    )
-    expect(calculateOeeForWc).not.toHaveBeenCalled()
   })
 })

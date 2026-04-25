@@ -90,14 +90,8 @@ export async function calculate(input: CalculateInput): Promise<OeePublicRespons
   }
 
   if (wc.type === 'virtual') {
-    const virtualResult = await calculateVirtualOee(
-      workCenterId,
-      range,
-      new Set<string>(),
-      async (wcId, r, visited) => {
-        const inner = await calculateOeeInternal(wcId, r, SYSTEM_IDENTITY, visited)
-        return inner
-      },
+    const virtualResult = await calculateVirtualOee(workCenterId, range, async (wcId, r) =>
+      calculateOeeInternal(wcId, r, SYSTEM_IDENTITY),
     )
 
     const aStatus = virtualResult.availability.status
@@ -184,15 +178,11 @@ async function calculateOeeInternal(
   workCenterId: string,
   range: OeeRange,
   _userId: string,
-  visited: Set<string>,
 ): Promise<OeeOutput> {
   const wc = await workCenterClient.getById(workCenterId)
   if (wc?.type === 'virtual') {
-    const virtualResult = await calculateVirtualOee(
-      workCenterId,
-      range,
-      visited,
-      async (wcId, r, vis) => calculateOeeInternal(wcId, r, SYSTEM_IDENTITY, vis),
+    const virtualResult = await calculateVirtualOee(workCenterId, range, async (wcId, r) =>
+      calculateOeeInternal(wcId, r, SYSTEM_IDENTITY),
     )
     const aStatus = virtualResult.availability.status
     const pStatus = virtualResult.productivity.status
