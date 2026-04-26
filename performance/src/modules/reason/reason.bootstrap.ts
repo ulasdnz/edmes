@@ -1,7 +1,7 @@
 import { Types } from 'mongoose'
 import { SYSTEM_IDENTITY } from '../../constants/identity.js'
 import { logger } from '../../lib/logger.js'
-import { Reason } from './reason.model.js'
+import { Reason, type ReasonUsage } from './reason.model.js'
 
 export const MICRO_STOP_CODE = 'MICRO_STOP'
 
@@ -10,7 +10,7 @@ const MICRO_STOP_TEMPLATE = {
   name: 'Micro Stop',
   description:
     'System-managed reason assigned to brief unplanned stops below the configured threshold.',
-  usages: ['unplanned_stop'] as const,
+  usages: ['unplanned_stop'] as ReasonUsage[],
   affectsOee: false,
   isSystemDefault: true,
   isActive: true,

@@ -19,7 +19,12 @@ beforeAll(async () => {
   const mongoUri = process.env.MONGO_URI!
   const redisUrl = process.env.REDIS_URL!
 
-  await mongoose.connect(mongoUri)
+  // Each contract file gets its own Mongo DB inside the shared testcontainer.
+  // Without this, cross-file mongoose state (singleton, models) plus the shared
+  // afterEach collection wipe causes non-deterministic races where bootstrapped
+  // system reasons disappear mid-test. Per-file dbName isolates writes/reads.
+  const dbName = `ctest_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
+  await mongoose.connect(mongoUri, { dbName })
   indexedModels = new Set()
   await ensureTestIndexes()
 
