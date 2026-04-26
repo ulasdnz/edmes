@@ -10,10 +10,10 @@ export default defineConfig({
     setupFiles: ['src/test/contract-env-setup.ts'],
     include: ['src/**/__contract__/*.contract.test.ts'],
     pool: 'forks',
-    // Run all contract files sequentially in a single fork. Files share the
-    // testcontainer Mongo/Redis, and contract-setup.ts wipes collections in
-    // afterEach — without single-fork serialization that wipe races with
-    // other files' tests. Top-level `singleThread` only applies to pool='threads'.
-    poolOptions: { forks: { singleFork: true } },
+    // Run contract files sequentially. Files share the testcontainer Mongo/Redis,
+    // and contract-setup.ts wipes collections in afterEach; parallel files can
+    // race with that cleanup. Keep Vitest isolation enabled so each file owns
+    // its Mongo/Redis connections and teardown.
+    maxWorkers: 1,
   },
 })
