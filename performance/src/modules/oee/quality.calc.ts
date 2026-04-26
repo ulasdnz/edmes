@@ -1,6 +1,9 @@
 import { type Diagnostic, diag } from './diagnostics.js'
 
-export type QualityStatus = 'ok' | 'no_context'
+// 'not_calculable' is reachable only via virtual-WC composition (composeFactor),
+// not from calculateQuality directly. The widened type lets OeeOutput carry that
+// status faithfully when calculateOeeInternal returns the virtual branch.
+export type QualityStatus = 'ok' | 'no_context' | 'not_calculable'
 
 export type QualityResult = {
   status: QualityStatus

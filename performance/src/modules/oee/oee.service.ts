@@ -209,7 +209,7 @@ async function calculateOeeInternal(
         jobOrders: [],
       },
       quality: {
-        status: qStatus === 'not_calculable' ? 'no_context' : qStatus,
+        status: qStatus,
         ratio: virtualResult.quality.ratio,
         good: 0,
         total: 0,
@@ -427,21 +427,33 @@ export async function calculateOee(input: OeeInput): Promise<OeeOutput> {
         const standards = productStandardsByJobOrderId[jw.jobOrderId] ?? []
         const ssw = joSpeedResult.windows[i]
         if (ssw) {
+          // Same speed_based ratio model used by productivity.calc.ts —
+          // counterMultiplier is NOT applied. If any sub-window has invalid
+          // idealSpeed, productivity has already marked the JO not_calculable
+          // and quality won't sum this gross (filtered by !jo.notCalculable).
           let speedTotal = 0
+          let invalid = false
           const subWindows = splitAtBoundaries(jw.start, jw.end, standards)
           for (const sub of subWindows) {
+            const idealSpeed = sub.standard.idealSpeed
+            if (idealSpeed == null || !Number.isFinite(idealSpeed) || idealSpeed <= 0) {
+              invalid = true
+              break
+            }
             const sswFrom = new Date(ssw.from).getTime()
             const sswTo = new Date(ssw.to).getTime()
             const overlapStart = Math.max(sswFrom, sub.start.getTime())
             const overlapEnd = Math.min(sswTo, sub.end.getTime())
-            if (overlapEnd > overlapStart) {
-              const fraction = (overlapEnd - overlapStart) / (sswTo - sswFrom)
-              // counterMultiplier ?? 1: null means no unit conversion, treat as 1
-              speedTotal +=
-                (ssw.valueArea * fraction * (sub.standard.counterMultiplier ?? 1)) / 60000
-            }
+            if (overlapEnd <= overlapStart) continue
+            const sswDurationMs = sswTo - sswFrom
+            if (sswDurationMs <= 0) continue
+            const fraction = (overlapEnd - overlapStart) / sswDurationMs
+            const subActualSpeedArea = ssw.valueArea * fraction
+            speedTotal +=
+              (sub.standard.idealOutputPerMinute / idealSpeed) * (subActualSpeedArea / 60000)
           }
-          grossProducedPerJo[jw.jobOrderId] = speedTotal
+          grossProducedPerJo[jw.jobOrderId] =
+            invalid || !Number.isFinite(speedTotal) ? 0 : speedTotal
         } else {
           grossProducedPerJo[jw.jobOrderId] = 0
         }

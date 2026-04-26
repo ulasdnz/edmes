@@ -1017,8 +1017,11 @@ Consume the normalized windows from Phase 6, pull Telemetry produced/speed summa
        - `effectiveTargetOutput = Σ (productionRunSubWindowMinutes × standard.idealOutputPerMinute)` for each standard sub-window.
        - `fullJobTargetOutput = Σ (jobOrderSubWindowMinutes × standard.idealOutputPerMinute)`.
      - For speed-based:
-       - `actualSpeedArea` from speed-summary total `valueArea` over `actualOutputWindows`.
-       - Convert `valueArea` to output via product standards: `actualOutput = Σ (valueArea_subWindow × standard.counterMultiplier)` (or the conversion rule the existing code already uses — reuse helper from Telemetry speed calc if shared).
+       - `actualSpeedArea` from speed-summary `valueArea` (= speedTagValue × ms) over `actualOutputWindows`, split at standard `validFrom` boundaries.
+       - **Ratio model (no counterMultiplier):** per sub-window,
+         `subActualOutput = (standard.idealOutputPerMinute / standard.idealSpeed) × (subActualSpeedArea / 60000)`. Mathematically equivalent to `subTargetOutput × (avgSpeed / idealSpeed)`; chosen for numerical stability.
+       - `counterMultiplier` is a count-based concept (raw cycle/pulse → unit conversion) and MUST NOT be applied here. Cycle/stroke/pulse signals must be modelled as count_based with `productionCounterTagId + counterMultiplier`.
+       - If any sub-window's `idealSpeed` is missing/null/≤0 → mark JO `notCalculable=true` (parity with missing-standard handling — silent wrong math is worse than no result).
        - `effectiveTargetOutput = Σ (productionRunSubWindowMs / 60000 × standard.idealOutputPerMinute)`.
        - `fullJobTargetOutput = Σ (jobOrderSubWindowMs / 60000 × standard.idealOutputPerMinute)`.
      - `productionRunMs` = duration of `productionRunWindows ∩ jobOrderWindow`.
@@ -1070,7 +1073,13 @@ Consume the normalized windows from Phase 6, pull Telemetry produced/speed summa
 
 ### 7.6 Riskler ve edge-case'ler
 
-- **Speed-based conversion semantics** must match the existing Telemetry `speed-avg` / spec productivity rules. If unclear, treat `valueArea` as unit × ms and convert with `counterMultiplier` field from product standard (or reuse Telemetry's helper). Document the exact conversion in comments.
+- **Speed-based conversion semantics**: speedTagId represents production speed (units/min, kg/min, m/min, …) — NOT a raw counter rate. `actualOutput` is derived from a speed-ratio against `idealSpeed`, not by multiplying `valueArea` by `counterMultiplier`. Cycle/stroke/pulse counters must be modelled as count_based + `counterMultiplier` instead. If `idealSpeed` is missing for a sub-window the JO becomes `notCalculable`.
+- **ProductStandard configuration rules (enforced server-side):**
+  - For a `speed_based` work center, every `ProductStandard.idealSpeed` MUST be a positive number; `speedTagId` value is interpreted in the same unit as `idealSpeed`.
+  - For a `count_based` work center, every `ProductStandard.counterMultiplier` MUST be set.
+  - `production-service` enforces both rules on **create** AND **update** (post-patch effective state) via a shared helper. A patch cannot leave a record in an invalid state for the WC's mode.
+  - **Frontend TODO:** the ProductStandard form must show `idealSpeed` as required when the selected work center is `speed_based`, and `counterMultiplier` as required when `count_based`. Server-side guards are the source of truth; the form field is UX only.
+- **Backlog: WC `productivityMode` transition guard.** When a WorkCenter switches `productivityMode` (`count_based ↔ speed_based`), existing `ProductStandard` rows for that WC may now be invalid (missing the field required by the new mode). Today this is not validated — relying on the per-standard update guard catches subsequent edits but leaves untouched rows invalid. Before first customer rollout, add a cross-service check on the WC patch path that rejects the mode change unless every active product standard for that WC satisfies the new mode's requirements.
 - **`execution_span` fetching production during non-effective stop** is intentional. Test verifies the known behavior (not a bug).
 - **`net_run_segments` windows can explode in count**: 100 small segments per job order × 20 JOs = 2000 windows. The multi-window speed/produced endpoint must accept this batch size; the validator limit (500) may need bumping or we clamp windows at 500 per tag and paginate — prefer clamp+paginate with a diagnostic `telemetry_summary_truncated` only if we hit the cap.
 - **Division by zero** in ratios → explicit `effectiveTargetOutput > 0` guard.

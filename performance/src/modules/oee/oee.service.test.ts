@@ -1,5 +1,6 @@
 import { CustomError } from '@mes/core'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { SYSTEM_IDENTITY } from '../../constants/identity.js'
 import * as productionClient from '../../lib/internal-api/production.client.js'
 import * as telemetryClient from '../../lib/internal-api/telemetry.client.js'
 import type { WorkCenterSnapshot } from '../../lib/internal-api/work-center.client.js'
@@ -8,7 +9,7 @@ import type { IPerformanceRuntimePolicy } from '../policy/policy.model.js'
 import * as policyService from '../policy/policy.service.js'
 import * as reasonService from '../reason/reason.service.js'
 import * as oeeRepository from './oee.repository.js'
-import { calculateOee } from './oee.service.js'
+import { calculate, calculateOee } from './oee.service.js'
 import type { OeeRange } from './oee.types.js'
 import * as qualityCalc from './quality.calc.js'
 
@@ -488,9 +489,23 @@ describe('calculateOee — stage orchestration', () => {
       scrapEntriesByJobOrderId: {},
     })
 
-    // valueArea is unit×ms; output = valueArea * counterMultiplier / 60000.
-    // counterMultiplier=1 (from BASE_STANDARDS). To yield 60 000 output units from two
-    // run-segment windows (each 30 000 output units): valueArea per window = 30 000 * 60 000 = 1 800 000 000.
+    // speed_based requires idealSpeed; pick idealSpeed=idealOutputPerMinute=10 so the
+    // ratio model (idealOpm / idealSpeed)*(valueArea / 60000) reduces to valueArea/60000.
+    vi.mocked(productionClient.findProductStandardTimelinesBatch).mockResolvedValue({
+      [JO_ID]: [
+        {
+          _id: 'std1',
+          validFrom: new Date('2026-01-01T00:00:00.000Z').toISOString(),
+          idealOutputPerMinute: 10,
+          counterMultiplier: 1,
+          idealSpeed: 10,
+        },
+      ],
+    } as never)
+
+    // valueArea is unit×ms; with idealSpeed=idealOutputPerMinute, output = valueArea / 60000.
+    // To yield 60 000 output units from two run-segment windows (each 30 000 output units):
+    // valueArea per window = 30 000 * 60 000 = 1 800 000 000.
     // To yield 72 000 output from the full JO window: valueArea = 72 000 * 60 000 = 4 320 000 000.
     let speedSummaryCallCount = 0
     vi.mocked(telemetryClient.speedSummary).mockImplementation(async (_tagId, windows) => {
@@ -546,5 +561,57 @@ describe('calculateOee — stage orchestration', () => {
 
     // Only 1 producedSummary call (productivity); quality reuses the result
     expect(telemetryClient.producedSummary).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('calculate — nested virtual quality propagation', () => {
+  const WC_TOP = 'eeeeeeeeeeeeeeeeeeeeeeee'
+  const WC_MID = 'ffffffffffffffffffffffff'
+
+  it('bubbles quality not_calculable from a child virtual WC up through the parent virtual', async () => {
+    vi.mocked(workCenterClient.getById).mockImplementation(async (id: string) => {
+      if (id === WC_TOP) {
+        return {
+          ...BASE_WC,
+          _id: WC_TOP,
+          type: 'virtual',
+          metricComposition: {
+            availability: {
+              rule: 'primary_work_center',
+              contributors: [{ workCenterId: WC_MID, weight: null }],
+            },
+            productivity: {
+              rule: 'primary_work_center',
+              contributors: [{ workCenterId: WC_MID, weight: null }],
+            },
+            quality: {
+              rule: 'primary_work_center',
+              contributors: [{ workCenterId: WC_MID, weight: null }],
+            },
+          },
+        } as never
+      }
+      if (id === WC_MID) {
+        // virtual but no metricComposition → calculateVirtualOee returns all-not_calculable
+        return {
+          ...BASE_WC,
+          _id: WC_MID,
+          type: 'virtual',
+        } as never
+      }
+      return null
+    })
+
+    const result = await calculate({
+      workCenterId: WC_TOP,
+      from: RANGE.from,
+      to: RANGE.to,
+      userId: SYSTEM_IDENTITY,
+    })
+
+    expect(result.quality.status).toBe('not_calculable')
+    expect(result.availability.status).toBe('not_calculable')
+    expect(result.productivity.status).toBe('not_calculable')
+    expect(result.oee.status).toBe('not_calculable')
   })
 })

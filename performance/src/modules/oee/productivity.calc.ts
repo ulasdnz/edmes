@@ -205,32 +205,55 @@ export function calculateProductivity(input: ProductivityInput): ProductivityRes
 
     // Compute actual output
     let grossProduced = 0
+    let invalidSpeedStandard = false
     if (isCountBased && producedSummary) {
       grossProduced = sumProducedForJo(joWindows, producedSummary)
     } else if (!isCountBased && speedSummary) {
-      // Use the counterMultiplier from the first applicable standard
-      // For simplicity in aggregation, use an average counterMultiplier weighted by sub-window duration
-      // In practice, split at standard boundaries and apply per-sub-window counterMultiplier
+      // speed_based ratio model: actualOutput = targetOutput × (avgSpeed / idealSpeed),
+      // simplified per sub-window to:
+      //   subActualOutput = (idealOutputPerMinute / idealSpeed) × (actualSpeedArea / 60000)
+      // counterMultiplier is a count_based concept (raw cycle/pulse → unit conversion)
+      // and is intentionally NOT applied here. Cycle/stroke/pulse signals must be
+      // modelled as count_based with productionCounterTagId + counterMultiplier.
       let speedTotal = 0
       for (const jw of joWindows) {
+        if (invalidSpeedStandard) break
         const subWindows = splitAtBoundaries(jw.from, jw.to, standards)
         for (const sw of subWindows) {
-          const multiplier = sw.standard.counterMultiplier ?? 1
-          // Sum speed summary valueArea for this sub-window range
+          const idealSpeed = sw.standard.idealSpeed
+          if (idealSpeed == null || !Number.isFinite(idealSpeed) || idealSpeed <= 0) {
+            invalidSpeedStandard = true
+            break
+          }
           for (const ssw of speedSummary.windows) {
-            const sswFrom = new Date(ssw.from)
-            const sswTo = new Date(ssw.to)
-            if (sswFrom.getTime() < sw.end.getTime() && sswTo.getTime() > sw.start.getTime()) {
-              // Proportional overlap
-              const overlapStart = Math.max(sswFrom.getTime(), sw.start.getTime())
-              const overlapEnd = Math.min(sswTo.getTime(), sw.end.getTime())
-              const overlapFraction =
-                (overlapEnd - overlapStart) / (sswTo.getTime() - sswFrom.getTime())
-              // valueArea is unit×ms; × multiplier / 60000 → same unit as idealOutputPerMinute × minutes
-              speedTotal += (ssw.valueArea * overlapFraction * multiplier) / 60000
-            }
+            const sswFrom = new Date(ssw.from).getTime()
+            const sswTo = new Date(ssw.to).getTime()
+            const overlapStart = Math.max(sswFrom, sw.start.getTime())
+            const overlapEnd = Math.min(sswTo, sw.end.getTime())
+            if (overlapEnd <= overlapStart) continue
+            const sswDurationMs = sswTo - sswFrom
+            if (sswDurationMs <= 0) continue
+            const fraction = (overlapEnd - overlapStart) / sswDurationMs
+            const subActualSpeedArea = ssw.valueArea * fraction
+            speedTotal +=
+              (sw.standard.idealOutputPerMinute / idealSpeed) * (subActualSpeedArea / 60000)
           }
         }
+      }
+      if (invalidSpeedStandard || !Number.isFinite(speedTotal)) {
+        anyNotCalculable = true
+        breakdowns.push({
+          jobOrderId: jo.jobOrderId,
+          productId: jo.productId,
+          ratio: 0,
+          actualOutput: 0,
+          effectiveTargetOutput: 0,
+          fullJobTargetOutput: 0,
+          quantityAdjustment: 0,
+          productionRunMs,
+          notCalculable: true,
+        })
+        continue
       }
       grossProduced = speedTotal
     }

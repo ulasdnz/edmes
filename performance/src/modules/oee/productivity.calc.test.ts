@@ -438,14 +438,14 @@ describe('calculateProductivity — count_based', () => {
 // ── Speed-based tests ─────────────────────────────────────────────────────────
 
 describe('calculateProductivity — speed_based', () => {
-  it('constant speed matching target → ratio=1.0', () => {
-    // idealOutputPerMinute=100, counterMultiplier=1
-    // In speed mode: actualOutput = Σ (valueArea_subWindow × counterMultiplier)
-    // valueArea unit is (speed_unit × ms). We need actual in same units as idealOutputPerMinute.
-    // Convert: actualOutput = valueArea × counterMultiplier / 60000 (ms→minutes)
-    // For 60-min window at 100/min: target=6000
-    // valueArea = 100 units/min × 3600000ms = 360000000 unit·ms → / 60000 = 6000 actual
-    const valueArea = 100 * 60 * 60 * 1000 // 100 (units/min) × 60min × 60s × 1000ms
+  it('constant speed matching idealSpeed → ratio=1.0', () => {
+    // speed_based ratio model:
+    //   subActualOutput = (idealOutputPerMinute / idealSpeed) × (valueArea / 60000)
+    // idealOutputPerMinute=100, idealSpeed=100, actualSpeed=100 (constant) for 60 min
+    //   target = 100 × 60 = 6000
+    //   valueArea = 100 (speed) × 3,600,000 ms = 360,000,000
+    //   actualOutput = (100/100) × (360,000,000 / 60000) = 6000 → ratio = 1.0
+    const valueArea = 100 * 60 * 60 * 1000
 
     const input = makeInput({
       productivityMode: 'speed_based',
@@ -490,10 +490,9 @@ describe('calculateProductivity — speed_based', () => {
   })
 
   it('speed-based regression: missing /60000 conversion would produce ratio ~60000x too large', () => {
-    // 60-min window, idealOutputPerMinute=100, counterMultiplier=1
-    // valueArea = 100 (units/min) × 3600000ms = 360000000 unit·ms
-    // correct actualOutput = 360000000 / 60000 = 6000 → ratio = 6000/6000 = 1.0
-    // without /60000: actualOutput = 360000000 → ratio = 60000 (obviously wrong)
+    // Sanity guard: with the ratio formula, /60000 must remain.
+    //   actualOutput = (idealOutputPerMinute/idealSpeed) × (valueArea / 60000) = 6000
+    //   without /60000: actualOutput = 360,000,000 → ratio absurdly large.
     const valueArea = 100 * 60 * 60 * 1000
     const input = makeInput({
       productivityMode: 'speed_based',
@@ -582,5 +581,240 @@ describe('calculateProductivity — speed_based', () => {
     expect(result.status).toBe('ok')
     expect(result.jobOrders[0].effectiveTargetOutput).toBeCloseTo(3000, 1)
     expect(result.ratio).toBeCloseTo(1.0, 3)
+  })
+
+  it('actualSpeed = idealSpeed/2 → ratio 0.5', () => {
+    // 60-min window, idealOutputPerMinute=100, idealSpeed=100, actualSpeed=50
+    // valueArea = 50 × 3,600,000 = 180,000,000
+    // actualOutput = (100/100) × (180,000,000 / 60000) = 3000
+    // target = 100 × 60 = 6000 → ratio = 0.5
+    const valueArea = 50 * 60 * 60 * 1000
+    const input = makeInput({
+      productivityMode: 'speed_based',
+      producedCounterTagId: undefined,
+      speedTagId: 'tag-speed',
+      productStandardsByJobOrderId: {
+        [JO_ID]: [
+          {
+            _id: 'std1',
+            validFrom: new Date('2026-01-01T00:00:00.000Z').toISOString(),
+            idealOutputPerMinute: 100,
+            counterMultiplier: 1,
+            idealSpeed: 100,
+          },
+        ],
+      },
+      speedSummaryByTagId: {
+        'tag-speed': {
+          windows: [
+            {
+              from: T0.toISOString(),
+              to: T1.toISOString(),
+              durationMs: 60 * 60 * 1000,
+              timeWeightedAverage: 50,
+              valueArea,
+              sampleCount: 60,
+            },
+          ],
+          total: { durationMs: 60 * 60 * 1000, timeWeightedAverage: 50, valueArea },
+        },
+      },
+    })
+
+    const result = calculateProductivity(input)
+    expect(result.status).toBe('ok')
+    expect(result.jobOrders[0].actualOutput).toBeCloseTo(3000, 1)
+    expect(result.ratio).toBeCloseTo(0.5, 3)
+  })
+
+  it('counterMultiplier does NOT affect speed_based actual output (1 vs 10 yields same result)', () => {
+    // counterMultiplier is a count_based concept. Changing it must not change
+    // speed_based output: actualOutput depends only on idealOutputPerMinute, idealSpeed, valueArea.
+    const valueArea = 100 * 60 * 60 * 1000
+    const baseInput = (mult: number) =>
+      makeInput({
+        productivityMode: 'speed_based',
+        producedCounterTagId: undefined,
+        speedTagId: 'tag-speed',
+        productStandardsByJobOrderId: {
+          [JO_ID]: [
+            {
+              _id: 'std1',
+              validFrom: new Date('2026-01-01T00:00:00.000Z').toISOString(),
+              idealOutputPerMinute: 100,
+              counterMultiplier: mult,
+              idealSpeed: 100,
+            },
+          ],
+        },
+        speedSummaryByTagId: {
+          'tag-speed': {
+            windows: [
+              {
+                from: T0.toISOString(),
+                to: T1.toISOString(),
+                durationMs: 60 * 60 * 1000,
+                timeWeightedAverage: 100,
+                valueArea,
+                sampleCount: 60,
+              },
+            ],
+            total: { durationMs: 60 * 60 * 1000, timeWeightedAverage: 100, valueArea },
+          },
+        },
+      })
+
+    const r1 = calculateProductivity(baseInput(1))
+    const r10 = calculateProductivity(baseInput(10))
+    expect(r1.jobOrders[0].actualOutput).toBeCloseTo(r10.jobOrders[0].actualOutput, 5)
+    expect(r1.ratio).toBeCloseTo(r10.ratio, 5)
+  })
+
+  it('null idealSpeed in speed_based → JO not_calculable', () => {
+    const valueArea = 100 * 60 * 60 * 1000
+    const input = makeInput({
+      productivityMode: 'speed_based',
+      producedCounterTagId: undefined,
+      speedTagId: 'tag-speed',
+      productStandardsByJobOrderId: {
+        [JO_ID]: [
+          {
+            _id: 'std1',
+            validFrom: new Date('2026-01-01T00:00:00.000Z').toISOString(),
+            idealOutputPerMinute: 100,
+            counterMultiplier: 1,
+            idealSpeed: null,
+          },
+        ],
+      },
+      speedSummaryByTagId: {
+        'tag-speed': {
+          windows: [
+            {
+              from: T0.toISOString(),
+              to: T1.toISOString(),
+              durationMs: 60 * 60 * 1000,
+              timeWeightedAverage: 100,
+              valueArea,
+              sampleCount: 60,
+            },
+          ],
+          total: { durationMs: 60 * 60 * 1000, timeWeightedAverage: 100, valueArea },
+        },
+      },
+    })
+
+    const result = calculateProductivity(input)
+    expect(result.status).toBe('not_calculable')
+    expect(result.jobOrders[0].notCalculable).toBe(true)
+  })
+
+  it('zero or negative idealSpeed → JO not_calculable (no NaN/Infinity)', () => {
+    const valueArea = 100 * 60 * 60 * 1000
+    for (const idealSpeed of [0, -10]) {
+      const input = makeInput({
+        productivityMode: 'speed_based',
+        producedCounterTagId: undefined,
+        speedTagId: 'tag-speed',
+        productStandardsByJobOrderId: {
+          [JO_ID]: [
+            {
+              _id: 'std1',
+              validFrom: new Date('2026-01-01T00:00:00.000Z').toISOString(),
+              idealOutputPerMinute: 100,
+              counterMultiplier: 1,
+              idealSpeed,
+            },
+          ],
+        },
+        speedSummaryByTagId: {
+          'tag-speed': {
+            windows: [
+              {
+                from: T0.toISOString(),
+                to: T1.toISOString(),
+                durationMs: 60 * 60 * 1000,
+                timeWeightedAverage: 100,
+                valueArea,
+                sampleCount: 60,
+              },
+            ],
+            total: { durationMs: 60 * 60 * 1000, timeWeightedAverage: 100, valueArea },
+          },
+        },
+      })
+
+      const result = calculateProductivity(input)
+      expect(result.status).toBe('not_calculable')
+      expect(result.jobOrders[0].notCalculable).toBe(true)
+      expect(Number.isFinite(result.jobOrders[0].actualOutput)).toBe(true)
+    }
+  })
+
+  it('speed_based with product standard change mid-job: per-subwindow ratio applied', () => {
+    // JO: T0..T2 (120 min)
+    //   std1 [T0..T1): idealOutputPerMinute=100, idealSpeed=100  → target1 = 6000
+    //   std2 [T1..T2): idealOutputPerMinute=200, idealSpeed=50   → target2 = 12000
+    //   total target = 18000
+    // Speed window covers full JO at constant actualSpeed=50:
+    //   valueArea_total = 50 × 7,200,000 = 360,000,000
+    //   sub1 fraction 0.5 → subActualSpeedArea1 = 180,000,000
+    //   sub2 fraction 0.5 → subActualSpeedArea2 = 180,000,000
+    //   subActualOutput1 = (100/100) × 180,000,000/60000 = 3000
+    //   subActualOutput2 = (200/50)  × 180,000,000/60000 = 4 × 3000 = 12000
+    //   actualOutput = 15000 → ratio = 15000/18000 ≈ 0.8333
+    const valueArea = 50 * 2 * 60 * 60 * 1000
+
+    const input = makeInput({
+      productivityMode: 'speed_based',
+      producedCounterTagId: undefined,
+      speedTagId: 'tag-speed',
+      jobOrders: [
+        { jobOrderId: JO_ID, workCenterId: WC_ID, productId: PROD_ID, start: T0, end: T2 },
+      ],
+      clippedJobWindows: [
+        { jobOrderId: JO_ID, workCenterId: WC_ID, productId: PROD_ID, start: T0, end: T2 },
+      ],
+      productionRunWindows: [{ from: T0, to: T2 }],
+      productStandardsByJobOrderId: {
+        [JO_ID]: [
+          {
+            _id: 'std1',
+            validFrom: new Date('2026-01-01T00:00:00.000Z').toISOString(),
+            idealOutputPerMinute: 100,
+            counterMultiplier: 1,
+            idealSpeed: 100,
+          },
+          {
+            _id: 'std2',
+            validFrom: T1.toISOString(),
+            idealOutputPerMinute: 200,
+            counterMultiplier: 1,
+            idealSpeed: 50,
+          },
+        ],
+      },
+      speedSummaryByTagId: {
+        'tag-speed': {
+          windows: [
+            {
+              from: T0.toISOString(),
+              to: T2.toISOString(),
+              durationMs: 2 * 60 * 60 * 1000,
+              timeWeightedAverage: 50,
+              valueArea,
+              sampleCount: 120,
+            },
+          ],
+          total: { durationMs: 2 * 60 * 60 * 1000, timeWeightedAverage: 50, valueArea },
+        },
+      },
+    })
+
+    const result = calculateProductivity(input)
+    expect(result.status).toBe('ok')
+    expect(result.jobOrders[0].actualOutput).toBeCloseTo(15000, 1)
+    expect(result.jobOrders[0].effectiveTargetOutput).toBeCloseTo(18000, 1)
+    expect(result.ratio).toBeCloseTo(15000 / 18000, 3)
   })
 })
