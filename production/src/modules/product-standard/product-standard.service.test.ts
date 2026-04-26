@@ -255,6 +255,83 @@ describe('ProductStandardService', () => {
         service.update(standard._id.toString(), { idealOutputPerMinute: 99 }, userId),
       ).rejects.toThrow('error.product_standard_applied')
     })
+
+    it('rejects patching idealSpeed to null on a speed_based work center', async () => {
+      mockGetWorkCenterInfo.mockResolvedValue({
+        type: 'physical',
+        productivityMode: 'speed_based',
+      })
+      const standard = await service.create(buildInput({ idealSpeed: 5 }), userId)
+
+      await expect(
+        service.update(standard._id.toString(), { idealSpeed: null }, userId),
+      ).rejects.toThrow('error.ideal_speed_required')
+    })
+
+    it('rejects unrelated patch when existing idealSpeed is null and WC is speed_based', async () => {
+      // Seed a count_based standard (allowed), then simulate WC mode change to speed_based:
+      // any subsequent patch must refuse to leave the record in an invalid state.
+      const standard = await service.create(buildInput({ counterMultiplier: 2 }), userId)
+      mockGetWorkCenterInfo.mockResolvedValue({
+        type: 'physical',
+        productivityMode: 'speed_based',
+      })
+
+      await expect(
+        service.update(standard._id.toString(), { idealOutputPerMinute: 25 }, userId),
+      ).rejects.toThrow('error.ideal_speed_required')
+    })
+
+    it('accepts unrelated patch on speed_based WC when existing idealSpeed is valid', async () => {
+      mockGetWorkCenterInfo.mockResolvedValue({
+        type: 'physical',
+        productivityMode: 'speed_based',
+      })
+      const standard = await service.create(buildInput({ idealSpeed: 5 }), userId)
+
+      const updated = await service.update(
+        standard._id.toString(),
+        { idealOutputPerMinute: 25 },
+        userId,
+      )
+      expect(updated.idealOutputPerMinute).toBe(25)
+      expect(updated.idealSpeed).toBe(5)
+    })
+
+    it('accepts repairing patch that sets idealSpeed when existing was null on speed_based WC', async () => {
+      const standard = await service.create(buildInput({ counterMultiplier: 2 }), userId)
+      mockGetWorkCenterInfo.mockResolvedValue({
+        type: 'physical',
+        productivityMode: 'speed_based',
+      })
+
+      const updated = await service.update(standard._id.toString(), { idealSpeed: 8 }, userId)
+      expect(updated.idealSpeed).toBe(8)
+    })
+
+    it('rejects patching counterMultiplier to null on a count_based work center', async () => {
+      const standard = await service.create(buildInput({ counterMultiplier: 2 }), userId)
+      // default mock is count_based
+      await expect(
+        service.update(standard._id.toString(), { counterMultiplier: null }, userId),
+      ).rejects.toThrow('error.counter_multiplier_required')
+    })
+
+    it('rejects unrelated patch when existing counterMultiplier is null and WC is count_based', async () => {
+      mockGetWorkCenterInfo.mockResolvedValue({
+        type: 'physical',
+        productivityMode: 'speed_based',
+      })
+      const standard = await service.create(buildInput({ idealSpeed: 5 }), userId)
+      mockGetWorkCenterInfo.mockResolvedValue({
+        type: 'physical',
+        productivityMode: 'count_based',
+      })
+
+      await expect(
+        service.update(standard._id.toString(), { idealOutputPerMinute: 25 }, userId),
+      ).rejects.toThrow('error.counter_multiplier_required')
+    })
   })
 
   describe('remove', () => {

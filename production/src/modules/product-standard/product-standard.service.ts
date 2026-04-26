@@ -25,20 +25,33 @@ type AppliedJobOrder = {
 }
 type AppliedJobOrderModel = mongoose.Model<AppliedJobOrder>
 
+// Single source of truth for ProductStandard <-> WorkCenter productivityMode invariants.
+// Both create and update call this with the post-mutation effective values so a patch
+// cannot leave a record in an invalid state for the work center's mode.
+async function assertProductivityModeRequirements(
+  workCenterId: string,
+  effective: { counterMultiplier?: number | null; idealSpeed?: number | null },
+): Promise<void> {
+  const wcInfo = await getWorkCenterInfo(workCenterId)
+  if (!wcInfo) throw new CustomError(400, 'error.work_center_unreachable')
+  if (wcInfo.type !== 'physical') throw new CustomError(400, 'error.work_center_not_physical')
+
+  if (wcInfo.productivityMode === 'count_based' && !effective.counterMultiplier) {
+    throw new CustomError(400, 'error.counter_multiplier_required')
+  }
+  if (wcInfo.productivityMode === 'speed_based' && !effective.idealSpeed) {
+    throw new CustomError(400, 'error.ideal_speed_required')
+  }
+}
+
 async function validateCreateStandard(data: CreateProductStandardInput): Promise<void> {
   const product = await Product.findById(data.productId)
   if (!product) throw new CustomError(404, 'error.not_found')
 
-  const wcInfo = await getWorkCenterInfo(data.workCenterId)
-  if (!wcInfo) throw new CustomError(400, 'error.work_center_unreachable')
-  if (wcInfo.type !== 'physical') throw new CustomError(400, 'error.work_center_not_physical')
-
-  if (wcInfo.productivityMode === 'count_based' && !data.counterMultiplier) {
-    throw new CustomError(400, 'error.counter_multiplier_required')
-  }
-  if (wcInfo.productivityMode === 'speed_based' && !data.idealSpeed) {
-    throw new CustomError(400, 'error.ideal_speed_required')
-  }
+  await assertProductivityModeRequirements(data.workCenterId, {
+    counterMultiplier: data.counterMultiplier,
+    idealSpeed: data.idealSpeed,
+  })
 }
 
 async function isApplied(standardId: string): Promise<boolean> {
@@ -144,7 +157,18 @@ export async function update(
   data: PatchProductStandardInput,
   userId: string,
 ): Promise<IProductStandard> {
+  const current = await ProductStandard.findById(id).lean()
+  if (!current) throw new CustomError(404, 'error.not_found')
   if (await isApplied(id)) throw new CustomError(409, 'error.product_standard_applied')
+
+  // Validate the post-patch effective state, not just the patch fields. A null in
+  // `data` means "explicitly null"; `undefined` means "leave existing value".
+  const effective = {
+    counterMultiplier:
+      data.counterMultiplier !== undefined ? data.counterMultiplier : current.counterMultiplier,
+    idealSpeed: data.idealSpeed !== undefined ? data.idealSpeed : current.idealSpeed,
+  }
+  await assertProductivityModeRequirements(current.workCenterId.toString(), effective)
 
   const doc = await ProductStandard.findOneAndUpdate(
     { _id: id },
