@@ -1,9 +1,14 @@
 export function resolveRooms(type: string, payload: Record<string, unknown>): string[] {
-  const rooms = [type.split('.')[0]]
+  const rooms = new Set<string>([type.split('.')[0]])
 
-  if (payload.workCenterId) rooms.push(`wc:${payload.workCenterId}`)
-  if (payload.previousWorkCenterId) rooms.push(`wc:${payload.previousWorkCenterId}`)
-  if (payload.tagId) rooms.push(`tag:${payload.tagId}`)
+  if (payload.workCenterId) rooms.add(`wc:${payload.workCenterId}`)
+  if (payload.previousWorkCenterId) rooms.add(`wc:${payload.previousWorkCenterId}`)
+  if (Array.isArray(payload.workCenterIds)) {
+    for (const id of payload.workCenterIds) {
+      if (typeof id === 'string' && id) rooms.add(`wc:${id}`)
+    }
+  }
+  if (payload.tagId) rooms.add(`tag:${payload.tagId}`)
 
-  return rooms
+  return [...rooms]
 }

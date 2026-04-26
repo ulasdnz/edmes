@@ -84,12 +84,55 @@ describe('resolveRooms', () => {
     expect(rooms).toEqual(['job_order', 'wc:abc', 'wc:def'])
   })
 
-  it('returns duplicate wc rooms when workCenterId equals previousWorkCenterId', () => {
+  it('dedupes wc rooms when workCenterId equals previousWorkCenterId', () => {
     const rooms = resolveRooms('job_order.updated', {
       workCenterId: 'abc',
       previousWorkCenterId: 'abc',
     })
-    expect(rooms).toEqual(['job_order', 'wc:abc', 'wc:abc'])
+    expect(rooms).toEqual(['job_order', 'wc:abc'])
+  })
+
+  // ── workCenterIds (array) ─────────────────────────────────────────────
+
+  it('routes each entry of workCenterIds[] to its wc:{id} room', () => {
+    const rooms = resolveRooms('planned_stop_template.updated', {
+      templateId: 'tpl1',
+      workCenterIds: ['wc-a', 'wc-b'],
+    })
+    expect(rooms).toEqual(['planned_stop_template', 'wc:wc-a', 'wc:wc-b'])
+  })
+
+  it('handles empty workCenterIds[] without adding wc rooms', () => {
+    const rooms = resolveRooms('planned_stop_schedule.created', {
+      scheduleId: 's1',
+      workCenterIds: [],
+    })
+    expect(rooms).toEqual(['planned_stop_schedule'])
+  })
+
+  it('skips falsy/non-string entries inside workCenterIds[]', () => {
+    const rooms = resolveRooms('planned_stop_template.deleted', {
+      templateId: 'tpl1',
+      workCenterIds: ['wc-a', '', null, undefined, 0, 'wc-b'],
+    })
+    expect(rooms).toEqual(['planned_stop_template', 'wc:wc-a', 'wc:wc-b'])
+  })
+
+  it('dedupes when scalar workCenterId overlaps with workCenterIds[] entries', () => {
+    const rooms = resolveRooms('planned_stop_template.started', {
+      templateId: 'tpl1',
+      plannedStopId: 'ps1',
+      workCenterId: 'wc-a',
+      workCenterIds: ['wc-a', 'wc-b'],
+    })
+    expect(rooms).toEqual(['planned_stop_template', 'wc:wc-a', 'wc:wc-b'])
+  })
+
+  it('ignores workCenterIds when payload value is not an array', () => {
+    const rooms = resolveRooms('planned_stop_template.updated', {
+      workCenterIds: 'wc-a' as unknown as string[],
+    })
+    expect(rooms).toEqual(['planned_stop_template'])
   })
 
   it('returns only entity prefix room for empty payload', () => {
