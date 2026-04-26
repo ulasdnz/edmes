@@ -6,7 +6,7 @@
 
 **Architecture:** Node 20 / Express 5 / Mongoose 9 service. Follows the same monorepo conventions as `user/`, `work-center/`, `production/`, `telemetry/`: module-per-feature (`model`, `service`, `controller`, `routes`, `validators`, `*.test.ts`), shared packages under `@mes/*`, Redis Streams for events, on-demand OEE with no persisted result cache.
 
-**Tech Stack:** Node 20, pnpm, TypeScript 5.5+ NodeNext, Express 5, Zod 4, Mongoose 9, ioredis 5, Redis Streams, Winston 3, Vitest + `mongodb-memory-server` + `testcontainers`, Biome 2. Uses `@mes/core`, `@mes/auth`, `@mes/cache`, `@mes/logger`, `@mes/events`, `@mes/health`, `@mes/openapi`, `@mes/privileges`, `@mes/testing`.
+**Tech Stack:** Node 20, pnpm, TypeScript 5.5+ NodeNext, Express 5, Zod 4, Mongoose 9, ioredis 5, Redis Streams, Winston 3, Vitest + `testcontainers` (`@testcontainers/mongodb`), Biome 2. Uses `@mes/core`, `@mes/auth`, `@mes/cache`, `@mes/logger`, `@mes/events`, `@mes/health`, `@mes/openapi`, `@mes/privileges`, `@mes/testing`.
 
 **Spec:** `performance-service-spec.md`
 
@@ -201,7 +201,7 @@ performance/
       subscribers.ts                  (consume events.production, events.work_center, events.telemetry, events.user)
       subscribers.test.ts
     test/
-      setup.ts                        (mongodb-memory-server)
+      setup.ts                        (testcontainers)
       contract-setup.ts               (testcontainers)
       fixtures/
         reason.fixtures.ts
@@ -324,9 +324,9 @@ Stand up `performance/` as a working Express service identical in shape to `prod
     ```
     Append to `PRIVILEGES` aggregate.
 16. `packages/testing` — no change (source-only).
-17. `vitest.config.ts`: standard pattern (mongodb-memory-server via `test/setup.ts`).
+17. `vitest.config.ts`: standard pattern (testcontainers via `test/setup.ts`).
 18. `vitest.contract.config.ts`: standard pattern (`testcontainers` setup). Contract test glob: `src/**/__contract__/*.contract.test.ts`.
-19. Skeleton smoke test: `performance/src/app.smoke.test.ts` — boot `initLoaders()` with memory Mongo and assert `/health/live` returns 200.
+19. Skeleton smoke test: `performance/src/app.smoke.test.ts` — boot `initLoaders()` against the testcontainer Mongo and assert `/health/live` returns 200.
 
 ### 1.5 Test planı
 
@@ -1269,7 +1269,7 @@ Wire the public OEE API, finalize reason/planned-stop/etc. APIs, emit the requir
   - `user.updated` invalidates auth-context cache.
   - `work_center.updated` invalidates `wc:{id}` cache.
   - `work_center.metric_composition.changed` invalidates composition cache.
-- **Integration / supertest** (mongodb-memory-server):
+- **Integration / supertest** (testcontainers):
   - `GET /api/v1/oee?workCenterId=...&from=...&to=...` happy path with one JO, no stops, constant speed.
   - `no_job_order_in_range` case.
   - Non-effective planned stop does not reduce availability percentage.

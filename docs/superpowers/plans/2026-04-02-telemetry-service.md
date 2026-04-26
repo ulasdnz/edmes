@@ -481,7 +481,7 @@ Add tagType routes to `mountSharedRoutes` in `express.ts`. Configure auth (follo
 
 - [ ] **Step 5: Write tests**
 
-Create `telemetry/src/modules/tag-type/__tests__/tag-type.service.test.ts`. Test CRUD operations with mongodb-memory-server. Follow existing test patterns in `user/`.
+Create `telemetry/src/modules/tag-type/__tests__/tag-type.service.test.ts`. Test CRUD operations with testcontainers (`@testcontainers/mongodb`). Follow existing test patterns in `user/`.
 
 - [ ] **Step 6: Run tests**
 

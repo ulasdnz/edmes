@@ -320,7 +320,6 @@ describe('EntityService', () => {
     "@types/swagger-ui-express": "^4.1.8",
     "@vitest/coverage-v8": "^4.0.18",
     "jiti": "^2.6.1",
-    "mongodb-memory-server": "^11.0.1",
     "swagger-ui-express": "^5.0.1",
     "supertest": "^7.2.2",
     "testcontainers": "^11.12.0",
