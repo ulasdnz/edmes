@@ -13,7 +13,7 @@ afterEach(() => {
 })
 
 describe('findStartedJobOrders', () => {
-  it('returns started job orders mapped to JobWindow', async () => {
+  it('includes finished job orders overlapping the range and ignores pending null-startTime entries', async () => {
     const from = new Date('2026-01-01T06:00:00Z')
     const to = new Date('2026-01-01T18:00:00Z')
     const wcId = 'aaaaaaaaaaaaaaaaaaaaaaaa'
@@ -47,8 +47,23 @@ describe('findStartedJobOrders', () => {
 
     expect(result).toHaveLength(1)
     expect(result[0].jobOrderId).toBe('bbbbbbbbbbbbbbbbbbbbbbbb')
-    expect(result[0].start).toBeInstanceOf(Date)
-    expect(result[0].end).toBeInstanceOf(Date)
+    expect(result[0].start).toEqual(new Date('2026-01-01T06:00:00.000Z'))
+    expect(result[0].end).toEqual(new Date('2026-01-01T14:00:00.000Z'))
+  })
+
+  it('does not constrain the request to runtimeState=running so finished overlapping orders are returned', async () => {
+    fetchMock.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ data: [] }) })
+
+    await productionClient.findStartedJobOrders({
+      workCenterId: 'aaaaaaaaaaaaaaaaaaaaaaaa',
+      from: new Date('2026-01-01T06:00:00Z'),
+      to: new Date('2026-01-01T18:00:00Z'),
+    })
+
+    const url = fetchMock.mock.calls.at(-1)?.[0] as string
+    expect(url).not.toMatch(/runtimeState/)
+    expect(url).toContain('activeFrom=')
+    expect(url).toContain('activeTo=')
   })
 
   it('returns empty array when fetch fails', async () => {
