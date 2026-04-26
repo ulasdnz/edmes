@@ -247,6 +247,36 @@ export const userPaths: ZodOpenApiPathsObject = {
       },
     },
   },
+  '/users/{id}/auth-context': {
+    get: {
+      tags: ['Users', 'Lookups', 'Sync'],
+      security: securityRequirement,
+      summary: 'Get user auth context for middleware and cross-service authorization',
+      description:
+        'Returns activation status, password-change timestamp, role IDs, permission codes, and assigned work center IDs for a user.',
+      requestParams: { path: userIdParamSchema },
+      responses: {
+        '200': { description: 'User auth context' },
+        '403': { description: 'Forbidden' },
+        '404': { description: 'User not found' },
+      },
+    },
+  },
+  '/users/{id}/work-center-ids': {
+    get: {
+      tags: ['Users', 'Lookups', 'Sync'],
+      security: securityRequirement,
+      summary: 'Get user work center visibility IDs for cross-service authorization',
+      description:
+        'Returns the workCenterIds assigned to a user. Internal services use this read-only endpoint to apply work-center visibility filters.',
+      requestParams: { path: userIdParamSchema },
+      responses: {
+        '200': { description: 'Array of work center IDs assigned to the user' },
+        '403': { description: 'Forbidden' },
+        '404': { description: 'User not found' },
+      },
+    },
+  },
   '/users/languages': {
     get: {
       tags: ['Users', 'Lookups'],

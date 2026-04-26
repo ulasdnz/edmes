@@ -158,6 +158,14 @@ export async function getUserAuthContext(
   res.json({ data })
 }
 
+export async function getUserWorkCenterIds(
+  req: Request<{ id: string }>,
+  res: Response<SuccessResponse<string[]>>,
+) {
+  const data = await userService.getUserWorkCenterIds(req.params.id)
+  res.json({ data })
+}
+
 export async function getUsersLanguages(req: Request, res: Response<SuccessResponse<string[]>>) {
   const languages = userService.getLanguages()
   res.json({

@@ -98,7 +98,7 @@ export const initExpress = async () => {
   // Gateway blocks external access to /internal/*
   const internalRouter = Router()
   internalRouter.use((req: Request, _res: Response, next: NextFunction) => {
-    req.user = { id: SYSTEM_IDENTITY, roles: [], permissions: ['*'], workCenterIds: [] }
+    req.user = { id: SYSTEM_IDENTITY, roles: [], permissions: ['*'], workCenterIds: undefined }
     setUserId(SYSTEM_IDENTITY)
     next()
   })

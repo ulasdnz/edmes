@@ -115,6 +115,12 @@ router.get(
   validateParams(userIdParamSchema),
   userController.getUserAuthContext,
 )
+router.get(
+  '/users/:id/work-center-ids',
+  requirePermission('readUsers'),
+  validateParams(userIdParamSchema),
+  userController.getUserWorkCenterIds,
+)
 router.get('/users/languages', requirePermission('readUsers'), userController.getUsersLanguages)
 router.get(
   '/users/custom-field-keys',

@@ -395,6 +395,17 @@ export const getUserAuthContext = async (
   }
 }
 
+export const getUserWorkCenterIds = async (userId: string): Promise<string[]> => {
+  if (userId === SYSTEM_IDENTITY) return []
+
+  const user = await User.findById(userId).select('workCenterIds').lean()
+  if (!user) {
+    throw new CustomError(404, 'user.not_found')
+  }
+
+  return (user.workCenterIds ?? []).map(String)
+}
+
 export const getLanguages = (): string[] => {
   return ['tr', 'en']
 }
