@@ -7,7 +7,7 @@ const { Schema, model } = mongoose
 
 const tagBindingsSchema = new Schema(
   {
-    productionCounterTagId: { type: Schema.Types.ObjectId, required: true },
+    productionCounterTagId: { type: Schema.Types.ObjectId, default: null },
     runModeTagId: { type: Schema.Types.ObjectId, required: true },
     speedTagId: { type: Schema.Types.ObjectId, default: null },
   },

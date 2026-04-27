@@ -376,9 +376,15 @@ export async function updateWorkCenter(
   if (existing.type === 'physical') {
     const finalProductivityMode = updateFields.productivityMode ?? existing.productivityMode
     const finalTagBindings = updateFields.tagBindings ?? existing.tagBindings
+    const hasCounter = !!finalTagBindings?.productionCounterTagId
+    const hasSpeed = !!finalTagBindings?.speedTagId
 
-    if (finalProductivityMode === 'speed_based' && !finalTagBindings?.speedTagId) {
-      throw new CustomError(400, 'work_center.speed_tag_required')
+    if (finalProductivityMode === 'count_based' && (!hasCounter || hasSpeed)) {
+      throw new CustomError(400, 'work_center.exactly_one_productivity_tag_required')
+    }
+
+    if (finalProductivityMode === 'speed_based' && (!hasSpeed || hasCounter)) {
+      throw new CustomError(400, 'work_center.exactly_one_productivity_tag_required')
     }
   }
 

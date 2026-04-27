@@ -3,7 +3,7 @@ import { CustomError } from '../../core/errors/index.js'
 import type { SuccessResponse } from '../../core/types/index.js'
 import { logger } from '../../lib/logger.js'
 import EdgeDevice from '../edge-device/edge-device.model.js'
-import { ingestValue, type IngestValueResult } from '../ingestion/ingestion.pipeline.js'
+import { type IngestValueResult, ingestValue } from '../ingestion/ingestion.pipeline.js'
 import { predecessorLoad } from '../ingestion/predecessor-cache.js'
 import Tag from './tag.model.js'
 import type { WriteCommandInput, WriteValueInput } from './tag-value.validators.js'
@@ -39,7 +39,9 @@ export const writeValue = async (
         ? 'tag.out_of_order'
         : result.reason === 'within_tolerance'
           ? 'tag.within_tolerance'
-          : 'tag.same_value'
+          : result.reason === 'out_of_range'
+            ? 'tag.out_of_range'
+            : 'tag.same_value'
     throw new CustomError(409, errorCode)
   }
 

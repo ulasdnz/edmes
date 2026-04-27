@@ -17,7 +17,7 @@ export type IngestValueResult =
   | { applied: true; reason: 'history_inserted' }
   | {
       applied: false
-      reason: 'out_of_order' | 'same_value' | 'within_tolerance'
+      reason: 'out_of_order' | 'same_value' | 'within_tolerance' | 'out_of_range'
     }
 
 export const processMessage = async (topic: string, payload: Buffer): Promise<void> => {
@@ -83,6 +83,11 @@ export const ingestValue = async (
   if (tag.behavior !== 'binary' && tag.digit != null) {
     const factor = 10 ** tag.digit
     value = Math.round(rawValue * factor) / factor
+  }
+
+  if (tag.behavior !== 'binary') {
+    if (tag.min != null && value < tag.min) return { applied: false, reason: 'out_of_range' }
+    if (tag.max != null && value > tag.max) return { applied: false, reason: 'out_of_range' }
   }
 
   if (pred && value === pred.value) return { applied: false, reason: 'same_value' }

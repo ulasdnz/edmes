@@ -16,11 +16,25 @@ const shiftIdsSchema = z.array(objectIdSchema)
 
 const tagBindingsSchema = z
   .object({
-    productionCounterTagId: objectIdSchema,
+    productionCounterTagId: objectIdSchema.nullable().optional(),
     runModeTagId: objectIdSchema,
     speedTagId: objectIdSchema.nullable().optional(),
   })
   .strict()
+
+function hasOneProductivityTag(data: {
+  productivityMode: 'count_based' | 'speed_based'
+  tagBindings: z.infer<typeof tagBindingsSchema>
+}) {
+  const hasCounter = !!data.tagBindings.productionCounterTagId
+  const hasSpeed = !!data.tagBindings.speedTagId
+
+  if (data.productivityMode === 'count_based') {
+    return hasCounter && !hasSpeed
+  }
+
+  return hasSpeed && !hasCounter
+}
 
 // ── Metric composition (virtual) ─────────────────────────────────────────────
 
@@ -104,15 +118,10 @@ const physicalCreateSchema = z
     tagBindings: tagBindingsSchema,
     microStopThresholdMs: z.number().int().min(0).optional(),
   })
-  .refine(
-    data => {
-      if (data.productivityMode === 'speed_based') {
-        return !!data.tagBindings.speedTagId
-      }
-      return true
-    },
-    { message: 'work_center.speed_tag_required', path: ['tagBindings', 'speedTagId'] },
-  )
+  .refine(data => hasOneProductivityTag(data), {
+    message: 'work_center.exactly_one_productivity_tag_required',
+    path: ['tagBindings'],
+  })
 
 const virtualCreateSchema = z.object({
   ...baseCreateFields,
@@ -141,15 +150,10 @@ const physicalReplaceSchema = z
     microStopThresholdMs: z.number().int().min(0).optional(),
   })
   .strict()
-  .refine(
-    data => {
-      if (data.productivityMode === 'speed_based') {
-        return !!data.tagBindings.speedTagId
-      }
-      return true
-    },
-    { message: 'work_center.speed_tag_required', path: ['tagBindings', 'speedTagId'] },
-  )
+  .refine(data => hasOneProductivityTag(data), {
+    message: 'work_center.exactly_one_productivity_tag_required',
+    path: ['tagBindings'],
+  })
 
 const virtualReplaceSchema = z
   .object({
