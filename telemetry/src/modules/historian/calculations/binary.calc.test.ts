@@ -1,18 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { findOneMock, findToArrayMock } = vi.hoisted(() => ({
-  findOneMock: vi.fn(),
-  findToArrayMock: vi.fn(),
-}))
+const { findOneMock, findMock, findToArrayMock } = vi.hoisted(() => {
+  const findToArrayMock = vi.fn()
+  const findMock = vi.fn(() => ({
+    sort: vi.fn(() => ({
+      toArray: findToArrayMock,
+    })),
+  }))
+  return { findOneMock: vi.fn(), findMock, findToArrayMock }
+})
 
 vi.mock('../../ingestion/historian.repository.js', () => ({
   getHistorianCollection: vi.fn(() => ({
     findOne: findOneMock,
-    find: vi.fn(() => ({
-      sort: vi.fn(() => ({
-        toArray: findToArrayMock,
-      })),
-    })),
+    find: findMock,
   })),
 }))
 
@@ -177,6 +178,74 @@ describe('calculateStateDurations', () => {
         start: t3,
         end: rangeEnd,
         durationMs: rangeEnd.getTime() - t3.getTime(),
+      },
+    ])
+  })
+
+  it('uses half-open right interval — passes $lt: rangeEnd to find filter', async () => {
+    findOneMock.mockResolvedValue(null)
+    findToArrayMock.mockResolvedValue([])
+
+    await calculateStateDurations('tag-1', rangeStart, rangeEnd)
+
+    expect(findMock).toHaveBeenCalledWith({
+      occurredAt: { $gte: rangeStart, $lt: rangeEnd },
+    })
+  })
+
+  it('two adjacent windows: filter-aware mock proves boundary sample is excluded from first and included in second', async () => {
+    const mid = new Date('2026-04-01T10:30:00.000Z')
+    const allDocs = [
+      { occurredAt: new Date('2026-04-01T10:15:00.000Z'), value: 0 },
+      { occurredAt: mid, value: 1 },
+    ]
+
+    const filterAware = (filter: { occurredAt: { $gte: Date; $lt?: Date; $lte?: Date } }) => {
+      const { $gte, $lt, $lte } = filter.occurredAt
+      const filtered = allDocs.filter(d => {
+        const t = d.occurredAt.getTime()
+        if (t < $gte.getTime()) return false
+        if ($lt && t >= $lt.getTime()) return false
+        if ($lte && t > $lte.getTime()) return false
+        return true
+      })
+      return {
+        sort: vi.fn(() => ({
+          toArray: vi.fn().mockResolvedValue(filtered),
+        })),
+      }
+    }
+    findMock.mockImplementationOnce(filterAware as never)
+    findMock.mockImplementationOnce(filterAware as never)
+    findOneMock.mockResolvedValue(null)
+
+    const first = await calculateStateDurations('tag-1', rangeStart, mid)
+    const second = await calculateStateDurations('tag-1', mid, rangeEnd)
+
+    // Filters explicitly assert the half-open contract on both calls.
+    expect(findMock.mock.calls[0][0]).toEqual({
+      occurredAt: { $gte: rangeStart, $lt: mid },
+    })
+    expect(findMock.mock.calls[1][0]).toEqual({
+      occurredAt: { $gte: mid, $lt: rangeEnd },
+    })
+
+    // First window saw only the 10:15 sample (mid sample excluded by half-open).
+    expect(first).toEqual([
+      {
+        state: 0,
+        start: new Date('2026-04-01T10:15:00.000Z'),
+        end: mid,
+        durationMs: mid.getTime() - new Date('2026-04-01T10:15:00.000Z').getTime(),
+      },
+    ])
+    // Second window saw the mid sample as its first in-window doc.
+    expect(second).toEqual([
+      {
+        state: 1,
+        start: mid,
+        end: rangeEnd,
+        durationMs: rangeEnd.getTime() - mid.getTime(),
       },
     ])
   })

@@ -25,7 +25,7 @@ export const calculateStateDurations = async (
   )
 
   const docs = await collection
-    .find<BinaryDoc>({ occurredAt: { $gte: rangeStart, $lte: rangeEnd } })
+    .find<BinaryDoc>({ occurredAt: { $gte: rangeStart, $lt: rangeEnd } })
     .sort({ occurredAt: 1, _id: 1 })
     .toArray()
 

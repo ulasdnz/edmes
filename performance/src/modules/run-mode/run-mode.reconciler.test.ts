@@ -222,4 +222,37 @@ describe('run-mode.reconciler', () => {
     }).lean()
     expect(cursor).toBeNull()
   })
+
+  it('idempotent across boots: re-running with the same segment data does not double-create stops', async () => {
+    const wcId = new Types.ObjectId().toString()
+    const tagId = new Types.ObjectId().toString()
+    const cursorAt = new Date('2026-06-15T10:00:00.000Z')
+    await seedCursor(wcId, tagId, cursorAt, 1)
+
+    const segment = {
+      from: '2026-06-15T10:10:00.000Z',
+      to: '2026-06-15T10:15:00.000Z',
+      value: 0,
+      durationMs: 300_000,
+    }
+
+    getStateDurations.mockResolvedValueOnce([segment])
+    await reconcileOnBoot({ now: new Date('2026-06-15T10:20:00.000Z') })
+
+    const stopsAfterFirst = await UnplannedStop.find({
+      workCenterId: new Types.ObjectId(wcId),
+    }).lean()
+    expect(stopsAfterFirst.length).toBe(1)
+
+    // Second boot: telemetry returns the same segment; reconciler must not
+    // duplicate the stop. Whether the cursor was advanced by the first boot
+    // or the processor dedups internally, the visible outcome is identical.
+    getStateDurations.mockResolvedValueOnce([segment])
+    await reconcileOnBoot({ now: new Date('2026-06-15T10:25:00.000Z') })
+
+    const stopsAfterSecond = await UnplannedStop.find({
+      workCenterId: new Types.ObjectId(wcId),
+    }).lean()
+    expect(stopsAfterSecond.length).toBe(1)
+  })
 })
