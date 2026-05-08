@@ -170,7 +170,6 @@ services:
       - JWT_SECRET=${JWT_SECRET:-supersecretkey}
       - INTERNAL_API_USER=${INTERNAL_API_USER:-http://user:3000}
       - INTERNAL_API_PRODUCTION=${INTERNAL_API_PRODUCTION:-http://production:3002}
-      - PLANT_TIMEZONE=${PLANT_TIMEZONE:-Europe/Istanbul}
       - MQTT_URL=${MQTT_URL:-mqtt://mosquitto:1883}
       - MQTT_USERNAME=${MQTT_USERNAME:-mes_service}
       - MQTT_PASSWORD=${MQTT_PASSWORD:-dev123}
