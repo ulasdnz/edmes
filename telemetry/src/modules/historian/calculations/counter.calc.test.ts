@@ -223,4 +223,40 @@ describe('calculateProducedMulti', () => {
     expect(multi.windows[0].value).toBe(singleValue)
     expect(multi.total).toBe(singleValue)
   })
+
+  it('uses closed [$gte, $lte] DB filter — deliberately not half-open', async () => {
+    findOneMock.mockResolvedValue(null)
+    findToArrayMock.mockResolvedValue([])
+    const from = d('2026-04-01T10:00:00.000Z')
+    const to = d('2026-04-01T11:00:00.000Z')
+
+    await calculateProducedMulti('tag-1', [{ from, to }])
+
+    // Closed boundaries are required so a sample at exactly overallFrom can serve as
+    // the window baseline (see firstIndexAfter / computeWindow). Switching to $gt would
+    // drop that sample and break delta computation.
+    expect(findMock).toHaveBeenCalledWith({
+      occurredAt: { $gte: from, $lte: to },
+    })
+  })
+
+  it('sample at exactly overallFrom serves as window baseline, not as in-window doc', async () => {
+    const from = d('2026-04-01T10:00:00.000Z')
+    const to = d('2026-04-01T11:00:00.000Z')
+
+    // No earlier baseline available; only path to a baseline is the sample at exactly `from`.
+    findOneMock.mockResolvedValue(null)
+    findToArrayMock.mockResolvedValue([
+      { ...baseDoc, occurredAt: from, value: 100, prevValue: null },
+      { ...baseDoc, occurredAt: to, value: 150, prevValue: null },
+    ])
+
+    const result = await calculateProducedMulti('tag-1', [{ from, to }])
+
+    // Sample at `from` is the window baseline (allDocs[startIdx-1]); only the sample at
+    // `to` is in-window. Delta = 150 - 100 = 50. If the boundary sample were excluded
+    // (e.g. by switching to $gt), the result would be 150 with 'missing_baseline' flag.
+    expect(result.windows[0].value).toBe(50)
+    expect(result.windows[0].qualityFlags).not.toContain('missing_baseline')
+  })
 })

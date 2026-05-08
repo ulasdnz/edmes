@@ -148,4 +148,42 @@ describe('calculateSpeedAvgMulti', () => {
     expect(result.windows[1].valueArea).toBe(5 * 2 * minMs + 25 * 8 * minMs)
     expect(findMock).toHaveBeenCalledTimes(1)
   })
+
+  it('uses closed [$gte, $lte] DB filter — deliberately not half-open', async () => {
+    findOneMock.mockResolvedValue(null)
+    findToArrayMock.mockResolvedValue([])
+    const from = d('2026-04-01T10:00:00.000Z')
+    const to = d('2026-04-01T10:10:00.000Z')
+
+    await calculateSpeedAvgMulti('tag-1', [{ from, to }])
+
+    // Closed boundaries are required so a sample at exactly `from` can be the integral's
+    // opening value. Switching to $gt would lose that sample and zero out the value
+    // change at the window's opening instant.
+    expect(findMock).toHaveBeenCalledWith({
+      occurredAt: { $gte: from, $lte: to },
+    })
+  })
+
+  it('sample at exactly from is the opening of the area integral', async () => {
+    const from = d('2026-04-01T10:00:00.000Z')
+    const to = d('2026-04-01T10:10:00.000Z') // 10-minute window
+
+    // External baseline (older sample) value = 50.
+    findOneMock.mockResolvedValue({ occurredAt: d('2026-04-01T09:00:00.000Z'), value: 50 })
+    // Sample at exactly `from` raises value to 100 immediately; constant until `to`.
+    findToArrayMock.mockResolvedValue([
+      { occurredAt: from, value: 100 },
+      { occurredAt: to, value: 100 },
+    ])
+
+    const result = await calculateSpeedAvgMulti('tag-1', [{ from, to }])
+
+    // With the boundary sample, the trapezoid is value 100 across the full window.
+    // Without it, the integral would carry baseline value 50 across the window — the
+    // time-weighted average would collapse to 50 instead of 100.
+    const minMs = 60 * 1000
+    expect(result.windows[0].timeWeightedAverage).toBe(100)
+    expect(result.windows[0].valueArea).toBe(100 * 10 * minMs)
+  })
 })

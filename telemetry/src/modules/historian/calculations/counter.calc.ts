@@ -28,8 +28,20 @@ export interface ProducedMultiResult {
   total: number
 }
 
-// Half-open (from, to] semantic so adjacent windows that share a boundary sample
-// do not double-count the delta across that boundary.
+/**
+ * Returns the index of the first doc whose `occurredAt` is strictly greater than `t`.
+ *
+ * Implements per-window `(from, to]` semantics for delta calculation: a sample landing
+ * exactly on a window boundary belongs to the *previous* window's closing value (and to
+ * the next window's opening baseline), never to both windows' in-window slice. This is
+ * the right shape for counter-delta math — adjacent windows that share a boundary
+ * sample do not double-count the delta across that boundary.
+ *
+ * Note: this is intentionally different from the project-wide `[from, to)` range-query
+ * convention. The convention applies to instant filters; counter delta is a stateful
+ * algorithm whose boundary handling is dictated by what produces correct deltas, not
+ * tile semantics alone.
+ */
 const firstIndexAfter = (docs: CounterDoc[], t: number): number => {
   let lo = 0
   let hi = docs.length
@@ -81,6 +93,20 @@ const computeWindow = (
   return { from, to, value: normalDelta + peakSum, qualityFlags: flags }
 }
 
+/**
+ * Computes counter-based produced quantities across multiple windows in one round trip.
+ *
+ * Per-window semantics: `(from, to]` (see `firstIndexAfter`). A sample whose `occurredAt`
+ * equals a window's `from` is *not* in that window's slice — it serves as the window's
+ * opening baseline (`allDocs[startIdx - 1]`) so the delta is computed against it.
+ *
+ * DB fetch boundaries are deliberately closed on both sides (`{ $gte: overallFrom,
+ * $lte: overallTo }`). Excluding the `overallFrom` sample (e.g. switching to `$gt`)
+ * would drop a sample that may be the only baseline candidate — the separate baseline
+ * query (`$lt: overallFrom`) only finds samples *before* the range, so a sample at
+ * exactly `overallFrom` would be lost from both queries and the first window's delta
+ * would be wrong.
+ */
 export const calculateProducedMulti = async (
   tagId: string,
   windows: ProducedWindowInput[],
