@@ -30,6 +30,7 @@
     "delete_blocked_user_reference": "Cannot delete: work center is referenced by users",
     "delete_blocked_checkin_records": "Cannot delete: operator check-in records exist",
     "speed_tag_required": "speedTagId is required when productivityMode is speed_based",
+    "exactly_one_productivity_tag_required": "Exactly one productivity tag is required for the selected productivity mode",
     "composition_conflicts_with_partial": "Cannot send both metricComposition and partialMetricComposition",
     "partial_requires_existing_composition": "Cannot use partial composition update without existing composition"
   },

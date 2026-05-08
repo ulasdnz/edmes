@@ -30,6 +30,7 @@
     "delete_blocked_user_reference": "Silinemez: is merkezi kullanicilar tarafindan referans aliniyor",
     "delete_blocked_checkin_records": "Silinemez: operator giris kayitlari mevcut",
     "speed_tag_required": "productivityMode speed_based oldugunda speedTagId gereklidir",
+    "exactly_one_productivity_tag_required": "Secili productivityMode icin tam olarak bir verimlilik tag'i gereklidir",
     "composition_conflicts_with_partial": "metricComposition ve partialMetricComposition ayni anda gonderilemez",
     "partial_requires_existing_composition": "Kismi bilesim guncellemesi mevcut bir bilesim olmadan kullanilamaz"
   },

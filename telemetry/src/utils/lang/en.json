@@ -13,6 +13,7 @@
   "tag": {
     "same_value": "The incoming value matches the latest stored value.",
     "out_of_order": "The incoming timestamp is older than or equal to the latest stored timestamp.",
+    "out_of_range": "The incoming value is outside the allowed range.",
     "within_tolerance": "The incoming value is within the configured tolerance of the latest stored value.",
     "command_failed": "The edge device rejected or failed to process the write command.",
     "command_invalid": "The edge device rejected the write command request.",
