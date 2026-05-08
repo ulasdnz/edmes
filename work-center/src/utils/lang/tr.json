@@ -68,5 +68,8 @@
   "error": {
     "unexpected": "Beklenmeyen bir hata olustu",
     "invalid_id": "Gecersiz tanimlayici"
+  },
+  "validation": {
+    "datetime_utc_z_required": "Tarih/saat 'Z' ile biten gecerli bir ISO 8601 UTC ani olmalidir"
   }
 }

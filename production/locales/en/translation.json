@@ -35,5 +35,8 @@
     "amount_zero": "Amount cannot be zero",
     "scrap_end_before_start": "End time must be after start time",
     "immutable_field": "This field cannot be changed"
+  },
+  "validation": {
+    "datetime_utc_z_required": "Datetime must be a valid ISO 8601 UTC instant ending with Z"
   }
 }

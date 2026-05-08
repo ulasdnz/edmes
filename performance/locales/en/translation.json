@@ -27,5 +27,8 @@
     "no_production_total": "Production total could not be determined for this job order",
     "scrap_exceeds_total": "Scrap quantity exceeds total production",
     "unknown_scrap_reason_treated_as_oee_affecting": "Unknown scrap reason was treated as OEE-affecting"
+  },
+  "validation": {
+    "datetime_utc_z_required": "Datetime must be a valid ISO 8601 UTC instant ending with Z"
   }
 }

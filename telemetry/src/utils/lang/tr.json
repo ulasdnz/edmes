@@ -18,5 +18,8 @@
     "command_failed": "Edge cihazi yazma komutunu isleyemedi veya basarisiz oldu.",
     "command_invalid": "Edge cihazi yazma komutu istegini reddetti.",
     "command_unsupported": "Bagli edge node yazma komutunu desteklemiyor."
+  },
+  "validation": {
+    "datetime_utc_z_required": "Tarih/saat 'Z' ile biten gecerli bir ISO 8601 UTC ani olmalidir"
   }
 }

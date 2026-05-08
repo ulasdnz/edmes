@@ -68,5 +68,8 @@
   "error": {
     "unexpected": "An unexpected error occurred",
     "invalid_id": "Invalid identifier"
+  },
+  "validation": {
+    "datetime_utc_z_required": "Datetime must be a valid ISO 8601 UTC instant ending with Z"
   }
 }

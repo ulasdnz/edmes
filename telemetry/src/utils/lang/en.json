@@ -18,5 +18,8 @@
     "command_failed": "The edge device rejected or failed to process the write command.",
     "command_invalid": "The edge device rejected the write command request.",
     "command_unsupported": "The bound edge node does not support write commands."
+  },
+  "validation": {
+    "datetime_utc_z_required": "Datetime must be a valid ISO 8601 UTC instant ending with Z"
   }
 }

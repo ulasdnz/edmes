@@ -35,5 +35,8 @@
     "amount_zero": "Miktar sıfır olamaz",
     "scrap_end_before_start": "Bitiş zamanı başlangıç zamanından sonra olmalıdır",
     "immutable_field": "Bu alan değiştirilemez"
+  },
+  "validation": {
+    "datetime_utc_z_required": "Tarih/saat 'Z' ile biten geçerli bir ISO 8601 UTC anı olmalıdır"
   }
 }
