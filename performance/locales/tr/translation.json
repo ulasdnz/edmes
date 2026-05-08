@@ -10,7 +10,6 @@
     "immutable_field": "Bu alan değiştirilemez",
     "invalid_id": "Geçersiz tanımlayıcı",
     "invalid_code": "Geçersiz kod biçimi",
-    "invalid_datetime": "Tarih/saat, Z ile biten geçerli bir ISO 8601 UTC anı olmalıdır",
     "invalid_range": "'to' değeri 'from' değerinden sonra olmalıdır",
     "duplicate": "Aynı benzersiz anahtarla kayıt mevcut",
     "referenced": "Kayıt başka varlıklar tarafından referans gösteriliyor",

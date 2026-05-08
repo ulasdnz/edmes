@@ -1,16 +1,13 @@
 import type { Request, Response } from 'express'
 import { calculate } from './oee.service.js'
+import type { OeeQuery } from './oee.validators.js'
 
 export const getOee = async (req: Request, res: Response) => {
-  const { workCenterId, from, to } = req.query as {
-    workCenterId: string
-    from: string
-    to: string
-  }
+  const { workCenterId, from, to } = req.query as unknown as OeeQuery
   const result = await calculate({
     workCenterId,
-    from: new Date(from),
-    to: new Date(to),
+    from,
+    to,
     userId: req.user!.id,
   })
   res.json({ data: result })

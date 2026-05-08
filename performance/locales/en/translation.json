@@ -10,7 +10,6 @@
     "immutable_field": "This field cannot be changed",
     "invalid_id": "Invalid identifier",
     "invalid_code": "Invalid code format",
-    "invalid_datetime": "Datetime must be a valid ISO 8601 UTC instant ending with Z",
     "invalid_range": "The 'to' value must be after 'from'",
     "duplicate": "A record with the same unique key already exists",
     "referenced": "Record is referenced by other entities",

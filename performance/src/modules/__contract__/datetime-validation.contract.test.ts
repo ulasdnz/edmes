@@ -14,7 +14,7 @@ describe('datetime validation — offset-less strings must be rejected', () => {
     })
     expect(r.success).toBe(false)
     const messages = r.error!.issues.map(i => i.message)
-    expect(messages).toContain('error.invalid_datetime')
+    expect(messages).toContain('validation.datetime_utc_z_required')
   })
 
   it('rejects space-separated datetime', () => {
