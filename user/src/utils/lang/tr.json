@@ -22,7 +22,9 @@
     "username_required": "Kullanici adi gereklidir",
     "role_name_max": "Rol adi en fazla 50 karakter olmali",
     "speciality_name_max": "Uzmanlik adi en fazla 100 karakter olmali",
-    "username_format": "Kullanici adi sadece kucuk harf, rakam, nokta, alt cizgi ve tire icerebilir"
+    "username_format": "Kullanici adi sadece kucuk harf, rakam, nokta, alt cizgi ve tire icerebilir",
+    "birth_date_format": "Dogum tarihi YYYY-MM-DD biciminde olmalidir",
+    "birth_date_invalid": "Dogum tarihi gecerli bir takvim tarihi olmalidir"
   },
   "auth": {
     "unauthenticated": "Bu kaynaÄŸa eriÅŸmek iÃ§in lÃ¼tfen giriÅŸ yapÄ±n.",

@@ -26,7 +26,7 @@ export async function seedUsers(count = 10) {
       surname: lastName,
       gender: faker.helpers.arrayElement(['male', 'female', 'other'] as const),
       countryCode: faker.location.countryCode(),
-      birthDate: faker.date.birthdate({ min: 18, max: 65, mode: 'age' }),
+      birthDate: faker.date.birthdate({ min: 18, max: 65, mode: 'age' }).toISOString().slice(0, 10),
       language: i === 0 ? 'tr' : faker.helpers.arrayElement(['en', 'tr'] as const),
       isActivated: true,
     }

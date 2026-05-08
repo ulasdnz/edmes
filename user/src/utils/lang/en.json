@@ -22,7 +22,9 @@
     "speciality_name_max": "Speciality name must be at most 100 characters long",
     "password_policy_min": "Password must be at least 8 characters",
     "password_policy_max": "Password must be at most 20 characters",
-    "password_required": "Password is required"
+    "password_required": "Password is required",
+    "birth_date_format": "Birth date must be in YYYY-MM-DD format",
+    "birth_date_invalid": "Birth date must be a valid calendar date"
   },
   "auth": {
     "unauthenticated": "Please log in to access this resource.",

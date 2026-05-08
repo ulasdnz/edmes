@@ -44,6 +44,18 @@ const objectIdArraySchema = z.array(objectIdSchema).default([])
 
 const propsSchema = z.record(z.string(), z.string()).optional()
 
+const birthDateSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, { message: 'validation.birth_date_format' })
+  .refine(
+    v => {
+      const d = new Date(`${v}T00:00:00Z`)
+      return !Number.isNaN(d.getTime()) && v === d.toISOString().slice(0, 10)
+    },
+    { message: 'validation.birth_date_invalid' },
+  )
+  .meta({ example: '1990-05-15', description: 'Birth date (YYYY-MM-DD, date-only)' })
+
 export const registerSchema = z
   .object({
     username: usernameSchema,
@@ -54,10 +66,12 @@ export const registerSchema = z
   })
   .strict()
 
-export const loginSchema = z.object({
-  email: emailSchema,
-  password: passwordInputSchema,
-}).strict()
+export const loginSchema = z
+  .object({
+    email: emailSchema,
+    password: passwordInputSchema,
+  })
+  .strict()
 
 export const updateMeSchema = z
   .object({
@@ -67,7 +81,7 @@ export const updateMeSchema = z
     username: usernameSchema.optional(),
     gender: z.enum(['male', 'female', 'other']).optional(),
     countryCode: z.string().optional(),
-    birthDate: z.coerce.date().optional(),
+    birthDate: birthDateSchema.optional(),
     language: z.enum(['en', 'tr']).optional(),
     defaultDashboardId: objectIdSchema.nullable().optional(),
   })

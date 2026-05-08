@@ -49,7 +49,8 @@ const userSchema = new Schema(
       type: String,
     },
     birthDate: {
-      type: Date,
+      type: String,
+      match: /^\d{4}-\d{2}-\d{2}$/,
     },
     photoUrl: {
       type: String,
