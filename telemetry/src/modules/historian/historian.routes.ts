@@ -69,21 +69,6 @@ router.get(
 )
 
 router.get(
-  '/historian/:tagId/state-durations',
-  requirePermission('readHistorian'),
-  validateParams(tagIdParamSchema),
-  validateQuery(rangeQuerySchema),
-  historianController.getStateDurations,
-)
-
-router.get(
-  '/historian/:tagId/latest',
-  requirePermission('readHistorian'),
-  validateParams(tagIdParamSchema),
-  historianController.getLatest,
-)
-
-router.get(
   '/historian/:tagId/rollup',
   requirePermission('readHistorian'),
   validateParams(tagIdParamSchema),

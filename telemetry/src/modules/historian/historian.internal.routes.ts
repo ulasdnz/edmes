@@ -1,9 +1,22 @@
 import { Router } from 'express'
-import { validateBody, validateParams } from '../../core/middleware/validate.js'
+import { validateBody, validateParams, validateQuery } from '../../core/middleware/validate.js'
 import * as historianController from './historian.controller.js'
-import { multiWindowSchema, tagIdParamSchema } from './historian.validators.js'
+import { multiWindowSchema, rangeQuerySchema, tagIdParamSchema } from './historian.validators.js'
 
 const router = Router()
+
+router.get(
+  '/historian/:tagId/latest',
+  validateParams(tagIdParamSchema),
+  historianController.getLatest,
+)
+
+router.get(
+  '/historian/:tagId/state-durations',
+  validateParams(tagIdParamSchema),
+  validateQuery(rangeQuerySchema),
+  historianController.getStateDurations,
+)
 
 router.post(
   '/historian/:tagId/produced-summary',
