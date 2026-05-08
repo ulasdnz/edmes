@@ -1,5 +1,5 @@
 import { Types } from 'mongoose'
-import { getLatest, getStateDurations } from '../../lib/internal-api/telemetry.client.js'
+import { getLatest, getStateDurations } from '../../lib/internal-api/run-mode-telemetry.client.js'
 import { logger } from '../../lib/logger.js'
 import {
   handleRunModeSample,

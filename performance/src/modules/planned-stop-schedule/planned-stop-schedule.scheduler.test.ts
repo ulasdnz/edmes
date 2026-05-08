@@ -21,7 +21,7 @@ vi.mock('../../lib/cache.js', () => ({
 const { getLatest } = vi.hoisted(() => ({
   getLatest: vi.fn(async () => null),
 }))
-vi.mock('../../lib/internal-api/telemetry.client.js', () => ({
+vi.mock('../../lib/internal-api/run-mode-telemetry.client.js', () => ({
   getLatest,
   getStateDurations: vi.fn(),
 }))

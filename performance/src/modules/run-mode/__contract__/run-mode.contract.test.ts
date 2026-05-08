@@ -16,9 +16,12 @@ vi.mock('../../../lib/internal-api/work-center.client.js', () => ({
   invalidate: vi.fn(),
 }))
 
-vi.mock('../../../lib/internal-api/telemetry.client.js', () => ({
+vi.mock('../../../lib/internal-api/run-mode-telemetry.client.js', () => ({
   getLatest: vi.fn(),
   getStateDurations: vi.fn(),
+}))
+
+vi.mock('../../../lib/internal-api/telemetry.client.js', () => ({
   producedSummary: vi.fn(),
   speedSummary: vi.fn(),
 }))

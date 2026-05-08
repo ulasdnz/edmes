@@ -24,7 +24,7 @@ const { getLatest } = vi.hoisted(() => ({
   getLatest: vi.fn(async () => null as null | { tagId: string; value: number; occurredAt: string }),
 }))
 
-vi.mock('../../lib/internal-api/telemetry.client.js', () => ({
+vi.mock('../../lib/internal-api/run-mode-telemetry.client.js', () => ({
   getLatest,
   getStateDurations: vi.fn(),
 }))

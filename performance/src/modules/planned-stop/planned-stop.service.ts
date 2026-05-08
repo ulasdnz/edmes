@@ -8,7 +8,7 @@ import {
   emitPlannedStopStarted,
   emitPlannedStopUpdated,
 } from '../../jobs/events.js'
-import { getLatest } from '../../lib/internal-api/telemetry.client.js'
+import { getLatest } from '../../lib/internal-api/run-mode-telemetry.client.js'
 import { getById as getWorkCenter } from '../../lib/internal-api/work-center.client.js'
 import { type PaginatedResult, paginate } from '../../utils/pagination.js'
 import { Reason } from '../reason/reason.model.js'

@@ -1,6 +1,6 @@
 import { Types } from 'mongoose'
 import { cacheDel, cacheGet, cacheSet } from '../../lib/cache.js'
-import { getLatest } from '../../lib/internal-api/telemetry.client.js'
+import { getLatest } from '../../lib/internal-api/run-mode-telemetry.client.js'
 import { getById as getWorkCenter } from '../../lib/internal-api/work-center.client.js'
 import { logger } from '../../lib/logger.js'
 import { PlannedStop } from '../planned-stop/planned-stop.model.js'
