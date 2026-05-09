@@ -166,3 +166,14 @@ no findings.
   Risk: No runtime impact today. A future telemetry feature that assumes config.PLANT_TIMEZONE exists will read undefined without an error at startup.
   Minimal fix: Either remove the PLANT_TIMEZONE entry from the telemetry service env block in docker-compose.yml, or — only if a consuming feature is being added — declare it in telemetry's config Zod schema.
 ```
+
+---
+
+## Resolved
+
+**2026-05-09**
+
+- OEE query validation now reuses `utcDateSchema`; controller-level `new Date(from/to)` casts were removed.
+- `birthDate` is now a date-only `YYYY-MM-DD` string with validator/model coverage.
+- The unused telemetry `PLANT_TIMEZONE` compose injection was removed.
+- `user` now validates `PLANT_TIMEZONE` and exposes `{ plantTimezone, serverTime }` in `GET /api/v1/users/me` response metadata for frontend runtime context.

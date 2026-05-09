@@ -68,7 +68,7 @@ Calendar-grouping aggregation (per-day, per-hour-aligned-to-day, per-shift) **mu
 
 Same rule for `$dateToString`, `$dateAdd`, `$dateSubtract`, `$dateDiff`, `$dayOfMonth`, `$year`, etc. — when the intent is plant-local, `timezone` is required.
 
-`PLANT_TIMEZONE` is read from service config (Zod-validated IANA string, fail-fast on boot). Currently consumed by `work-center` for shift logic; other services declare it only when they need it.
+`PLANT_TIMEZONE` is read from service config (Zod-validated IANA string, fail-fast on boot). Currently consumed by `work-center` for shift logic and `user` for exposing runtime plant context to authenticated frontends; other services declare it only when they need it.
 
 ## Cross-service: scalar/summary contract
 
@@ -84,7 +84,7 @@ If a consumer needs a new aggregate, the producer adds a new summary endpoint �
 
 - `PLANT_TIMEZONE` is a **runtime** config value, set per deployment (installer/operator).
 - Frontend bundles **must not** embed `VITE_PLANT_TIMEZONE` or any other deployment-specific env. The bundle is environment-agnostic; one CI build deploys to N customers.
-- Frontend reads `plantTimezone` (and ideally `serverTime` for clock-skew correction) from a server endpoint after auth — extending `/api/me` is the path of least resistance when a frontend is added.
+- Frontend reads `plantTimezone` and `serverTime` from `GET /api/v1/users/me` response metadata after auth.
 - Browser local timezone is never the source of truth for plant-local time.
 
 ## Helpers — YAGNI

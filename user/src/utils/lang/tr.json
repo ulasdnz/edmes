@@ -1,89 +1,89 @@
-﻿{
+{
   "greeting": "Merhaba",
-  "welcome_message": "HoÅŸgeldiniz",
+  "welcome_message": "Hoş geldiniz",
   "validation": {
-    "email_invalid": "GeÃ§ersiz e-posta formatÄ±",
+    "email_invalid": "Geçersiz e-posta formatı",
     "email_required": "E-posta gereklidir",
-    "name_min": "Ä°sim en az 2 karakter olmalÄ±dÄ±r",
-    "name_max": "Ä°sim en fazla 24 karakter olmalÄ±dÄ±r",
-    "name_required": "Ä°sim gereklidir",
+    "name_min": "İsim en az 2 karakter olmalıdır",
+    "name_max": "İsim en fazla 24 karakter olmalıdır",
+    "name_required": "İsim gereklidir",
     "surname_required": "Soyisim gereklidir",
-    "password_policy_min": "Åifre en az 8 karakter olmalÄ±dÄ±r",
-    "password_policy_max": "Åifre en fazla 20 karakter olmalÄ±dÄ±r",
-    "password_required": "Åifre gereklidir",
-    "permissions_required": "En az bir yetki secilmelidir",
-    "role_name_min": "Rol adi en az 2 karakter olmali",
-    "speciality_name_required": "Uzmanlik adi gereklidir",
-    "invalid_permission_code": "Gecersiz yetki kodu",
-    "username_max": "Kullanici adi en fazla 30 karakter olmali",
-    "speciality_name_min": "Uzmanlik adi en az 2 karakter olmali",
-    "role_name_required": "Rol adi gereklidir",
-    "username_min": "Kullanici adi en az 3 karakter olmali",
-    "username_required": "Kullanici adi gereklidir",
-    "role_name_max": "Rol adi en fazla 50 karakter olmali",
-    "speciality_name_max": "Uzmanlik adi en fazla 100 karakter olmali",
-    "username_format": "Kullanici adi sadece kucuk harf, rakam, nokta, alt cizgi ve tire icerebilir",
-    "birth_date_format": "Dogum tarihi YYYY-MM-DD biciminde olmalidir",
-    "birth_date_invalid": "Dogum tarihi gecerli bir takvim tarihi olmalidir"
+    "password_policy_min": "Şifre en az 8 karakter olmalıdır",
+    "password_policy_max": "Şifre en fazla 20 karakter olmalıdır",
+    "password_required": "Şifre gereklidir",
+    "permissions_required": "En az bir yetki seçilmelidir",
+    "role_name_min": "Rol adı en az 2 karakter olmalıdır",
+    "speciality_name_required": "Uzmanlık adı gereklidir",
+    "invalid_permission_code": "Geçersiz yetki kodu",
+    "username_max": "Kullanıcı adı en fazla 30 karakter olmalıdır",
+    "speciality_name_min": "Uzmanlık adı en az 2 karakter olmalıdır",
+    "role_name_required": "Rol adı gereklidir",
+    "username_min": "Kullanıcı adı en az 3 karakter olmalıdır",
+    "username_required": "Kullanıcı adı gereklidir",
+    "role_name_max": "Rol adı en fazla 50 karakter olmalıdır",
+    "speciality_name_max": "Uzmanlık adı en fazla 100 karakter olmalıdır",
+    "username_format": "Kullanıcı adı sadece küçük harf, rakam, nokta, alt çizgi ve tire içerebilir",
+    "birth_date_format": "Doğum tarihi YYYY-MM-DD biçiminde olmalıdır",
+    "birth_date_invalid": "Doğum tarihi geçerli bir takvim tarihi olmalıdır"
   },
   "auth": {
-    "unauthenticated": "Bu kaynaÄŸa eriÅŸmek iÃ§in lÃ¼tfen giriÅŸ yapÄ±n.",
-    "missing_header": "Yetkilendirme baÅŸlÄ±ÄŸÄ± eksik",
-    "invalid_token": "GeÃ§ersiz token",
-    "token_expired": "Token sÃ¼resi doldu",
-    "token_expired_password_changed": "Åifreniz deÄŸiÅŸtirildiÄŸi iÃ§in mevcut oturumunuz sonlandÄ±rÄ±ldÄ±. LÃ¼tfen tekrar giriÅŸ yapÄ±n.",
-    "invalid_credentials": "GeÃ§ersiz e-posta veya ÅŸifre",
-    "forbidden": "Bu iÅŸlem iÃ§in yetkiniz yok.",
-    "insufficient_permissions": "Bu kaynaÄŸa eriÅŸmek iÃ§in yetkiniz yetersiz.",
-    "account_temporarily_locked": "Hesap gecici olarak kilitlendi. {{remainingSeconds}} saniye sonra tekrar deneyin."
+    "unauthenticated": "Bu kaynağa erişmek için lütfen giriş yapın.",
+    "missing_header": "Yetkilendirme başlığı eksik",
+    "invalid_token": "Geçersiz token",
+    "token_expired": "Token süresi doldu",
+    "token_expired_password_changed": "Şifreniz değiştirildiği için mevcut oturumunuz sonlandırıldı. Lütfen tekrar giriş yapın.",
+    "invalid_credentials": "Geçersiz e-posta veya şifre",
+    "forbidden": "Bu işlem için yetkiniz yok.",
+    "insufficient_permissions": "Bu kaynağa erişmek için yetkiniz yetersiz.",
+    "account_temporarily_locked": "Hesap geçici olarak kilitlendi. {{remainingSeconds}} saniye sonra tekrar deneyin."
   },
   "user": {
-    "email_in_use": "E-posta kullanÄ±mda",
-    "not_found": "KullanÄ±cÄ± bulunamadÄ±",
-    "avatar_required": "Avatar dosyasÄ± gereklidir",
-    "invalid_email_format": "Gecersiz e-posta formati",
-    "system_admin_protected": "Sistem yoneticisi hesabi silinemez",
-    "system_admin_username_protected": "Sistem yoneticisi kullanici adi degistirilemez",
-    "system_admin_deactivation_protected": "Sistem yoneticisi hesabi deaktive edilemez",
-    "system_admin_role_protected": "Sistem yoneticisi rolu bu kullanicidan kaldirilamaz",
-    "password_required": "Sifre gereklidir"
+    "email_in_use": "E-posta kullanımda",
+    "not_found": "Kullanıcı bulunamadı",
+    "avatar_required": "Avatar dosyası gereklidir",
+    "invalid_email_format": "Geçersiz e-posta formatı",
+    "system_admin_protected": "Sistem yöneticisi hesabı silinemez",
+    "system_admin_username_protected": "Sistem yöneticisi kullanıcı adı değiştirilemez",
+    "system_admin_deactivation_protected": "Sistem yöneticisi hesabı deaktive edilemez",
+    "system_admin_role_protected": "Sistem yöneticisi rolü bu kullanıcıdan kaldırılamaz",
+    "password_required": "Şifre gereklidir"
   },
   "upload": {
-    "only_images": "Sadece resim yÃ¼kleyebilirsiniz!"
+    "only_images": "Sadece resim yükleyebilirsiniz!"
   },
   "success": {
-    "register": "KullanÄ±cÄ± baÅŸarÄ±yla kaydedildi",
-    "login": "GiriÅŸ baÅŸarÄ±lÄ±",
-    "login_restored": "Tekrar hoÅŸgeldiniz! HesabÄ±nÄ±z geri yÃ¼klendi.",
-    "delete": "KullanÄ±cÄ± baÅŸarÄ±yla silindi",
-    "update": "KullanÄ±cÄ± baÅŸarÄ±yla gÃ¼ncellendi",
-    "create": "KullanÄ±cÄ± baÅŸarÄ±yla oluÅŸturuldu",
-    "avatar_update": "Avatar baÅŸarÄ±yla gÃ¼ncellendi",
-    "password_reset": "Åifre baÅŸarÄ±yla sÄ±fÄ±rlandÄ±",
-    "verify": "DoÄŸrulama baÅŸarÄ±lÄ±",
-    "get": "KullanÄ±cÄ± baÅŸarÄ±yla alÄ±ndÄ±",
-    "get_all": "KullanÄ±cÄ±lar baÅŸarÄ±yla alÄ±ndÄ±"
+    "register": "Kullanıcı başarıyla kaydedildi",
+    "login": "Giriş başarılı",
+    "login_restored": "Tekrar hoş geldiniz! Hesabınız geri yüklendi.",
+    "delete": "Kullanıcı başarıyla silindi",
+    "update": "Kullanıcı başarıyla güncellendi",
+    "create": "Kullanıcı başarıyla oluşturuldu",
+    "avatar_update": "Avatar başarıyla güncellendi",
+    "password_reset": "Şifre başarıyla sıfırlandı",
+    "verify": "Doğrulama başarılı",
+    "get": "Kullanıcı başarıyla alındı",
+    "get_all": "Kullanıcılar başarıyla alındı"
   },
   "error": {
-    "unexpected": "Beklenmedik bir hata oluÅŸtu.",
-    "validation_failed": "DoÄŸrulama baÅŸarÄ±sÄ±z.",
-    "duplicate_entry": "Bu {{field}} zaten kullanÄ±mda.",
-    "rate_limit_exceeded": "Ã‡ok fazla istek gÃ¶nderildi. LÃ¼tfen daha sonra tekrar deneyin.",
-    "invalid_id": "Gecersiz kimlik degeri."
+    "unexpected": "Beklenmedik bir hata oluştu.",
+    "validation_failed": "Doğrulama başarısız.",
+    "duplicate_entry": "Bu {{field}} zaten kullanımda.",
+    "rate_limit_exceeded": "Çok fazla istek gönderildi. Lütfen daha sonra tekrar deneyin.",
+    "invalid_id": "Geçersiz kimlik değeri."
   },
   "role": {
-    "name_in_use": "Rol adi zaten kullanimda",
-    "not_found": "Rol bulunamadi",
-    "system_admin_protected": "Sistem yoneticisi rolu silinemez",
-    "system_admin_rename_protected": "Sistem yoneticisi rolunun adi degistirilemez",
-    "system_admin_permissions_protected": "Sistem yoneticisi rol yetkileri sistem tarafindan yonetilir ve degistirilemez"
+    "name_in_use": "Rol adı zaten kullanımda",
+    "not_found": "Rol bulunamadı",
+    "system_admin_protected": "Sistem yöneticisi rolü silinemez",
+    "system_admin_rename_protected": "Sistem yöneticisi rolünün adı değiştirilemez",
+    "system_admin_permissions_protected": "Sistem yöneticisi rol yetkileri sistem tarafından yönetilir ve değiştirilemez"
   },
   "speciality": {
-    "name_in_use": "Uzmanlik adi zaten kullanimda",
-    "not_found": "Uzmanlik bulunamadi"
+    "name_in_use": "Uzmanlık adı zaten kullanımda",
+    "not_found": "Uzmanlık bulunamadı"
   },
   "password_recovery": {
-    "max_attempts_reached": "Maksimum sifre kurtarma deneme sayisina ulasildi. Lutfen daha sonra tekrar deneyin.",
-    "invalid_or_expired_code": "Dogrulama kodu gecersiz veya suresi dolmus."
+    "max_attempts_reached": "Maksimum şifre kurtarma deneme sayısına ulaşıldı. Lütfen daha sonra tekrar deneyin.",
+    "invalid_or_expired_code": "Doğrulama kodu geçersiz veya süresi dolmuş."
   }
 }

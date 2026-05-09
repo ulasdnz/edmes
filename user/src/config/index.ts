@@ -48,6 +48,21 @@ const envSchema = z
     LOGIN_MAX_ATTEMPTS: z.coerce.number().default(5),
     LOGIN_BLOCKING_DURATION_MS: z.coerce.number().default(300_000), // 5 minutes
     INTERNAL_API_USER: z.string().trim().min(1, 'INTERNAL_API_USER must be provided').pipe(z.url()),
+    PLANT_TIMEZONE: z
+      .string()
+      .trim()
+      .min(1, 'PLANT_TIMEZONE must be provided')
+      .refine(
+        val => {
+          try {
+            new Intl.DateTimeFormat('en-US', { timeZone: val })
+            return true
+          } catch {
+            return false
+          }
+        },
+        { message: 'PLANT_TIMEZONE must be a valid IANA timezone (e.g. Europe/Istanbul)' },
+      ),
     SYSTEM_ADMIN_BOOTSTRAP_ENABLED: z.enum(['true', 'false']).optional(),
     SYSTEM_ADMIN_EMAIL: z
       .string()

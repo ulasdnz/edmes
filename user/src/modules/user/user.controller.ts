@@ -1,9 +1,10 @@
 import type { Request, Response } from 'express'
 
+import { config } from '../../config/index.js'
 import CustomError from '../../core/errors/index.js'
 import type { SuccessResponse } from '../../core/types/api.types.js'
 import * as userService from './user.service.js'
-import type { AuthResponse, UserResponse } from './user.types.js'
+import type { AuthResponse, RuntimeContextResponse, UserResponse } from './user.types.js'
 import type {
   AdminCreateUserInput,
   AdminResetPasswordInput,
@@ -62,12 +63,19 @@ export async function updateAvatar(req: Request, res: Response<SuccessResponse<U
   })
 }
 
-export async function getUser(req: Request, res: Response<SuccessResponse<UserResponse>>) {
+export async function getUser(
+  req: Request,
+  res: Response<SuccessResponse<UserResponse, RuntimeContextResponse>>,
+) {
   const userId = req.user!.id
   const user = await userService.getUser(userId)
 
   res.json({
     data: user,
+    meta: {
+      plantTimezone: config.PLANT_TIMEZONE,
+      serverTime: new Date().toISOString(),
+    },
   })
 }
 

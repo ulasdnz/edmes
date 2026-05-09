@@ -6,3 +6,8 @@ export interface AuthResponse {
   user: UserResponse
   token: string
 }
+
+export interface RuntimeContextResponse {
+  plantTimezone: string
+  serverTime: string
+}

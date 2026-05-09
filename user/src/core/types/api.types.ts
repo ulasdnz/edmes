@@ -3,9 +3,10 @@ export interface ErrorDetail {
   message: string
 }
 
-export interface SuccessResponse<T = void> {
+export interface SuccessResponse<T = void, M = never> {
   data: T
   message?: string
+  meta?: M
 }
 
 export interface ErrorResponse {
