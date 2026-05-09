@@ -165,3 +165,30 @@ Tests added/strengthened:
 The reconciler skip guard at `run-mode.reconciler.ts:72` was **left in place** — it serves left-boundary cursor deduplication, which is a separate concern from right-boundary tiling.
 
 Still open: the first P1 (boot-path payload size of `getStateDurations` after extended outages) and all three P2s (client co-location, counter/speed boundary inconsistency, public-vs-internal router placement).
+
+---
+
+**2026-05-09 — `getStateDurations` payload size (P1)**
+
+Resolved by adding cursor-based pagination to the `state-durations` endpoint and a chunked fetch loop in the run-mode reconciler. Memory per request is now bounded by the configurable `limit` (default 500 samples, max 1000); long-outage scenarios that previously produced multi-MB single payloads now stream as O(`limit`) chunks.
+
+Concrete changes:
+- `binary.calc.ts` — `calculateStateDurations` accepts `opts: { limit?, after? }`. DB fetch uses `.limit(N + 1)` for `hasMore` detection. When `hasMore === true`, the in-progress final segment is **dropped** (not closed at a fictional `rangeEnd`); the next chunk reconstructs it from baseline + the boundary sample (returned via `after = nextCursor` with `$gte` inclusive semantics).
+- `historian.validators.ts` — new `stateDurationsQuerySchema` with `limit` and `after` validation. `limit` is constrained to `2..1000`: with inclusive `after` pagination, `limit=1` can stall on the boundary sample and never advance.
+- `historian.service.ts` / `historian.controller.ts` — pass-through; response shape `{ data: { segments, hasMore, nextCursor } }`.
+- `historian.internal.routes.ts` — `validateQuery(stateDurationsQuerySchema)`.
+- `run-mode-telemetry.client.ts` — `getStateDurations` returns `StateDurationsPage`; URL emits optional `limit`/`after`.
+- `run-mode.reconciler.ts` — chunked while loop with `MAX_ITER = 100` guard; on overflow, warn-logs and returns (cursor stays at the last successfully processed sample, so a subsequent boot resumes from there).
+
+Tests added/strengthened:
+- `binary.calc.test.ts` — pagination cases: `hasMore=false` final segment closes to `rangeEnd`; `hasMore=true` drops in-progress final segment; chunk-boundary transition coverage across three sequential chunks; `after` filter emits `$gte after` (inclusive); `after < from` is clamped to `from`; direct `limit=1` is defensively treated as `limit=2`.
+- `historian.validators.test.ts` — validates the `limit >= 2` HTTP contract and UTC `after` cursor parsing.
+- `run-mode.reconciler.test.ts` — three-chunk traversal processes every transition; chunk-overlap boundary sample is not double-processed; `MAX_ITER` cap stops at exactly 100 iterations and leaves cursor at last processed sample.
+
+**Earlier audit suggestion was wrong.** The original P1 minimal fix recommended a separate `latest-at` scalar endpoint. That would have caused **transition-history data loss** on every boot (only the last state replayed; intermediate stop/run transitions during outage silently dropped). MES production semantics require every transition to be replayed for accurate downtime metric reconstruction. Pagination preserves all transitions; `latest-at` would have hidden the symptom while losing the data. Documented here so future readers don't repeat the mistake.
+
+**Same-value-storage proof** (used by the in-progress drop design): `telemetry/src/modules/ingestion/ingestion.pipeline.ts:93` rejects same-value samples for all tag behaviors before they reach the DB:
+```ts
+if (pred && value === pred.value) return { applied: false, reason: 'same_value' }
+```
+Because of this, sample count ≡ transition count for binary tags. A "no-transition / unchanged-state" period stores zero samples — there is no risk of fetching a chunk full of identical-value samples that produce no segments. This is what makes `limit=N samples` an effective `limit≈N transitions` cap.

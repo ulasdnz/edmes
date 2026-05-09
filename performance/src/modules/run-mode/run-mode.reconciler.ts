@@ -65,8 +65,21 @@ async function reconcileOne(target: MonitoredWorkCenter, now: Date): Promise<voi
     const cursor = await readCursor(target)
 
     if (cursor) {
-      const segments = await getStateDurations(target.runModeTagId, cursor, now)
-      if (segments.length > 0) {
+      // Chunked fetch: paginate state-durations to bound payload/memory per
+      // request, especially after long outages. handleRunModeSample's own
+      // cursor guard skips chunk-overlap duplicates (the sample at exactly
+      // `after` is included in the next chunk by design — see
+      // run-mode-telemetry.client / binary.calc opts.after).
+      const MAX_ITER = 100
+      let after: Date | undefined
+      let iter = 0
+      for (; iter < MAX_ITER; iter++) {
+        const { segments, hasMore, nextCursor } = await getStateDurations(
+          target.runModeTagId,
+          cursor,
+          now,
+          { after },
+        )
         for (const seg of segments) {
           const occurredAt = new Date(seg.from)
           if (occurredAt.getTime() <= cursor.getTime()) continue
@@ -77,9 +90,20 @@ async function reconcileOne(target: MonitoredWorkCenter, now: Date): Promise<voi
             occurredAt,
           })
         }
-        return
+        if (!hasMore || !nextCursor) break
+        after = new Date(nextCursor)
       }
-      // Cursor exists but state-durations is empty — nothing to replay.
+      if (iter === MAX_ITER) {
+        logger.warn(
+          'Run-mode reconciler hit MAX_ITER cap; remaining transitions deferred to next boot',
+          {
+            event: 'run_mode.reconciler.max_iter',
+            workCenterId: target.workCenterId,
+            runModeTagId: target.runModeTagId,
+            maxIter: MAX_ITER,
+          },
+        )
+      }
       return
     }
 

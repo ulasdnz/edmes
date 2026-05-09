@@ -1,7 +1,11 @@
 import { Router } from 'express'
 import { validateBody, validateParams, validateQuery } from '../../core/middleware/validate.js'
 import * as historianController from './historian.controller.js'
-import { multiWindowSchema, rangeQuerySchema, tagIdParamSchema } from './historian.validators.js'
+import {
+  multiWindowSchema,
+  stateDurationsQuerySchema,
+  tagIdParamSchema,
+} from './historian.validators.js'
 
 const router = Router()
 
@@ -14,7 +18,7 @@ router.get(
 router.get(
   '/historian/:tagId/state-durations',
   validateParams(tagIdParamSchema),
-  validateQuery(rangeQuerySchema),
+  validateQuery(stateDurationsQuerySchema),
   historianController.getStateDurations,
 )
 

@@ -66,9 +66,17 @@ export const getSpeedAvg = async (req: Request<{ tagId: string }>, res: Response
 }
 
 export const getStateDurations = async (req: Request<{ tagId: string }>, res: Response) => {
-  const { from, to } = req.query as unknown as { from: Date; to: Date }
-  const segments = await historianService.getStateDurations(req.params.tagId, from, to)
-  res.json({ data: segments })
+  const { from, to, limit, after } = req.query as unknown as {
+    from: Date
+    to: Date
+    limit?: number
+    after?: Date
+  }
+  const result = await historianService.getStateDurations(req.params.tagId, from, to, {
+    limit,
+    after,
+  })
+  res.json({ data: result })
 }
 
 export const getLatest = async (req: Request<{ tagId: string }>, res: Response) => {

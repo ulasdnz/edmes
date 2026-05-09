@@ -337,12 +337,17 @@ export const getSpeedSummary = async (
   return calculateSpeedAvgMulti(tagId, windows)
 }
 
-export const getStateDurations = async (tagId: string, from: Date, to: Date) => {
+export const getStateDurations = async (
+  tagId: string,
+  from: Date,
+  to: Date,
+  opts?: { limit?: number; after?: Date },
+) => {
   const tag = await ensureTagExists(tagId)
   if (tag.behavior !== 'binary') {
     throw new CustomError(400, 'historian.binary_only')
   }
-  return calculateStateDurations(tagId, from, to)
+  return calculateStateDurations(tagId, from, to, opts)
 }
 
 export const getLatest = async (tagId: string) => {

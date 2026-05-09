@@ -32,6 +32,14 @@ const INTERVAL_MAP: Record<string, number> = {
   '1d': 86_400_000,
 }
 
+export const stateDurationsQuerySchema = rangeQuerySchema.extend({
+  // limit=1 with after-inclusive ($gte) pagination would stall: every subsequent
+  // chunk would return only the boundary sample as nextCursor, never advancing.
+  // Minimum of 2 guarantees forward progress per chunk.
+  limit: z.coerce.number().int().min(2).max(1000).default(500),
+  after: utcDateSchema.optional(),
+})
+
 export const rollupQuerySchema = rangeQuerySchema.extend({
   interval: z.string().refine(val => val in INTERVAL_MAP, {
     message: 'validation.invalid_interval',
@@ -57,4 +65,5 @@ export type RangeQuery = z.infer<typeof rangeQuerySchema>
 export type SamplesQuery = z.infer<typeof samplesQuerySchema>
 export type SeriesQuery = z.infer<typeof seriesQuerySchema>
 export type RollupQuery = z.infer<typeof rollupQuerySchema>
+export type StateDurationsQuery = z.infer<typeof stateDurationsQuerySchema>
 export type MultiWindowBody = z.infer<typeof multiWindowSchema>

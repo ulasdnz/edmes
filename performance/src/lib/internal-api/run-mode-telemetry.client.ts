@@ -17,14 +17,24 @@ export async function getLatest(tagId: string): Promise<LatestSample | null> {
   return request<LatestSample>(`/internal/v1/historian/${tagId}/latest`)
 }
 
+export interface StateDurationsPage {
+  segments: StateDurationSegment[]
+  hasMore: boolean
+  nextCursor: string | null
+}
+
 export async function getStateDurations(
   tagId: string,
   from: Date,
   to: Date,
-): Promise<StateDurationSegment[]> {
-  const url = `/internal/v1/historian/${tagId}/state-durations?from=${encodeURIComponent(
-    from.toISOString(),
-  )}&to=${encodeURIComponent(to.toISOString())}`
-  const result = await request<StateDurationSegment[]>(url)
-  return result ?? []
+  opts?: { limit?: number; after?: Date },
+): Promise<StateDurationsPage> {
+  const params = new URLSearchParams()
+  params.set('from', from.toISOString())
+  params.set('to', to.toISOString())
+  if (opts?.limit !== undefined) params.set('limit', String(opts.limit))
+  if (opts?.after !== undefined) params.set('after', opts.after.toISOString())
+  const url = `/internal/v1/historian/${tagId}/state-durations?${params.toString()}`
+  const result = await request<StateDurationsPage>(url)
+  return result ?? { segments: [], hasMore: false, nextCursor: null }
 }
