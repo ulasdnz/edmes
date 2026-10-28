@@ -1,3 +1,4 @@
+import { INTERNAL_TOKEN_HEADER } from '@mes/auth'
 import type { Express, NextFunction, Request, Response } from 'express'
 import mongoose from 'mongoose'
 import request from 'supertest'
@@ -7,7 +8,8 @@ import WorkCenter from '../../work-center/work-center.model.js'
 
 const fetchMock = vi.hoisted(() => vi.fn())
 
-vi.mock('@mes/auth', () => ({
+vi.mock('@mes/auth', async importOriginal => ({
+  ...(await importOriginal<typeof import('@mes/auth')>()),
   configureAuth: vi.fn(),
   buildAuthContextCacheKey: (userId: string) => `auth:ctx:${userId}`,
   authenticate: (req: Request, _res: Response, next: NextFunction) => {
@@ -142,7 +144,9 @@ describe('GET /internal/v1/work-centers/run-mode-monitors', () => {
       status: 'active',
     })
 
-    const res = await request(app).get('/internal/v1/work-centers/run-mode-monitors')
+    const res = await request(app)
+      .get('/internal/v1/work-centers/run-mode-monitors')
+      .set(INTERNAL_TOKEN_HEADER, process.env.INTERNAL_API_TOKEN as string)
 
     expect(res.status).toBe(200)
     expect(res.body.data).toHaveLength(1)
@@ -163,7 +167,9 @@ describe('GET /internal/v1/work-centers/run-mode-monitors', () => {
       },
     })
 
-    const res = await request(app).get('/internal/v1/work-centers/run-mode-monitors')
+    const res = await request(app)
+      .get('/internal/v1/work-centers/run-mode-monitors')
+      .set(INTERNAL_TOKEN_HEADER, process.env.INTERNAL_API_TOKEN as string)
 
     expect(res.status).toBe(200)
     expect(res.body.data).toHaveLength(1)
@@ -173,7 +179,9 @@ describe('GET /internal/v1/work-centers/run-mode-monitors', () => {
   it('returns empty array when no monitored work centers exist', async () => {
     await insertWorkCenter({ type: 'virtual', status: 'active' })
 
-    const res = await request(app).get('/internal/v1/work-centers/run-mode-monitors')
+    const res = await request(app)
+      .get('/internal/v1/work-centers/run-mode-monitors')
+      .set(INTERNAL_TOKEN_HEADER, process.env.INTERNAL_API_TOKEN as string)
 
     expect(res.status).toBe(200)
     expect(res.body.data).toEqual([])

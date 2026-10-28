@@ -1,10 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../../config/index.js', () => ({
-  config: { INTERNAL_API_TELEMETRY: 'http://telemetry.test' },
+  config: {
+    INTERNAL_API_TELEMETRY: 'http://telemetry.test',
+    INTERNAL_API_TOKEN: 'test-internal-api-token-at-least-32-chars',
+  },
 }))
 
-vi.mock('@mes/core', () => ({
+vi.mock('@mes/core', async importOriginal => ({
+  ...(await importOriginal<typeof import('@mes/core')>()),
   getTraceId: () => 'trace-1',
 }))
 

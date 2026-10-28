@@ -1,11 +1,17 @@
+import { INTERNAL_TOKEN_HEADER } from '@mes/auth'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { listRunModeMonitors } from './run-mode-monitors.client.js'
 
-vi.mock('../../config/index.js', () => ({
-  config: { INTERNAL_API_WORK_CENTER: 'http://work-center.test' },
+const { INTERNAL_API_TOKEN } = vi.hoisted(() => ({
+  INTERNAL_API_TOKEN: 'test-internal-api-token-at-least-32-chars',
 }))
 
-vi.mock('@mes/core', () => ({
+vi.mock('../../config/index.js', () => ({
+  config: { INTERNAL_API_WORK_CENTER: 'http://work-center.test', INTERNAL_API_TOKEN },
+}))
+
+vi.mock('@mes/core', async importOriginal => ({
+  ...(await importOriginal<typeof import('@mes/core')>()),
   getTraceId: () => 'trace-1',
 }))
 
@@ -42,6 +48,9 @@ describe('listRunModeMonitors', () => {
     const [url, init] = fetchMock.mock.calls[0]
     expect(url).toBe('http://work-center.test/internal/v1/work-centers/run-mode-monitors')
     expect((init as RequestInit).method).toBe('GET')
+    expect((init as RequestInit).headers).toEqual(
+      expect.objectContaining({ [INTERNAL_TOKEN_HEADER]: INTERNAL_API_TOKEN }),
+    )
     expect(result).toEqual(data)
   })
 

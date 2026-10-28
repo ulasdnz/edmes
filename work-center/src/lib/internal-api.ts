@@ -1,3 +1,4 @@
+import { INTERNAL_TOKEN_HEADER } from '@mes/auth'
 import { config } from '../config/index.js'
 import { logger } from './logger.js'
 
@@ -6,7 +7,11 @@ const USER_API = config.INTERNAL_API_USER
 async function fetchInternal(path: string, options?: RequestInit): Promise<Response> {
   return fetch(`${USER_API}/internal/v1${path}`, {
     ...options,
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: {
+      'Content-Type': 'application/json',
+      ...options?.headers,
+      [INTERNAL_TOKEN_HEADER]: config.INTERNAL_API_TOKEN,
+    },
   })
 }
 
@@ -112,7 +117,11 @@ const PRODUCTION_API = config.INTERNAL_API_PRODUCTION
 async function fetchProduction(path: string, options?: RequestInit): Promise<Response> {
   return fetch(`${PRODUCTION_API}/internal/v1${path}`, {
     ...options,
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: {
+      'Content-Type': 'application/json',
+      ...options?.headers,
+      [INTERNAL_TOKEN_HEADER]: config.INTERNAL_API_TOKEN,
+    },
   })
 }
 

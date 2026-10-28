@@ -1,3 +1,4 @@
+import { INTERNAL_TOKEN_HEADER } from '@mes/auth'
 import { getTraceId } from '@mes/core'
 import { config } from '../../config/index.js'
 import type { JobWindow } from '../../modules/oee/oee.types.js'
@@ -52,6 +53,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T | null> {
       headers: {
         ...(init?.headers ?? {}),
         'x-trace-id': getTraceId() ?? '',
+        [INTERNAL_TOKEN_HEADER]: config.INTERNAL_API_TOKEN,
         'content-type': 'application/json',
         accept: 'application/json',
       },

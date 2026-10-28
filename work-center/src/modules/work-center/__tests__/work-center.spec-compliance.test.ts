@@ -1,3 +1,4 @@
+import { INTERNAL_TOKEN_HEADER } from '@mes/auth'
 import type { Express, NextFunction, Request, Response } from 'express'
 import request from 'supertest'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -10,7 +11,8 @@ import WorkCenter from '../work-center.model.js'
 
 const fetchMock = vi.hoisted(() => vi.fn())
 
-vi.mock('@mes/auth', () => ({
+vi.mock('@mes/auth', async importOriginal => ({
+  ...(await importOriginal<typeof import('@mes/auth')>()),
   configureAuth: vi.fn(),
   buildAuthContextCacheKey: (userId: string) => `auth:ctx:${userId}`,
   authenticate: (req: Request, _res: Response, next: NextFunction) => {
@@ -142,7 +144,10 @@ const buildPhysicalWorkCenter = (
 }
 
 async function createInternalWorkCenter(payload: Record<string, unknown>): Promise<string> {
-  const res = await request(app).post('/internal/v1/work-centers').send(payload)
+  const res = await request(app)
+    .post('/internal/v1/work-centers')
+    .set(INTERNAL_TOKEN_HEADER, process.env.INTERNAL_API_TOKEN as string)
+    .send(payload)
 
   expect(res.status).toBe(201)
 
@@ -170,10 +175,12 @@ describe('Work Center Spec Compliance Review', () => {
 
     const first = await request(app)
       .post(`/internal/v1/work-centers/${workCenterId}/operators`)
+      .set(INTERNAL_TOKEN_HEADER, process.env.INTERNAL_API_TOKEN as string)
       .send({ operatorId })
 
     const second = await request(app)
       .post(`/internal/v1/work-centers/${workCenterId}/operators`)
+      .set(INTERNAL_TOKEN_HEADER, process.env.INTERNAL_API_TOKEN as string)
       .send({ operatorId })
 
     expect(first.status).toBe(201)
@@ -203,6 +210,7 @@ describe('Work Center Spec Compliance Review', () => {
 
     const calendarRes = await request(app)
       .post(`/internal/v1/work-centers/${workCenterId}/calendars`)
+      .set(INTERNAL_TOKEN_HEADER, process.env.INTERNAL_API_TOKEN as string)
       .send({
         validFrom: '2026-03-01T00:00:00.000Z',
         validTo: '2026-03-31T00:00:00.000Z',
@@ -211,6 +219,7 @@ describe('Work Center Spec Compliance Review', () => {
 
     const effectiveSchedule = await request(app)
       .get(`/internal/v1/work-centers/${workCenterId}/schedule`)
+      .set(INTERNAL_TOKEN_HEADER, process.env.INTERNAL_API_TOKEN as string)
       .query({ date: '2026-03-23' })
 
     const directSchedule = await scheduleService.getEffectiveSchedule(workCenterId, '2026-03-23')
@@ -229,10 +238,12 @@ describe('Work Center Spec Compliance Review', () => {
 
     const checkIn = await request(app)
       .post(`/internal/v1/work-centers/${workCenterId}/operators`)
+      .set(INTERNAL_TOKEN_HEADER, process.env.INTERNAL_API_TOKEN as string)
       .send({ operatorId: '507f1f77bcf86cd799439015' })
 
     const archive = await request(app)
       .patch(`/internal/v1/work-centers/${workCenterId}`)
+      .set(INTERNAL_TOKEN_HEADER, process.env.INTERNAL_API_TOKEN as string)
       .send({ status: 'archived' })
 
     expect(checkIn.status).toBe(201)
@@ -254,6 +265,7 @@ describe('Work Center Spec Compliance Review', () => {
 
     const res = await request(app)
       .put(`/internal/v1/work-centers/${workCenterId}/exceptions/2026-03-23`)
+      .set(INTERNAL_TOKEN_HEADER, process.env.INTERNAL_API_TOKEN as string)
       .send({
         shiftIds: [String(shift._id)],
       })
@@ -285,6 +297,7 @@ describe('Work Center Spec Compliance Review', () => {
   it('proves physical create silently strips virtual-only fields instead of rejecting them', async () => {
     const res = await request(app)
       .post('/internal/v1/work-centers')
+      .set(INTERNAL_TOKEN_HEADER, process.env.INTERNAL_API_TOKEN as string)
       .send({
         ...buildPhysicalWorkCenter(),
         metricComposition: {
@@ -337,6 +350,7 @@ describe('Work Center Spec Compliance Review', () => {
 
     const res = await request(app)
       .post(`/internal/v1/work-centers/${workCenterId}/calendars`)
+      .set(INTERNAL_TOKEN_HEADER, process.env.INTERNAL_API_TOKEN as string)
       .send({
         validFrom: '2026-03-01T00:00:00.000Z',
         validTo: '2026-03-31T00:00:00.000Z',

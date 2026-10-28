@@ -1,4 +1,4 @@
-import { authenticate, configureAuth } from '@mes/auth'
+import { authenticate, configureAuth, requireInternalToken } from '@mes/auth'
 import { createHealthRoutes, mongoProbe, redisProbe } from '@mes/health'
 import compression from 'compression'
 import cors from 'cors'
@@ -38,6 +38,7 @@ export const initExpress = async () => {
   configureAuth({
     jwtSecret: config.JWT_SECRET,
     userServiceInternalUrl: config.INTERNAL_API_USER,
+    internalApiToken: config.INTERNAL_API_TOKEN,
     cacheWrapDedup: sharedCacheWrapDedup,
   })
 
@@ -93,10 +94,11 @@ export const initExpress = async () => {
 
   app.use('/api/v1', apiRouter)
 
-  // ─── Internal routes (inter-service, no auth) ──────────────────────────────
+  // ─── Internal routes (inter-service, token auth) ───────────────────────────
   // Same routes, but with system-level permissions bypass.
   // Gateway blocks external access to /internal/*
   const internalRouter = Router()
+  internalRouter.use(requireInternalToken(config.INTERNAL_API_TOKEN))
   internalRouter.use((req: Request, _res: Response, next: NextFunction) => {
     req.user = { id: SYSTEM_IDENTITY, roles: [], permissions: ['*'], workCenterIds: undefined }
     setUserId(SYSTEM_IDENTITY)

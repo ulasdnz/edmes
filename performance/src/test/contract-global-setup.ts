@@ -21,6 +21,7 @@ export async function setup() {
   process.env.REDIS_URL = redisUrl
   process.env.NODE_ENV = 'test'
   process.env.JWT_SECRET = 'test-secret-32-chars-minimum-ok!'
+  process.env.INTERNAL_API_TOKEN = 'test-internal-api-token-at-least-32-chars'
   process.env.LOG_LEVEL = 'error'
   process.env.INTERNAL_API_USER = 'http://127.0.0.1:19901'
   process.env.INTERNAL_API_WORK_CENTER = 'http://127.0.0.1:19902'

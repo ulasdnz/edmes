@@ -1,3 +1,4 @@
+import { INTERNAL_TOKEN_HEADER } from '@mes/auth'
 import { CustomError } from '@mes/core'
 import { config } from '../config/index.js'
 import { logger } from './logger.js'
@@ -11,7 +12,11 @@ async function fetchInternal(
 ): Promise<Response> {
   return fetch(`${baseUrl}/internal/v1${path}`, {
     ...options,
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: {
+      'Content-Type': 'application/json',
+      ...options?.headers,
+      [INTERNAL_TOKEN_HEADER]: config.INTERNAL_API_TOKEN,
+    },
   })
 }
 

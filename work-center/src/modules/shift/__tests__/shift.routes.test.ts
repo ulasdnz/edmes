@@ -1,3 +1,4 @@
+import { INTERNAL_TOKEN_HEADER } from '@mes/auth'
 import type { NextFunction, Request, Response } from 'express'
 import { Types } from 'mongoose'
 import request from 'supertest'
@@ -5,7 +6,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { initLoaders } from '../../../core/loaders/index.js'
 import { Shift } from '../shift.model.js'
 
-vi.mock('@mes/auth', () => ({
+vi.mock('@mes/auth', async importOriginal => ({
+  ...(await importOriginal<typeof import('@mes/auth')>()),
   configureAuth: vi.fn(),
   buildAuthContextCacheKey: (userId: string) => `auth:ctx:${userId}`,
   authenticate: (req: Request, _res: Response, next: NextFunction) => {
@@ -122,6 +124,7 @@ describe('shift routes (internal)', () => {
   it('POST /internal/v1/shifts creates a shift', async () => {
     const res = await request(app)
       .post('/internal/v1/shifts')
+      .set(INTERNAL_TOKEN_HEADER, process.env.INTERNAL_API_TOKEN as string)
       .send({ name: 'Day', startHour: 8, startMinute: 0, endHour: 16, endMinute: 0 })
     expect(res.status).toBe(201)
     expect(res.body.data.name).toBe('Day')
@@ -130,8 +133,11 @@ describe('shift routes (internal)', () => {
   it('GET /internal/v1/shifts returns the list', async () => {
     await request(app)
       .post('/internal/v1/shifts')
+      .set(INTERNAL_TOKEN_HEADER, process.env.INTERNAL_API_TOKEN as string)
       .send({ name: 'Day', startHour: 8, startMinute: 0, endHour: 16, endMinute: 0 })
-    const res = await request(app).get('/internal/v1/shifts')
+    const res = await request(app)
+      .get('/internal/v1/shifts')
+      .set(INTERNAL_TOKEN_HEADER, process.env.INTERNAL_API_TOKEN as string)
     expect(res.status).toBe(200)
     expect(res.body.data).toHaveLength(1)
   })
@@ -139,25 +145,34 @@ describe('shift routes (internal)', () => {
   it('GET /internal/v1/shifts/:id returns a single shift', async () => {
     const create = await request(app)
       .post('/internal/v1/shifts')
+      .set(INTERNAL_TOKEN_HEADER, process.env.INTERNAL_API_TOKEN as string)
       .send({ name: 'Night', startHour: 22, startMinute: 0, endHour: 6, endMinute: 0 })
     const id = create.body.data._id
-    const res = await request(app).get(`/internal/v1/shifts/${id}`)
+    const res = await request(app)
+      .get(`/internal/v1/shifts/${id}`)
+      .set(INTERNAL_TOKEN_HEADER, process.env.INTERNAL_API_TOKEN as string)
     expect(res.status).toBe(200)
     expect(res.body.data._id).toBe(id)
     expect(res.body.data.name).toBe('Night')
   })
 
   it('GET /internal/v1/shifts/:id returns 404 for unknown id', async () => {
-    const res = await request(app).get(`/internal/v1/shifts/${new Types.ObjectId().toHexString()}`)
+    const res = await request(app)
+      .get(`/internal/v1/shifts/${new Types.ObjectId().toHexString()}`)
+      .set(INTERNAL_TOKEN_HEADER, process.env.INTERNAL_API_TOKEN as string)
     expect(res.status).toBe(404)
   })
 
   it('PATCH /internal/v1/shifts/:id updates a shift', async () => {
     const create = await request(app)
       .post('/internal/v1/shifts')
+      .set(INTERNAL_TOKEN_HEADER, process.env.INTERNAL_API_TOKEN as string)
       .send({ name: 'Day', startHour: 8, startMinute: 0, endHour: 16, endMinute: 0 })
     const id = create.body.data._id
-    const res = await request(app).patch(`/internal/v1/shifts/${id}`).send({ name: 'Day Updated' })
+    const res = await request(app)
+      .patch(`/internal/v1/shifts/${id}`)
+      .set(INTERNAL_TOKEN_HEADER, process.env.INTERNAL_API_TOKEN as string)
+      .send({ name: 'Day Updated' })
     expect(res.status).toBe(200)
     expect(res.body.data.name).toBe('Day Updated')
   })
@@ -165,9 +180,12 @@ describe('shift routes (internal)', () => {
   it('DELETE /internal/v1/shifts/:id works when no references', async () => {
     const create = await request(app)
       .post('/internal/v1/shifts')
+      .set(INTERNAL_TOKEN_HEADER, process.env.INTERNAL_API_TOKEN as string)
       .send({ name: 'Day', startHour: 8, startMinute: 0, endHour: 16, endMinute: 0 })
     const id = create.body.data._id
-    const del = await request(app).delete(`/internal/v1/shifts/${id}`)
+    const del = await request(app)
+      .delete(`/internal/v1/shifts/${id}`)
+      .set(INTERNAL_TOKEN_HEADER, process.env.INTERNAL_API_TOKEN as string)
     expect(del.status).toBe(200)
     expect(await Shift.countDocuments({ _id: id })).toBe(0)
   })

@@ -1,3 +1,4 @@
+import { INTERNAL_TOKEN_HEADER } from '@mes/auth'
 import { getTraceId } from '@mes/core'
 import { config } from '../../config/index.js'
 import { cacheDel, cacheWrapDedup } from '../cache.js'
@@ -29,6 +30,7 @@ export async function getById(workCenterId: string): Promise<WorkCenterSnapshot 
           method: 'GET',
           headers: {
             'x-trace-id': getTraceId() ?? '',
+            [INTERNAL_TOKEN_HEADER]: config.INTERNAL_API_TOKEN,
             accept: 'application/json',
           },
         },

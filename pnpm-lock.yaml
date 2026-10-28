@@ -57,6 +57,9 @@ importers:
       typescript:
         specifier: ^5.5.0
         version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.4(@types/node@20.19.37)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.2)
 
   packages/cache:
     devDependencies:

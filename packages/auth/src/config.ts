@@ -6,6 +6,9 @@ export interface AuthMiddlewareConfig {
    */
   userServiceInternalUrl: string
 
+  /** Shared service-to-service token sent to the User service's /internal routes. */
+  internalApiToken: string
+
   /**
    * Cache wrapper to be injected by the consuming service.
    * Format matches @mes/cache -> cacheWrapDedup

@@ -7,7 +7,7 @@ services:
       - no-new-privileges:true
     ports:
       - "80:80"
-      - "8080:8080"
+      - "127.0.0.1:8080:8080" # dashboard: localhost only
     command:
       - "--api.dashboard=true"
       - "--api.insecure=true"
@@ -48,7 +48,7 @@ services:
     container_name: mongodb_dev
     restart: unless-stopped
     ports:
-      - '27017:27017'
+      - '127.0.0.1:27017:27017' # localhost only; services use mes_network
     volumes:
       - mongodb_data:/data/db
     networks:
@@ -66,7 +66,7 @@ services:
     restart: unless-stopped
     command: redis-server --maxmemory 1gb --maxmemory-policy noeviction --appendonly yes
     ports:
-      - '6379:6379'
+      - '127.0.0.1:6379:6379' # localhost only; services use mes_network
     volumes:
       - redis_data:/data
     networks:
@@ -115,7 +115,8 @@ services:
     environment:
       - MONGO_URI=${MONGO_URI:-mongodb://mongodb:27017/mes?directConnection=true}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379}
-      - JWT_SECRET=${JWT_SECRET:-supersecretkey}
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET must be set}
+      - INTERNAL_API_TOKEN=${INTERNAL_API_TOKEN:?INTERNAL_API_TOKEN must be set}
       - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-1d}
       - INTERNAL_API_USER=${INTERNAL_API_USER:-http://user:3000}
       - PLANT_TIMEZONE=${PLANT_TIMEZONE:-Europe/Istanbul}
@@ -168,7 +169,8 @@ services:
     environment:
       - MONGO_URI=${MONGO_URI_TELEMETRY:-mongodb://mongodb:27017/mes_telemetry?directConnection=true}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379}
-      - JWT_SECRET=${JWT_SECRET:-supersecretkey}
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET must be set}
+      - INTERNAL_API_TOKEN=${INTERNAL_API_TOKEN:?INTERNAL_API_TOKEN must be set}
       - INTERNAL_API_USER=${INTERNAL_API_USER:-http://user:3000}
       - INTERNAL_API_PRODUCTION=${INTERNAL_API_PRODUCTION:-http://production:3002}
       - MQTT_URL=${MQTT_URL:-mqtt://mosquitto:1883}
@@ -214,7 +216,8 @@ services:
     environment:
       - MONGO_URI=${MONGO_URI:-mongodb://mongodb:27017/mes?directConnection=true}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379}
-      - JWT_SECRET=${JWT_SECRET:-supersecretkey}
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET must be set}
+      - INTERNAL_API_TOKEN=${INTERNAL_API_TOKEN:?INTERNAL_API_TOKEN must be set}
       - INTERNAL_API_USER=${INTERNAL_API_USER:-http://user:3000}
     depends_on:
       mongodb:
@@ -255,7 +258,8 @@ services:
     environment:
       - MONGO_URI=${MONGO_URI:-mongodb://mongodb:27017/mes?directConnection=true}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379}
-      - JWT_SECRET=${JWT_SECRET:-supersecretkey}
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET must be set}
+      - INTERNAL_API_TOKEN=${INTERNAL_API_TOKEN:?INTERNAL_API_TOKEN must be set}
       - INTERNAL_API_USER=${INTERNAL_API_USER:-http://user:3000}
       - INTERNAL_API_WORK_CENTER=${INTERNAL_API_WORK_CENTER:-http://work-center:3001}
     depends_on:
@@ -332,7 +336,8 @@ services:
     environment:
       - MONGO_URI=${MONGO_URI_PERFORMANCE:-mongodb://mongodb:27017/mes_performance?directConnection=true}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379}
-      - JWT_SECRET=${JWT_SECRET:-supersecretkey}
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET must be set}
+      - INTERNAL_API_TOKEN=${INTERNAL_API_TOKEN:?INTERNAL_API_TOKEN must be set}
       - INTERNAL_API_USER=${INTERNAL_API_USER:-http://user:3000}
       - INTERNAL_API_WORK_CENTER=${INTERNAL_API_WORK_CENTER:-http://work-center:3001}
       - INTERNAL_API_PRODUCTION=${INTERNAL_API_PRODUCTION:-http://production:3002}
@@ -407,7 +412,7 @@ services:
       - ./infra/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
       - loki_data:/loki
     ports:
-      - "3100:3100"
+      - "127.0.0.1:3100:3100"
     networks:
       - mes_network
     healthcheck:
@@ -458,7 +463,7 @@ services:
       - grafana_data:/var/lib/grafana
     environment:
       - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:?GRAFANA_PASSWORD must be set}
       - GF_USERS_ALLOW_SIGN_UP=false
     depends_on:
       loki:

@@ -24,6 +24,7 @@ const envSchema = z
         message: 'MONGO_URI must start with mongodb:// or mongodb+srv://',
       }),
     JWT_SECRET: z.string().nonempty('JWT_SECRET must be provided'),
+    INTERNAL_API_TOKEN: z.string().min(32, 'INTERNAL_API_TOKEN must be at least 32 characters'),
     LOG_LEVEL: z.string().default('info'),
     REDIS_URL: z
       .string()

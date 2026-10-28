@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken'
 import { buildAuthContextCacheKey } from './cache-keys.js'
 import { getAuthConfig } from './config.js'
 import { AuthError } from './error.js'
+import { INTERNAL_TOKEN_HEADER } from './internal-token.js'
 
 declare global {
   namespace Express {
@@ -36,7 +37,7 @@ export const authenticate: any = async (req: Request, _res: Response, next: Next
     }
 
     const token = authHeader.split(' ')[1]
-    const { jwtSecret, userServiceInternalUrl, cacheWrapDedup } = getAuthConfig()
+    const { jwtSecret, userServiceInternalUrl, internalApiToken, cacheWrapDedup } = getAuthConfig()
 
     const decoded = jwt.verify(token, jwtSecret) as {
       id: string
@@ -48,7 +49,9 @@ export const authenticate: any = async (req: Request, _res: Response, next: Next
       AUTH_CONTEXT_CACHE_TTL,
       async () => {
         const url = `${userServiceInternalUrl}/internal/v1/users/${decoded.id}/auth-context`
-        const response = await fetch(url)
+        const response = await fetch(url, {
+          headers: { [INTERNAL_TOKEN_HEADER]: internalApiToken },
+        })
         if (!response.ok) {
           throw new AuthError(401, 'auth.unauthenticated')
         }
