@@ -61,7 +61,31 @@ export const processMessage = async (topic: string, payload: Buffer): Promise<vo
   }
 }
 
-export const ingestValue = async (
+// Samples for one tag can overlap (MQTT handlers are not awaited, manual entries arrive via HTTP).
+// Each sample must see the predecessor written by the previous one, so they run one at a time.
+const tagQueues = new Map<string, Promise<void>>()
+
+const runInTagOrder = <T>(tagId: string, task: () => Promise<T>): Promise<T> => {
+  const result = (tagQueues.get(tagId) ?? Promise.resolve()).then(task)
+  const tail = result.then(
+    () => undefined,
+    () => undefined,
+  )
+  tagQueues.set(tagId, tail)
+  void tail.then(() => {
+    if (tagQueues.get(tagId) === tail) tagQueues.delete(tagId)
+  })
+  return result
+}
+
+export const ingestValue = (
+  tag: ITag,
+  rawValue: number,
+  occurredAt: Date,
+): Promise<IngestValueResult> =>
+  runInTagOrder(tag._id.toString(), () => applyValue(tag, rawValue, occurredAt))
+
+const applyValue = async (
   tag: ITag,
   rawValue: number,
   occurredAt: Date,
