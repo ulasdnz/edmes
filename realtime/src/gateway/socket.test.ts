@@ -1,7 +1,7 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest'
 import http from 'http'
-import { Server } from 'socket.io'
-import { initSocketServer, getIO } from './socket.js'
+import type { Server } from 'socket.io'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { getIO, initSocketServer } from './socket.js'
 
 vi.mock('../lib/logger.js', () => ({
   logger: {
@@ -20,6 +20,7 @@ function createMockSocket() {
   return {
     id,
     rooms,
+    data: { user: { id: 'user-1', roles: [], permissions: [], workCenterIds: ['abc'] } },
     join: vi.fn((room: string) => rooms.add(room)),
     leave: vi.fn((room: string) => rooms.delete(room)),
     on: vi.fn(),
@@ -58,7 +59,8 @@ describe('SocketServer', () => {
 
   describe('joinHandler', () => {
     function getConnectionHandler(): (socket: any) => void {
-      const connectionListeners = (io as any)._events?.connection || (io as any).listeners('connection')
+      const connectionListeners =
+        (io as any)._events?.connection || (io as any).listeners('connection')
       return Array.isArray(connectionListeners) ? connectionListeners[0] : connectionListeners
     }
 

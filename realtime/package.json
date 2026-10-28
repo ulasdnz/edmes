@@ -13,16 +13,21 @@
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^25.3.5",
+    "jsonwebtoken": "^9.0.3",
+    "socket.io-client": "^4.8.4",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "vitest": "^3.2.1"
   },
   "dependencies": {
+    "@mes/auth": "workspace:*",
+    "@mes/cache": "workspace:*",
     "@mes/core": "workspace:*",
-    "@mes/logger": "workspace:*",
     "@mes/events": "workspace:*",
     "@mes/health": "workspace:*",
+    "@mes/logger": "workspace:*",
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
     "ioredis": "^5.10.0",

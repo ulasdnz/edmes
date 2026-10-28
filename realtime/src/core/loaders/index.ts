@@ -1,3 +1,6 @@
+import { configureAuth } from '@mes/auth'
+import { config } from '../../config/index.js'
+import { sharedCacheWrapDedup } from '../../lib/cache.js'
 import { logger } from '../../lib/logger.js'
 import { initRedis } from '../../lib/redis.js'
 import { initExpress } from './express.js'
@@ -7,6 +10,14 @@ export const initLoaders = async () => {
     logger.info('Initializing application loaders', { event: 'loader.init.started' })
 
     await initRedis()
+
+    // Socket handshakes resolve users through the same auth context as REST.
+    configureAuth({
+      jwtSecret: config.JWT_SECRET,
+      userServiceInternalUrl: config.INTERNAL_API_USER,
+      internalApiToken: config.INTERNAL_API_TOKEN,
+      cacheWrapDedup: sharedCacheWrapDedup,
+    })
 
     const app = await initExpress()
 

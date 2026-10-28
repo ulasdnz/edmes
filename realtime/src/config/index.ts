@@ -17,6 +17,9 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.coerce.number().default(3003),
   LOG_LEVEL: z.string().default('info'),
+  JWT_SECRET: z.string().nonempty('JWT_SECRET must be provided'),
+  INTERNAL_API_TOKEN: z.string().min(32, 'INTERNAL_API_TOKEN must be at least 32 characters'),
+  INTERNAL_API_USER: z.string().trim().min(1, 'INTERNAL_API_USER must be provided').pipe(z.url()),
   REDIS_URL: z
     .string()
     .nonempty('REDIS_URL must be provided')

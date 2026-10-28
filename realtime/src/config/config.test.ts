@@ -139,6 +139,17 @@ describe('RealtimeConfig.validation', () => {
     exitSpy.mockRestore()
   })
 
+  it('exits when JWT_SECRET is missing', async () => {
+    delete process.env.JWT_SECRET
+    process.env.REDIS_URL = 'redis://localhost:6379'
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never)
+
+    await import('./index.js')
+
+    expect(exitSpy).toHaveBeenCalledWith(1)
+    exitSpy.mockRestore()
+  })
+
   it('exits when STREAM_CONSUMER_BLOCK_MS is negative', async () => {
     process.env.REDIS_URL = 'redis://localhost:6379'
     process.env.STREAM_CONSUMER_BLOCK_MS = '-1'

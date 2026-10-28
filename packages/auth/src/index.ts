@@ -1,4 +1,4 @@
-export { authenticate } from './authenticate.js'
+export { type AuthUser, authenticate, resolveAuthUser } from './authenticate.js'
 export { requirePermission } from './authorize.js'
 export { buildAuthContextCacheKey } from './cache-keys.js'
 export { type AuthMiddlewareConfig, configureAuth, getAuthConfig } from './config.js'

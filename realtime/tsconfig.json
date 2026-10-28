@@ -7,6 +7,8 @@
   "include": ["src"],
   "exclude": ["**/*.test.ts", "**/*.spec.ts"],
   "references": [
+    { "path": "../packages/auth" },
+    { "path": "../packages/cache" },
     { "path": "../packages/core" },
     { "path": "../packages/logger" },
     { "path": "../packages/health" },

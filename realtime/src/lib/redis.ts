@@ -40,12 +40,20 @@ streamClient.on('reconnecting', () =>
   logger.warn('Redis: Stream client reconnecting...', { event: 'redis.stream.reconnecting' }),
 )
 
+// Shared client for cross-service cache (auth context). No keyPrefix — keys are shared.
+export const sharedClient = new Redis(config.REDIS_URL, baseOptions)
+
+sharedClient.on('error', err => {
+  logger.error('Redis Shared Client Error', { event: 'redis.shared.error', error: err.message })
+})
+
 export async function initRedis(): Promise<void> {
   await streamClient.connect()
-  logger.info('Redis stream client connected', { event: 'redis.init.completed' })
+  await sharedClient.connect()
+  logger.info('Redis clients connected', { event: 'redis.init.completed' })
 }
 
 export async function closeRedis(): Promise<void> {
-  await streamClient.quit()
-  logger.info('Redis stream client disconnected', { event: 'redis.close.completed' })
+  await Promise.all([streamClient.quit(), sharedClient.quit()])
+  logger.info('Redis clients disconnected', { event: 'redis.close.completed' })
 }

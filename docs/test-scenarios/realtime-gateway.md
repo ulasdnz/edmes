@@ -80,6 +80,27 @@
 
 ---
 
+## SocketServer.authentication
+> target: realtime/src/gateway/socket.auth.test.ts
+> added: 2026-10-28 (socket auth hardening)
+
+### happy path
+- client connects with a valid JWT in `auth.token` -> connection accepted, user resolved from the same auth context as REST
+- user can see work center `abc` and emits `join` with `['wc:abc', 'job_order']` -> joins both, ack returns `{ rooms: ['wc:abc', 'job_order'] }`
+
+### constraints
+- [CRITICAL] no token -> connection rejected with `auth.unauthenticated`
+- [CRITICAL] token signed with another secret -> connection rejected
+- [HIGH] user deactivated in user-service -> connection rejected
+- [CRITICAL] `wc:{id}` room the user cannot see -> skipped, not joined (same visibility rule as REST)
+- auth-context request to user-service carries the internal API token
+
+### edge cases
+- [HIGH] event emitted to a work center room the user was denied -> client does not receive it
+- non-string room entries -> skipped
+
+---
+
 ## Subscribers.catchAllForwarding
 > target: realtime/src/jobs/subscribers.test.ts
 > plan-task: 8
