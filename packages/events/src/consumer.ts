@@ -28,6 +28,7 @@ export function createStreamConsumer(config: StreamConsumerConfig) {
     batchSize = 10,
     reclaimMinIdleMs = 30000,
     reclaimBatchSize = 50,
+    reclaimIntervalMs = 10000,
     maxDeliveries = 5,
     deadLetterSuffix = '.dlq',
   } = config
@@ -182,7 +183,11 @@ export function createStreamConsumer(config: StreamConsumerConfig) {
     }
   }
 
-  /** Read and process pending messages (from a previous crash). */
+  /**
+   * Claim and process pending messages idle longer than reclaimMinIdleMs: failed deliveries
+   * of this consumer and messages left behind by crashed peers. Claiming increments the
+   * delivery count, which drives dead-lettering.
+   */
   async function recoverAbandonedPending(): Promise<void> {
     for (const stream of streamNames) {
       let start = '0-0'
@@ -249,9 +254,16 @@ export function createStreamConsumer(config: StreamConsumerConfig) {
   /** Main poll loop — read new messages with '>' cursor. */
   async function pollLoop(): Promise<void> {
     const ids = streamNames.map(() => '>')
+    let lastReclaimAt = Date.now()
 
     while (!stopped) {
       try {
+        // Reading with '>' only returns new messages, so retries need an explicit reclaim pass.
+        if (Date.now() - lastReclaimAt >= reclaimIntervalMs) {
+          lastReclaimAt = Date.now()
+          await recoverAbandonedPending()
+        }
+
         const readArgs: Array<string> = ['GROUP', group, consumer, 'COUNT', String(batchSize)]
         if (readBlockMs > 0) {
           readArgs.push('BLOCK', String(readBlockMs))

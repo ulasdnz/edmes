@@ -30,6 +30,8 @@ export interface StreamConsumerConfig {
   reclaimMinIdleMs?: number
   /** Max abandoned pending messages to reclaim per pass. Default: 50. */
   reclaimBatchSize?: number
+  /** How often the running consumer reclaims idle pending messages (retries). Default: 10000. */
+  reclaimIntervalMs?: number
   /** Dead-letter messages after this many deliveries. Default: 5. */
   maxDeliveries?: number
   /** Suffix appended to the source stream name for dead-lettered messages. Default: '.dlq'. */
