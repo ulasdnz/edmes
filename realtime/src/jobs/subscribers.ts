@@ -2,7 +2,7 @@ import { runInContext } from '@mes/core'
 import { createStreamConsumer } from '@mes/events'
 import { config } from '../config/index.js'
 import { resolveRooms } from '../gateway/router.js'
-import { getIO } from '../gateway/socket.js'
+import { emitToRooms } from '../gateway/socket.js'
 import { logger } from '../lib/logger.js'
 import { streamClient } from '../lib/redis.js'
 
@@ -11,10 +11,7 @@ const CONSUMER_ID = `rt-${process.pid}`
 
 const catchAll = async (data: Record<string, unknown>, type: string): Promise<void> => {
   const rooms = resolveRooms(type, data)
-  const io = getIO()
-
-  const emitter = rooms.length > 0 ? io.to(rooms) : io
-  emitter.emit(type, data)
+  await emitToRooms(rooms, type, data)
 
   logger.debug('Event forwarded', {
     event: 'gateway.event.forwarded',

@@ -1,12 +1,8 @@
 import type { EventHandler } from '@mes/events'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const mockEmit = vi.fn()
-const mockTo = vi.fn(() => ({ to: mockTo, emit: mockEmit }))
-const mockIO = { to: mockTo, emit: mockEmit }
-
 vi.mock('../gateway/socket.js', () => ({
-  getIO: () => mockIO,
+  emitToRooms: vi.fn(),
   initSocketServer: vi.fn(),
 }))
 
@@ -50,11 +46,11 @@ vi.mock('@mes/events', () => ({
 }))
 
 import { resolveRooms } from '../gateway/router.js'
+import { emitToRooms } from '../gateway/socket.js'
 
 describe('Subscribers.catchAllForwarding', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockTo.mockReturnValue({ to: mockTo, emit: mockEmit })
   })
 
   // Force module re-evaluation isn't needed — capturedConfig is set at import time
@@ -65,7 +61,7 @@ describe('Subscribers.catchAllForwarding', () => {
 
   // ── happy path ────────────────────────────────────────────────────────
 
-  it('calls resolveRooms and emits to resolved rooms with event type as Socket.io event name', async () => {
+  it('calls resolveRooms and forwards to the resolved rooms with event type as Socket.io event name', async () => {
     vi.mocked(resolveRooms).mockReturnValue(['job_order', 'wc:abc'])
     const handler = capturedConfig.streams['events.production']['*']
     const payload = { workCenterId: 'abc', jobOrderId: 'jo1' }
@@ -73,18 +69,17 @@ describe('Subscribers.catchAllForwarding', () => {
     await handler(payload, 'job_order.started')
 
     expect(resolveRooms).toHaveBeenCalledWith('job_order.started', payload)
-    expect(mockEmit).toHaveBeenCalled()
+    expect(emitToRooms).toHaveBeenCalledTimes(1)
   })
 
-  it("emits io.to('job_order').to('wc:abc').emit('job_order.started', payload)", async () => {
+  it("forwards job_order.started as emitToRooms(['job_order', 'wc:abc'], 'job_order.started', payload)", async () => {
     vi.mocked(resolveRooms).mockReturnValue(['job_order', 'wc:abc'])
     const handler = capturedConfig.streams['events.production']['*']
     const payload = { workCenterId: 'abc' }
 
     await handler(payload, 'job_order.started')
 
-    expect(mockTo).toHaveBeenCalledWith(['job_order', 'wc:abc'])
-    expect(mockEmit).toHaveBeenCalledWith('job_order.started', payload)
+    expect(emitToRooms).toHaveBeenCalledWith(['job_order', 'wc:abc'], 'job_order.started', payload)
   })
 
   // ── constraints ───────────────────────────────────────────────────────

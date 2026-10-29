@@ -101,13 +101,44 @@
 
 ---
 
+## SocketServer.eventDelivery
+> target: realtime/src/gateway/socket.auth.test.ts
+> added: 2026-10-28 (a socket never receives what REST would hide from the same user)
+
+### happy path
+- user can see work center `abc`, joined `job_order`, `job_order.started` for `abc` -> delivered
+- event without a work center (`role.updated`) -> delivered to every subscriber of the room
+
+### constraints
+- [CRITICAL] user joined the `job_order` entity room, `job_order.started` for a work center the user cannot see -> not delivered
+- [CRITICAL] `tag.value.recorded` (the only event that carries a value) -> delivered only to users with `readHistorian`, the permission of the historian API
+
+### edge cases
+- [HIGH] job order moved out of a visible work center (`previousWorkCenterId` visible, `workCenterId` hidden) -> delivered, so the old owner can drop it
+
+---
+
+## SocketServer.connectionRecheck
+> target: realtime/src/gateway/socket.auth.test.ts
+> added: 2026-10-28 (open sockets follow auth changes without a reconnect)
+
+### constraints
+- [CRITICAL] user deactivated while connected -> next recheck disconnects the socket (`io server disconnect`)
+- [HIGH] work center removed from the user while connected -> next recheck stops delivery of that work center's events, connection stays open
+- [HIGH] token expires while connected -> next recheck disconnects the socket
+
+### edge cases
+- [HIGH] user-service unreachable during a recheck -> connections stay open with their last known auth
+
+---
+
 ## Subscribers.catchAllForwarding
 > target: realtime/src/jobs/subscribers.test.ts
 > plan-task: 8
 
 ### happy path
-- event arrives on `events.production` stream -> `resolveRooms` called -> emitted to resolved rooms via Socket.io with event type as Socket.io event name
-- event `job_order.started` with `{ workCenterId: 'abc' }` -> `io.to('job_order').to('wc:abc').emit('job_order.started', payload)`
+- event arrives on `events.production` stream -> `resolveRooms` called -> forwarded to the gateway with the resolved rooms and the event type as Socket.io event name
+- event `job_order.started` with `{ workCenterId: 'abc' }` -> `emitToRooms(['job_order', 'wc:abc'], 'job_order.started', payload)`
 
 ### constraints
 - consumer group name is `'realtime'`

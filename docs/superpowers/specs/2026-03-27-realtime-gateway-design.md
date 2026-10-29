@@ -54,7 +54,7 @@ Each `join` call **replaces** the client's current room subscriptions — old ro
 | `job_order.started` (workCenterId: abc) | `job_order`, `wc:abc` |
 | `role.updated` (no routing key) | `role` |
 | `production_plan.created` (no routing key) | `production_plan` |
-| `tag.value_changed` (tagId: 123, future) | `tag`, `tag:123` |
+| `tag.value.recorded` (tagId: 123) | `tag`, `tag:123` (only users with `readHistorian` receive it) |
 
 If nobody has joined a room, the event is not transmitted — zero bandwidth.
 
@@ -83,7 +83,7 @@ Socket.io deduplicates across chained `.to()` calls — each socket receives the
 The Socket.io event name equals the Redis Stream event type:
 ```
 Redis type: "job_order.started"
-Socket.io:  io.to('job_order').to('wc:abc').emit('job_order.started', payload)
+Socket.io:  emitToRooms(['job_order', 'wc:abc'], 'job_order.started', payload)
 ```
 
 Frontend listens per event type:
@@ -128,7 +128,12 @@ Socket.io configured in **WebSocket-only mode** — polling fallback disabled. O
 
 **Delivery guarantee:** This service provides best-effort delivery. Consumer name is process-based (`pid`), so pending messages from a crashed instance are not recovered on restart — they remain stranded in the consumer group. This is acceptable: if the gateway crashes, all socket connections drop and clients reconnect, triggering a full state refresh. Events emitted during the crash window are intentionally lost. This gateway is an invalidation signal bus, not a reliable event log.
 
-**No authentication on WebSocket connections.** The system is on-premises, factory LAN only. Accepted risk: any LAN-internal client can connect and join any room without credential verification. Event payloads carry only IDs (never names, emails, or config values), so a rogue subscriber gains nothing beyond the fact that something changed. The REST API layer enforces auth for all actual data reads.
+**Authentication and access.** Clients connect with `io(url, { auth: { token } })`. The handshake verifies the JWT through `resolveAuthUser` from `@mes/auth`, the same cached auth context REST uses, so deactivated users and tokens issued before a password change are rejected. Access follows one rule: a socket never receives what REST would hide from the same user.
+
+- `wc:{id}` rooms can only be joined for visible work centers. The `join` ack lists the rooms actually joined.
+- Every event is filtered per socket at delivery. An event with `workCenterId`, `previousWorkCenterId` or `workCenterIds` reaches a socket only if the user can see one of them, so entity rooms such as `job_order` do not leak other work centers.
+- `tag.value.recorded` carries a measurement instead of IDs, so it needs `readHistorian`, the permission of the historian API. Tags have no owning work center, so tag values are scoped by permission, exactly like the historian API.
+- Open sockets are re-checked every 30 seconds through the same auth context. Deactivated users, reset passwords and expired tokens are disconnected (`io server disconnect`); role and work center changes apply from the next event. If user-service cannot be reached, sockets keep their last known auth.
 
 ---
 
