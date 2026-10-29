@@ -28,6 +28,7 @@
   },
   "auth": {
     "unauthenticated": "Bu kaynağa erişmek için lütfen giriş yapın.",
+    "unavailable": "Oturum şu anda doğrulanamıyor. Lütfen biraz sonra tekrar deneyin.",
     "missing_header": "Yetkilendirme başlığı eksik",
     "invalid_token": "Geçersiz token",
     "token_expired": "Token süresi doldu",

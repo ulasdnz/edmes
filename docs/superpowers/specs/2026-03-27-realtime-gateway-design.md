@@ -128,12 +128,12 @@ Socket.io configured in **WebSocket-only mode** — polling fallback disabled. O
 
 **Delivery guarantee:** This service provides best-effort delivery. Consumer name is process-based (`pid`), so pending messages from a crashed instance are not recovered on restart — they remain stranded in the consumer group. This is acceptable: if the gateway crashes, all socket connections drop and clients reconnect, triggering a full state refresh. Events emitted during the crash window are intentionally lost. This gateway is an invalidation signal bus, not a reliable event log.
 
-**Authentication and access.** Clients connect with `io(url, { auth: { token } })`. The handshake verifies the JWT through `resolveAuthUser` from `@mes/auth`, the same cached auth context REST uses, so deactivated users and tokens issued before a password change are rejected. Access follows one rule: a socket never receives what REST would hide from the same user.
+**Authentication and access.** Clients connect with `io(url, { auth: { token } })`. The handshake verifies the JWT through `resolveAuthUser` from `@mes/auth`, the same cached auth context REST uses, so deactivated users and tokens issued before a password change are rejected with `auth.unauthenticated`. If user-service cannot answer (error or 3-second timeout), the handshake fails with `auth.unavailable` instead, so clients retry rather than log out. Access follows one rule: a socket never receives what REST would hide from the same user.
 
 - `wc:{id}` rooms can only be joined for visible work centers. The `join` ack lists the rooms actually joined.
 - Every event is filtered per socket at delivery. An event with `workCenterId`, `previousWorkCenterId` or `workCenterIds` reaches a socket only if the user can see one of them, so entity rooms such as `job_order` do not leak other work centers.
 - `tag.value.recorded` carries a measurement instead of IDs, so it needs `readHistorian`, the permission of the historian API. Tags have no owning work center, so tag values are scoped by permission, exactly like the historian API.
-- Open sockets are re-checked every 30 seconds through the same auth context. Deactivated users, reset passwords and expired tokens are disconnected (`io server disconnect`); role and work center changes apply from the next event. If user-service cannot be reached, sockets keep their last known auth.
+- Open sockets are re-checked every 30 seconds through the same auth context. Deactivated users, reset passwords and expired tokens are disconnected (`io server disconnect`); role and work center changes apply from the next event. If user-service cannot answer, sockets keep their last known auth.
 
 ---
 

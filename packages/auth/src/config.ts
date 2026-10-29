@@ -9,6 +9,9 @@ export interface AuthMiddlewareConfig {
   /** Shared service-to-service token sent to the User service's /internal routes. */
   internalApiToken: string
 
+  /** How long to wait for the User service before answering 503. Defaults to 3000 ms. */
+  userServiceTimeoutMs?: number
+
   /**
    * Cache wrapper to be injected by the consuming service.
    * Format matches @mes/cache -> cacheWrapDedup

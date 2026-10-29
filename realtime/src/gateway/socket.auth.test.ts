@@ -41,12 +41,17 @@ const authContexts: Record<string, AuthContextFixture> = {
   deactivated: activeUser({ isActivated: false }),
 }
 const internalTokensSeen: unknown[] = []
-let userServiceDown = false
+let userServiceState: 'up' | 'unreachable' | 'failing' = 'up'
 
 // Stand-in for user-service's GET /internal/v1/users/:id/auth-context.
 const userService = http.createServer((req, res) => {
-  if (userServiceDown) {
+  if (userServiceState === 'unreachable') {
     req.socket.destroy()
+    return
+  }
+  if (userServiceState === 'failing') {
+    res.writeHead(500, { 'content-type': 'application/json' })
+    res.end(JSON.stringify({ error: { code: 'error.unexpected' } }))
     return
   }
   internalTokensSeen.push(req.headers[INTERNAL_TOKEN_HEADER])
@@ -139,6 +144,15 @@ describe('socket authentication', () => {
   it('accepts a valid token and asks user-service with the internal token', async () => {
     await connectWith({ token: tokenFor('operator') })
     expect(internalTokensSeen).toEqual([INTERNAL_API_TOKEN])
+  })
+
+  it('tells the client auth is unavailable, not unauthenticated, when user-service fails', async () => {
+    userServiceState = 'failing'
+    try {
+      await expect(connectWith({ token: tokenFor('operator') })).rejects.toThrow('auth.unavailable')
+    } finally {
+      userServiceState = 'up'
+    }
   })
 })
 
@@ -283,14 +297,17 @@ describe('connection recheck', () => {
     await expect(disconnected).resolves.toBe('io server disconnect')
   })
 
-  it('keeps connections open when user-service cannot be reached', async () => {
+  it.each([
+    'unreachable',
+    'failing',
+  ] as const)('keeps connections open when user-service is %s', async state => {
     const client = await connectWith({ token: tokenFor('operator') })
 
-    userServiceDown = true
+    userServiceState = state
     try {
       await recheckConnections()
     } finally {
-      userServiceDown = false
+      userServiceState = 'up'
     }
 
     const ack = await client.emitWithAck('join', { rooms: [MARKER_ROOM] })

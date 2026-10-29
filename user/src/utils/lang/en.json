@@ -28,6 +28,7 @@
   },
   "auth": {
     "unauthenticated": "Please log in to access this resource.",
+    "unavailable": "Sign-in could not be verified right now. Please try again shortly.",
     "missing_header": "Authorization header is missing",
     "invalid_token": "Invalid token",
     "token_expired": "Token expired",

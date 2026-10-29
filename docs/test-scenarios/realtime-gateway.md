@@ -92,6 +92,7 @@
 - [CRITICAL] no token -> connection rejected with `auth.unauthenticated`
 - [CRITICAL] token signed with another secret -> connection rejected
 - [HIGH] user deactivated in user-service -> connection rejected
+- [HIGH] user-service answers with an error -> connection rejected with `auth.unavailable`, not `auth.unauthenticated`, so the client retries instead of logging out
 - [CRITICAL] `wc:{id}` room the user cannot see -> skipped, not joined (same visibility rule as REST)
 - auth-context request to user-service carries the internal API token
 
@@ -129,6 +130,7 @@
 
 ### edge cases
 - [HIGH] user-service unreachable during a recheck -> connections stay open with their last known auth
+- [CRITICAL] user-service answers with an error during a recheck -> connections stay open (an outage must not log out every kiosk)
 
 ---
 

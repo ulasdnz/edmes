@@ -56,13 +56,16 @@ export function initSocketServer(httpServer: http.Server): Server {
       socket.data.token = token
       next()
     } catch (error) {
-      if (!(error instanceof AuthError)) {
-        logger.error('Socket authentication failed unexpectedly', {
-          event: 'socket.auth.error',
-          error: error instanceof Error ? error.message : error,
-        })
+      if (error instanceof AuthError) {
+        next(new Error(error.message))
+        return
       }
-      next(new Error('auth.unauthenticated'))
+      logger.error('Socket authentication failed unexpectedly', {
+        event: 'socket.auth.error',
+        error: error instanceof Error ? error.message : error,
+      })
+      // The token was not rejected, so the client should retry instead of logging out.
+      next(new Error('auth.unavailable'))
     }
   })
 

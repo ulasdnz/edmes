@@ -1,4 +1,4 @@
-import { setUserId } from '@mes/core'
+import { CustomError, setUserId } from '@mes/core'
 import type { NextFunction, Request, Response } from 'express'
 import jwt from 'jsonwebtoken'
 import { buildAuthContextCacheKey } from './cache-keys.js'
@@ -30,13 +30,35 @@ interface AuthContext {
 export type AuthUser = NonNullable<Request['user']>
 
 const AUTH_CONTEXT_CACHE_TTL = 300 // 5 mins
+const DEFAULT_USER_SERVICE_TIMEOUT_MS = 3000
+
+// Only a missing user rejects the token. Any other failure means user-service could not answer,
+// which says nothing about the token, so it surfaces as 503 instead of a forced logout.
+const fetchAuthContext = async (userId: string): Promise<AuthContext> => {
+  const { userServiceInternalUrl, internalApiToken, userServiceTimeoutMs } = getAuthConfig()
+  const url = `${userServiceInternalUrl}/internal/v1/users/${userId}/auth-context`
+
+  try {
+    const response = await fetch(url, {
+      headers: { [INTERNAL_TOKEN_HEADER]: internalApiToken },
+      signal: AbortSignal.timeout(userServiceTimeoutMs ?? DEFAULT_USER_SERVICE_TIMEOUT_MS),
+    })
+    if (response.status === 404) throw new AuthError(401, 'auth.unauthenticated')
+    if (!response.ok) throw new CustomError(503, 'auth.unavailable')
+    const data = await response.json()
+    return data.data
+  } catch (error) {
+    if (error instanceof CustomError) throw error
+    throw new CustomError(503, 'auth.unavailable')
+  }
+}
 
 /**
  * Verifies a JWT and loads the user's auth context (cached).
  * Shared by the HTTP middleware and non-HTTP transports such as WebSocket handshakes.
  */
 export const resolveAuthUser = async (token: string): Promise<AuthUser> => {
-  const { jwtSecret, userServiceInternalUrl, internalApiToken, cacheWrapDedup } = getAuthConfig()
+  const { jwtSecret, cacheWrapDedup } = getAuthConfig()
 
   let decoded: { id: string; iat?: number }
   try {
@@ -51,17 +73,7 @@ export const resolveAuthUser = async (token: string): Promise<AuthUser> => {
   const ctx = await cacheWrapDedup<AuthContext>(
     buildAuthContextCacheKey(decoded.id),
     AUTH_CONTEXT_CACHE_TTL,
-    async () => {
-      const url = `${userServiceInternalUrl}/internal/v1/users/${decoded.id}/auth-context`
-      const response = await fetch(url, {
-        headers: { [INTERNAL_TOKEN_HEADER]: internalApiToken },
-      })
-      if (!response.ok) {
-        throw new AuthError(401, 'auth.unauthenticated')
-      }
-      const data = await response.json()
-      return data.data
-    },
+    () => fetchAuthContext(decoded.id),
   )
 
   if (!ctx || ctx.isActivated === false) {
