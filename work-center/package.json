@@ -13,6 +13,7 @@
     "migration:create": "tsx src/scripts/create-migration.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:contract": "vitest run --config vitest.contract.config.ts",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage"
   },

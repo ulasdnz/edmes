@@ -30,7 +30,7 @@ pnpm lint:fix                      # biome auto-fix + format
 pnpm format                        # format only
 pnpm test                          # all tests via turbo
 pnpm --filter user-service test    # user service unit tests
-pnpm test:contract                 # contract tests (user, performance; testcontainers)
+pnpm test:contract                 # contract tests (user, work-center, production, performance)
 cd user && pnpm test:watch         # watch mode
 docker compose up -d --build       # full stack
 docker compose up -d --build user  # rebuild user service only
