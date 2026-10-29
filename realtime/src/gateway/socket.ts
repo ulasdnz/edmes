@@ -5,6 +5,7 @@ import { logger } from '../lib/logger.js'
 import { workCenterIdsOf } from './router.js'
 
 let io: Server
+let recheckTimer: NodeJS.Timeout | undefined
 
 const WORK_CENTER_ROOM_PREFIX = 'wc:'
 
@@ -109,7 +110,7 @@ export function initSocketServer(httpServer: http.Server): Server {
     })
   })
 
-  setInterval(() => void recheckConnections(), AUTH_RECHECK_INTERVAL_MS).unref()
+  recheckTimer = setInterval(() => void recheckConnections(), AUTH_RECHECK_INTERVAL_MS).unref()
 
   logger.info('Socket.io server initialized (WebSocket-only)', {
     event: 'socket.server.initialized',
@@ -162,6 +163,13 @@ export async function recheckConnections(): Promise<void> {
       error: failures[0] instanceof Error ? failures[0].message : failures[0],
     })
   }
+}
+
+// httpServer.close() alone waits for open WebSockets, which never end on their own, so shutdown
+// would always hit its timeout. io.close() disconnects every client first, then closes the server.
+export async function closeSocketServer(): Promise<void> {
+  clearInterval(recheckTimer)
+  await io.close()
 }
 
 export function getIO(): Server {

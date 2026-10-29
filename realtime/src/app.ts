@@ -1,7 +1,7 @@
 import http from 'http'
 import { config } from './config/index.js'
 import { initLoaders } from './core/loaders/index.js'
-import { initSocketServer } from './gateway/socket.js'
+import { closeSocketServer, initSocketServer } from './gateway/socket.js'
 import { initSubscribers, shutdownSubscribers } from './jobs/subscribers.js'
 import { logger } from './lib/logger.js'
 import { closeRedis } from './lib/redis.js'
@@ -36,21 +36,20 @@ const startServer = async (): Promise<void> => {
       }, SHUTDOWN_TIMEOUT_MS)
       forceExitTimer.unref()
 
-      httpServer.close(async () => {
+      try {
+        await closeSocketServer()
         logger.info('HTTP server closed', { event: 'server.http.closed' })
 
-        try {
-          await Promise.all([closeRedis(), shutdownSubscribers()])
-          logger.info('Connections closed', { event: 'server.shutdown.completed' })
-          process.exit(0)
-        } catch (err) {
-          logger.error('Error during shutdown cleanup', {
-            event: 'server.shutdown.failed',
-            error: err instanceof Error ? err.message : err,
-          })
-          process.exit(1)
-        }
-      })
+        await Promise.all([closeRedis(), shutdownSubscribers()])
+        logger.info('Connections closed', { event: 'server.shutdown.completed' })
+        process.exit(0)
+      } catch (err) {
+        logger.error('Error during shutdown cleanup', {
+          event: 'server.shutdown.failed',
+          error: err instanceof Error ? err.message : err,
+        })
+        process.exit(1)
+      }
     }
 
     process.on('SIGTERM', () => shutdown('SIGTERM'))
