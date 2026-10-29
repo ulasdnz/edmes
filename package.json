@@ -10,18 +10,18 @@
   },
   "scripts": {
     "prepare": "husky",
-    "build": "tsc -b && pnpm --filter user-service run build",
+    "build": "turbo run build",
     "build:packages": "tsc -b",
     "build:watch": "tsc -b --watch",
-    "build:clean": "tsc -b --clean && tsc -b && pnpm --filter user-service run build",
-    "dev": "pnpm --filter user-service run dev",
-    "typecheck": "tsc -b",
+    "build:clean": "tsc -b --clean && turbo run build --force",
+    "dev": "turbo run dev",
+    "typecheck": "turbo run typecheck",
     "clean": "turbo clean",
     "lint": "biome lint .",
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
     "test": "turbo test",
-    "test:contract": "pnpm --filter user-service run test:contract"
+    "test:contract": "turbo run test:contract"
   },
   "lint-staged": {
     "*.{ts,mts,js,mjs,json,css,md}": [

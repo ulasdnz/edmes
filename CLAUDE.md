@@ -18,18 +18,19 @@ On-premises Manufacturing Execution System (MES). Deployed to customer factories
 ## Build & Run Commands
 
 ```bash
-pnpm build                         # full build (packages + user service)
+pnpm build                         # full build (packages + all services, via turbo)
 pnpm build:packages                # shared packages only (tsc -b)
 pnpm build:watch                   # watch mode for packages
 pnpm build:clean                   # clean + full rebuild
-pnpm dev                           # user-service dev mode (tsx watch)
-pnpm typecheck                     # type check all packages
+pnpm dev                           # all services in dev mode (tsx watch)
+pnpm --filter user-service dev     # one service in dev mode
+pnpm typecheck                     # type check packages and services
 pnpm lint                          # biome lint check
 pnpm lint:fix                      # biome auto-fix + format
 pnpm format                        # format only
 pnpm test                          # all tests via turbo
 pnpm --filter user-service test    # user service unit tests
-pnpm test:contract                 # contract tests (testcontainers)
+pnpm test:contract                 # contract tests (user, performance; testcontainers)
 cd user && pnpm test:watch         # watch mode
 docker compose up -d --build       # full stack
 docker compose up -d --build user  # rebuild user service only
