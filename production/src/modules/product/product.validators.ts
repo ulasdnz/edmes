@@ -1,19 +1,21 @@
+import { paginationSchema } from '@mes/core/pagination'
 import { z } from 'zod'
-import { paginationSchema } from '../../utils/pagination.js'
 import { objectIdSchema } from '../../utils/validators.js'
 
 const codeSchema = z.string().trim().min(1).max(50)
 const nameSchema = z.string().trim().min(1).max(200)
 
-export const createProductSchema = z.object({
-  code: codeSchema,
-  name: nameSchema,
-  description: z.string().max(500).nullable().optional(),
-  categoryId: objectIdSchema.nullable().optional(),
-  kind: z.enum(['finished', 'semi_finished']),
-  uomId: objectIdSchema,
-  props: z.record(z.string(), z.string()).optional(),
-}).strict()
+export const createProductSchema = z
+  .object({
+    code: codeSchema,
+    name: nameSchema,
+    description: z.string().max(500).nullable().optional(),
+    categoryId: objectIdSchema.nullable().optional(),
+    kind: z.enum(['finished', 'semi_finished']),
+    uomId: objectIdSchema,
+    props: z.record(z.string(), z.string()).optional(),
+  })
+  .strict()
 
 export const patchProductSchema = z
   .object({

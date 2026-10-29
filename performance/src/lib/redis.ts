@@ -1,87 +1,20 @@
-import { Redis, type RedisOptions } from 'ioredis'
+import { createRedisClient } from '@mes/cache'
 import { config } from '../config/index.js'
 import { logger } from './logger.js'
 
-const REDIS_URL = config.REDIS_URL
-
-if (!REDIS_URL) {
-  throw new Error('REDIS_URL is not defined in environment variables')
-}
-
-const baseOptions: Omit<RedisOptions, 'keyPrefix'> = {
-  maxRetriesPerRequest: null,
-  enableReadyCheck: false,
-  enableOfflineQueue: false,
-  lazyConnect: true,
-  connectTimeout: 10000,
-  retryStrategy: (times: number) => {
-    const delay = Math.min(times * 100, 2000)
-
-    if (times === 1) {
-      logger.warn('Redis: Reconnecting...')
-    }
-    if (times % 10 === 0) {
-      logger.error(`Redis: Still attempting to reconnect... (${times} attempts)`)
-    }
-
-    return delay
-  },
-  reconnectOnError: err => {
-    const targetError = 'READONLY'
-    if (err.message.includes(targetError)) {
-      return true
-    }
-    return false
-  },
-  keepAlive: 10000,
-}
-
-// Main client for general use (caching)
-export const redisClient = new Redis(REDIS_URL, {
-  ...baseOptions,
+// Service-local cache keys carry the service prefix. The shared client (auth context cache) and
+// the stream client use none, because other services read the same keys and streams.
+export const redisClient = createRedisClient(config.REDIS_URL, {
+  name: 'cache',
   keyPrefix: 'performance:',
+  logger,
 })
-
-redisClient.on('error', err => {
-  logger.error('Redis Client Error:', { error: err.message })
-})
-redisClient.on('connect', () => logger.info('Redis: Connection established'))
-redisClient.on('ready', () => logger.info('Redis: Ready to receive commands'))
-redisClient.on('reconnecting', () => logger.warn('Redis: Reconnecting...'))
-
-// ── Shared client for cross-service cache (auth context) ────────────────────
-// No keyPrefix — cache keys are shared across all services.
-export const sharedClient = new Redis(REDIS_URL, baseOptions)
-
-sharedClient.on('error', err => {
-  logger.error('Redis Shared Client Error:', { error: err.message })
-})
-
-// ── Stream client for Redis Streams (publishing + consuming) ────────────────
-// No keyPrefix — stream names must be consistent across all services.
-export const streamClient = new Redis(REDIS_URL, baseOptions)
-
-streamClient.on('error', err => {
-  logger.error('Redis Stream Client Error:', { error: err.message })
-})
+export const sharedClient = createRedisClient(config.REDIS_URL, { name: 'shared', logger })
+export const streamClient = createRedisClient(config.REDIS_URL, { name: 'stream', logger })
 
 export const initRedis = async () => {
-  try {
-    await redisClient.connect()
-    await redisClient.ping()
-    logger.info('Redis: Initial connection verified')
-
-    await sharedClient.connect()
-    await sharedClient.ping()
-    logger.info('Redis Shared Client: Connection verified')
-
-    await streamClient.connect()
-    await streamClient.ping()
-    logger.info('Redis Stream Client: Connection verified')
-  } catch (error) {
-    logger.error('Redis: Initial connection failed')
-    throw error
-  }
+  await Promise.all([redisClient.connect(), sharedClient.connect(), streamClient.connect()])
+  logger.info('Redis clients connected', { event: 'redis.init.completed' })
 }
 
 export const closeRedis = async () => {

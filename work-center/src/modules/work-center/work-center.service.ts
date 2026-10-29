@@ -1,3 +1,4 @@
+import { type PaginationInput, paginate } from '@mes/core/pagination'
 import { Types } from 'mongoose'
 import type { z } from 'zod'
 import { CustomError } from '../../core/errors/index.js'
@@ -12,7 +13,6 @@ import {
 } from '../../jobs/events.js'
 import { addWorkCenterToUser, isWorkCenterReferencedByUsers } from '../../lib/internal-api.js'
 import { logger } from '../../lib/logger.js'
-import { type PaginationInput, paginate } from '../../utils/pagination.js'
 import { hasAnyCheckInRecords, hasOpenCheckIns } from '../operators/operators.service.js'
 import { hasActiveCalendars } from '../schedule/schedule.service.js'
 import { Shift } from '../shift/shift.model.js'

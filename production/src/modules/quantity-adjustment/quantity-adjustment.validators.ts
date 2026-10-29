@@ -1,16 +1,18 @@
 import { utcDateSchema } from '@mes/core'
+import { paginationSchema } from '@mes/core/pagination'
 import { z } from 'zod'
-import { paginationSchema } from '../../utils/pagination.js'
 import { objectIdSchema } from '../../utils/validators.js'
 
-export const createQuantityAdjustmentSchema = z.object({
-  jobOrderId: objectIdSchema,
-  shiftId: objectIdSchema,
-  amount: z.number(),
-  time: utcDateSchema,
-  reason: z.string().max(200).nullable().optional(),
-  description: z.string().max(500).nullable().optional(),
-}).strict()
+export const createQuantityAdjustmentSchema = z
+  .object({
+    jobOrderId: objectIdSchema,
+    shiftId: objectIdSchema,
+    amount: z.number(),
+    time: utcDateSchema,
+    reason: z.string().max(200).nullable().optional(),
+    description: z.string().max(500).nullable().optional(),
+  })
+  .strict()
 
 export const patchQuantityAdjustmentSchema = z
   .object({

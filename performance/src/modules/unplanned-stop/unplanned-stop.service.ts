@@ -1,4 +1,5 @@
 import { CustomError } from '@mes/core'
+import { type PaginatedResult, paginate } from '@mes/core/pagination'
 import { Types } from 'mongoose'
 import {
   emitUnplannedStopClosed,
@@ -6,7 +7,6 @@ import {
   emitUnplannedStopOpened,
   emitUnplannedStopUpdated,
 } from '../../jobs/events.js'
-import { type PaginatedResult, paginate } from '../../utils/pagination.js'
 import { PlannedStop } from '../planned-stop/planned-stop.model.js'
 import { resolveForWorkCenter } from '../policy/policy.service.js'
 import { Reason } from '../reason/reason.model.js'

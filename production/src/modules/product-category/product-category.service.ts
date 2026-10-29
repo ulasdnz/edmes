@@ -1,10 +1,10 @@
 import { CustomError } from '@mes/core'
+import { type PaginatedResult, paginate } from '@mes/core/pagination'
 import {
   emitProductCategoryCreated,
   emitProductCategoryDeleted,
   emitProductCategoryUpdated,
 } from '../../jobs/events.js'
-import { type PaginatedResult, paginate } from '../../utils/pagination.js'
 import { Product } from '../product/product.model.js'
 import { type IProductCategory, ProductCategory } from './product-category.model.js'
 import type {

@@ -1,16 +1,18 @@
+import { paginationSchema } from '@mes/core/pagination'
 import { z } from 'zod'
-import { paginationSchema } from '../../utils/pagination.js'
 import { objectIdSchema } from '../../utils/validators.js'
 
 const codeSchema = z.string().trim().min(1).max(50)
 const nameSchema = z.string().trim().min(1).max(100)
 const symbolSchema = z.string().trim().min(1).max(20)
 
-export const createUomSchema = z.object({
-  code: codeSchema,
-  name: nameSchema,
-  symbol: symbolSchema,
-}).strict()
+export const createUomSchema = z
+  .object({
+    code: codeSchema,
+    name: nameSchema,
+    symbol: symbolSchema,
+  })
+  .strict()
 
 export const patchUomSchema = z
   .object({

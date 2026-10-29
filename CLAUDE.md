@@ -53,9 +53,9 @@ testing → source-only (no build, vitest transpiles directly)
 
 | Package | Purpose |
 |---------|---------|
-| `@mes/core` | Error classes, Express middleware (error handler, request context via AsyncLocalStorage, validation), shutdown helpers |
+| `@mes/core` | Error classes, Express middleware (error handler, request context via AsyncLocalStorage, validation), shutdown helpers. `@mes/core/pagination`: list pagination for Mongoose models |
 | `@mes/auth` | JWT authentication + RBAC permission middleware, Redis-backed cache with singleflight |
-| `@mes/cache` | Redis cache-aside pattern with singleflight dedup |
+| `@mes/cache` | Redis client factory (shared connection settings), cache-aside pattern with singleflight dedup |
 | `@mes/logger` | Winston logger (JSON in prod, colorized in dev), structured HTTP logger middleware, Morgan for dev |
 | `@mes/events` | Redis Streams publish/consume with consumer groups, auto-ACK, pending recovery, traceId propagation |
 | `@mes/health` | Health/readiness endpoints with dependency-injected probes |

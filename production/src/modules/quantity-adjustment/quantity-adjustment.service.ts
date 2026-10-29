@@ -1,11 +1,11 @@
 import { CustomError } from '@mes/core'
+import { type PaginatedResult, paginate } from '@mes/core/pagination'
 import {
   emitQuantityAdjustmentCreated,
   emitQuantityAdjustmentDeleted,
   emitQuantityAdjustmentUpdated,
 } from '../../jobs/events.js'
 import { assertShiftExists } from '../../lib/internal-api.js'
-import { type PaginatedResult, paginate } from '../../utils/pagination.js'
 import { JobOrder } from '../job-order/job-order.model.js'
 import { type IQuantityAdjustment, QuantityAdjustment } from './quantity-adjustment.model.js'
 import type {

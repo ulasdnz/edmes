@@ -1,4 +1,5 @@
 import { CustomError } from '@mes/core'
+import { type PaginatedResult, paginate } from '@mes/core/pagination'
 import mongoose from 'mongoose'
 import {
   emitProductStandardCreated,
@@ -7,7 +8,6 @@ import {
 } from '../../jobs/events.js'
 import { getWorkCenterInfo } from '../../lib/internal-api.js'
 import { logger } from '../../lib/logger.js'
-import { type PaginatedResult, paginate } from '../../utils/pagination.js'
 import { Product } from '../product/product.model.js'
 import { type IProductStandard, ProductStandard } from './product-standard.model.js'
 import type {

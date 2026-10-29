@@ -9,6 +9,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./pagination": {
+      "types": "./dist/pagination.d.ts",
+      "import": "./dist/pagination.js"
     }
   },
   "scripts": {
@@ -25,14 +29,21 @@
   "peerDependencies": {
     "express": "^5.0.0",
     "i18next": "^25.0.0",
+    "mongoose": "^9.0.0",
     "winston": "^3.0.0",
     "zod": "^4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "mongoose": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@types/express": "^5.0.0",
     "@types/node": "^20.0.0",
     "express": "^5.0.0",
     "i18next": "^25.0.0",
+    "mongoose": "^9.2.4",
     "typescript": "^5.5.0",
     "winston": "^3.0.0",
     "zod": "^4.0.0"

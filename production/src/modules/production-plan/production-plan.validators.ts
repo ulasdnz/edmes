@@ -1,18 +1,20 @@
 import { utcDateSchema } from '@mes/core'
+import { paginationSchema } from '@mes/core/pagination'
 import { z } from 'zod'
-import { paginationSchema } from '../../utils/pagination.js'
 import { objectIdSchema } from '../../utils/validators.js'
 
 const codeSchema = z.string().trim().min(1).max(50)
 
-export const createProductionPlanSchema = z.object({
-  code: codeSchema,
-  productId: objectIdSchema,
-  targetQuantity: z.number().positive(),
-  dueAt: utcDateSchema.nullable().optional(),
-  description: z.string().max(500).nullable().optional(),
-  props: z.record(z.string(), z.string()).optional(),
-}).strict()
+export const createProductionPlanSchema = z
+  .object({
+    code: codeSchema,
+    productId: objectIdSchema,
+    targetQuantity: z.number().positive(),
+    dueAt: utcDateSchema.nullable().optional(),
+    description: z.string().max(500).nullable().optional(),
+    props: z.record(z.string(), z.string()).optional(),
+  })
+  .strict()
 
 export const patchProductionPlanSchema = z
   .object({

@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import 'zod-openapi'
-import { paginationSchema } from '../../utils/pagination.js'
+import { paginationSchema } from '@mes/core/pagination'
 import { objectIdSchema } from '../../utils/validators.js'
 
 const emailSchema = z.email({ message: 'validation.email_invalid' }).meta({

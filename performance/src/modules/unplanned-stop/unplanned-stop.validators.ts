@@ -1,6 +1,6 @@
 import { utcDateSchema } from '@mes/core'
+import { paginationSchema } from '@mes/core/pagination'
 import { z } from 'zod'
-import { paginationSchema } from '../../utils/pagination.js'
 import { objectIdSchema } from '../../utils/validators.js'
 
 const descriptionSchema = z.string().trim().max(1000)

@@ -1,4 +1,5 @@
 import { CustomError } from '@mes/core'
+import { type PaginatedResult, paginate } from '@mes/core/pagination'
 import {
   emitJobOrderCreated,
   emitJobOrderDeleted,
@@ -8,7 +9,6 @@ import {
 } from '../../jobs/events.js'
 import { getWorkCenterInfo } from '../../lib/internal-api.js'
 import { logger } from '../../lib/logger.js'
-import { type PaginatedResult, paginate } from '../../utils/pagination.js'
 import { Product } from '../product/product.model.js'
 import { ProductStandard } from '../product-standard/product-standard.model.js'
 import { ProductionPlan } from '../production-plan/production-plan.model.js'

@@ -1,7 +1,7 @@
 import { CustomError } from '@mes/core'
+import type { PaginatedResult } from '@mes/core/pagination'
 import type { Request, Response } from 'express'
 import type { SuccessResponse } from '../../core/types/api.types.js'
-import type { PaginatedResult } from '../../utils/pagination.js'
 import type { IQuantityAdjustment } from './quantity-adjustment.model.js'
 import * as service from './quantity-adjustment.service.js'
 

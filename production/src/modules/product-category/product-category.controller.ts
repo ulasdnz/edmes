@@ -1,6 +1,6 @@
+import type { PaginatedResult } from '@mes/core/pagination'
 import type { Request, Response } from 'express'
 import type { SuccessResponse } from '../../core/types/api.types.js'
-import type { PaginatedResult } from '../../utils/pagination.js'
 import type { IProductCategory } from './product-category.model.js'
 import * as service from './product-category.service.js'
 

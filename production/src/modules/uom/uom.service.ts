@@ -1,6 +1,6 @@
 import { CustomError } from '@mes/core'
+import { type PaginatedResult, paginate } from '@mes/core/pagination'
 import { emitUomCreated, emitUomDeleted, emitUomUpdated } from '../../jobs/events.js'
-import { type PaginatedResult, paginate } from '../../utils/pagination.js'
 import { Product } from '../product/product.model.js'
 import { type IUom, Uom } from './uom.model.js'
 import type { CreateUomInput, PatchUomInput, UomListInput } from './uom.validators.js'

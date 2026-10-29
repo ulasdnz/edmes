@@ -1,9 +1,9 @@
 import { CustomError } from '@mes/core'
+import type { PaginationMeta } from '@mes/core/pagination'
 import type { Request, Response } from 'express'
 import { SYSTEM_IDENTITY } from '../../constants/identity.js'
 import type { SuccessResponse } from '../../core/types/api.types.js'
 import { getUserWorkCenterIds } from '../../lib/internal-api/user.client.js'
-import type { PaginationMeta } from '../../utils/pagination.js'
 import type { IUnplannedStop } from './unplanned-stop.model.js'
 import * as service from './unplanned-stop.service.js'
 

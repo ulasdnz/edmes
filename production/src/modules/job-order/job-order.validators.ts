@@ -1,21 +1,23 @@
 import { utcDateSchema } from '@mes/core'
+import { paginationSchema } from '@mes/core/pagination'
 import { z } from 'zod'
-import { paginationSchema } from '../../utils/pagination.js'
 import { objectIdSchema } from '../../utils/validators.js'
 
 const codeSchema = z.string().trim().min(1).max(50)
 
-export const createJobOrderSchema = z.object({
-  code: codeSchema,
-  productId: objectIdSchema,
-  workCenterId: objectIdSchema,
-  productionPlanId: objectIdSchema.nullable().optional(),
-  targetQuantity: z.number().positive(),
-  plannedStartAt: utcDateSchema.nullable().optional(),
-  dueAt: utcDateSchema.nullable().optional(),
-  description: z.string().max(500).nullable().optional(),
-  props: z.record(z.string(), z.string()).optional(),
-}).strict()
+export const createJobOrderSchema = z
+  .object({
+    code: codeSchema,
+    productId: objectIdSchema,
+    workCenterId: objectIdSchema,
+    productionPlanId: objectIdSchema.nullable().optional(),
+    targetQuantity: z.number().positive(),
+    plannedStartAt: utcDateSchema.nullable().optional(),
+    dueAt: utcDateSchema.nullable().optional(),
+    description: z.string().max(500).nullable().optional(),
+    props: z.record(z.string(), z.string()).optional(),
+  })
+  .strict()
 
 export const patchJobOrderSchema = z
   .object({
@@ -34,13 +36,17 @@ export const patchJobOrderSchema = z
 
 export const jobOrderIdParamSchema = z.object({ id: objectIdSchema })
 
-export const startJobOrderSchema = z.object({
-  startTime: utcDateSchema.optional(),
-}).strict()
+export const startJobOrderSchema = z
+  .object({
+    startTime: utcDateSchema.optional(),
+  })
+  .strict()
 
-export const endJobOrderSchema = z.object({
-  endTime: utcDateSchema.optional(),
-}).strict()
+export const endJobOrderSchema = z
+  .object({
+    endTime: utcDateSchema.optional(),
+  })
+  .strict()
 
 export const jobOrderListSchema = paginationSchema.extend({
   _id: objectIdSchema.optional(),

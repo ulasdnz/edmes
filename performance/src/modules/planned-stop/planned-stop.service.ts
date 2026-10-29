@@ -1,4 +1,5 @@
 import { CustomError } from '@mes/core'
+import { type PaginatedResult, paginate } from '@mes/core/pagination'
 import { Types } from 'mongoose'
 import {
   emitPlannedStopCancelled,
@@ -10,7 +11,6 @@ import {
 } from '../../jobs/events.js'
 import { getLatest } from '../../lib/internal-api/run-mode-telemetry.client.js'
 import { getById as getWorkCenter } from '../../lib/internal-api/work-center.client.js'
-import { type PaginatedResult, paginate } from '../../utils/pagination.js'
 import { Reason } from '../reason/reason.model.js'
 import {
   closeIfOpen as closeOpenUnplanned,
