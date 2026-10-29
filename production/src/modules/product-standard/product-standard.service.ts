@@ -222,6 +222,7 @@ export interface TimelineStandardProjection {
   validFrom: Date
   idealOutputPerMinute: number
   counterMultiplier: number | null
+  idealSpeed: number | null
 }
 
 export interface TimelineResultItem {
@@ -272,10 +273,12 @@ export async function findTimelinesBatch(
     validFrom: Date
     idealOutputPerMinute: number
     counterMultiplier: number | null
+    idealSpeed: number | null
   }
 
   const standardsByGroup = new Map<string, StandardDoc[]>()
-  const projection = '_id productId workCenterId validFrom idealOutputPerMinute counterMultiplier'
+  const projection =
+    '_id productId workCenterId validFrom idealOutputPerMinute counterMultiplier idealSpeed'
 
   await Promise.all(
     Array.from(groups.entries()).map(async ([key, group]) => {
@@ -335,6 +338,7 @@ export async function findTimelinesBatch(
         validFrom: std.validFrom,
         idealOutputPerMinute: std.idealOutputPerMinute,
         counterMultiplier: std.counterMultiplier,
+        idealSpeed: std.idealSpeed,
       })),
       qualityFlags,
     }
