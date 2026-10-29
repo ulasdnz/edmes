@@ -20,6 +20,7 @@ type StubHandlers = {
   getProductStandardsBatch?: (body: unknown) => unknown
   getJobOrderRecordsBatch?: (body: unknown) => unknown
   getProducedSummary?: (tagId: string, body: unknown) => unknown
+  getSpeedSummary?: (tagId: string, body: unknown) => unknown
   getUserWorkCenterIds?: (userId: string) => unknown
 }
 
@@ -72,7 +73,9 @@ function makeStubServers() {
     if (fn) return res.json({ data: fn(req.params.tagId, req.body) })
     res.json({ data: { windows: [], total: 0 } })
   })
-  telemApp.post('/internal/v1/historian/:tagId/speed-summary', (_req, res) => {
+  telemApp.post('/internal/v1/historian/:tagId/speed-summary', (req, res) => {
+    const fn = handlers.getSpeedSummary
+    if (fn) return res.json({ data: fn(req.params.tagId, req.body) })
     res.json({
       data: { windows: [], total: { durationMs: 0, timeWeightedAverage: 0, valueArea: 0 } },
     })
@@ -128,6 +131,7 @@ const WC_ID = new Types.ObjectId().toHexString()
 const JO_ID = new Types.ObjectId().toHexString()
 const PROD_ID = new Types.ObjectId().toHexString()
 const TAG_COUNTER = 'tag-counter-001'
+const TAG_SPEED = 'tag-speed-001'
 const REASON_OEE_ID = new Types.ObjectId().toHexString()
 const REASON_NON_OEE_ID = new Types.ObjectId().toHexString()
 const SYSTEM_ACTOR = new Types.ObjectId(SYSTEM_IDENTITY)
@@ -138,10 +142,20 @@ const TO = new Date('2026-01-01T07:00:00.000Z') // 60 min window
 function machineWc(id = WC_ID) {
   return {
     _id: id,
-    type: 'machine',
+    type: 'physical',
     productivityMode: 'count_based',
     status: 'active',
     tagBindings: { productionCounterTagId: TAG_COUNTER },
+  }
+}
+
+function loomWc(id = WC_ID) {
+  return {
+    _id: id,
+    type: 'physical',
+    productivityMode: 'speed_based',
+    status: 'active',
+    tagBindings: { speedTagId: TAG_SPEED },
   }
 }
 
@@ -173,23 +187,49 @@ function producedSummaryFor(totalUnits: number, from: Date, to: Date) {
   }
 }
 
+type Stop = { from: Date; to: Date }
+
+function stoppedMsWithin(from: number, to: number, stopped: Stop[]) {
+  return stopped.reduce(
+    (sum, s) => sum + Math.max(0, Math.min(to, s.to.getTime()) - Math.max(from, s.from.getTime())),
+    0,
+  )
+}
+
 // Answers produced-summary the way real telemetry does (see the telemetry provider contract
 // test): the raw counter delta of each requested window, in request order. The counter goes up
 // strokesPerMinute times a minute and stands still while the machine is stopped.
-function strokeCounter(strokesPerMinute: number, stopped: Array<{ from: Date; to: Date }> = []) {
+function strokeCounter(strokesPerMinute: number, stopped: Stop[] = []) {
   return (_tagId: string, body: { windows: Array<{ from: string; to: string }> }) => {
     const windows = body.windows.map(w => {
       const from = new Date(w.from).getTime()
       const to = new Date(w.to).getTime()
-      const stoppedMs = stopped.reduce(
-        (sum, s) =>
-          sum + Math.max(0, Math.min(to, s.to.getTime()) - Math.max(from, s.from.getTime())),
-        0,
-      )
-      const value = (strokesPerMinute * (to - from - stoppedMs)) / 60_000
+      const value = (strokesPerMinute * (to - from - stoppedMsWithin(from, to, stopped))) / 60_000
       return { from: w.from, to: w.to, value, qualityFlags: [] }
     })
     return { windows, total: windows.reduce((sum, w) => sum + w.value, 0) }
+  }
+}
+
+// Answers speed-summary the way real telemetry does (see the telemetry provider contract test):
+// the speed area (speed × milliseconds) of each requested window, in request order. The speed
+// is constant while running and zero while the machine is stopped.
+function steadySpeed(speed: number, stopped: Stop[] = []) {
+  return (_tagId: string, body: { windows: Array<{ from: string; to: string }> }) => {
+    const windows = body.windows.map(w => {
+      const from = new Date(w.from).getTime()
+      const to = new Date(w.to).getTime()
+      const durationMs = to - from
+      const valueArea = speed * (durationMs - stoppedMsWithin(from, to, stopped))
+      const timeWeightedAverage = valueArea / durationMs
+      return { from: w.from, to: w.to, durationMs, timeWeightedAverage, valueArea, sampleCount: 1 }
+    })
+    const durationMs = windows.reduce((sum, w) => sum + w.durationMs, 0)
+    const valueArea = windows.reduce((sum, w) => sum + w.valueArea, 0)
+    return {
+      windows,
+      total: { durationMs, timeWeightedAverage: valueArea / durationMs, valueArea },
+    }
   }
 }
 
@@ -875,6 +915,87 @@ describe('Count based OEE converts counter strokes into parts with counterMultip
     expect(result).toMatchObject({
       productivity: { percentage: 100, status: 'ok' },
       quality: { percentage: 75, status: 'ok' },
+    })
+  })
+})
+
+// ── Speed based: speed area converted into product units ─────────────────────
+// A loom's ideal speed is 400 picks a minute, at which it weaves 2 m² of carpet a minute.
+
+describe('Speed based OEE converts the speed area into product units with idealSpeed', () => {
+  const loomStandard = () => ({ ...standardTimeline(2, null), idealSpeed: 400 })
+
+  it('reports 75% productivity at 300 of 400 picks and 80% quality', async () => {
+    // At 300 picks a minute the loom weaves 90 m² in the hour; 18 m² are scrapped.
+    resetHandlers({
+      getWorkCenter: () => loomWc(),
+      getJobOrders: () => [joRecord()],
+      getProductStandardsBatch: () => ({
+        items: [{ jobOrderId: JO_ID, standards: [loomStandard()], qualityFlags: [] }],
+      }),
+      getJobOrderRecordsBatch: () => ({
+        quantityAdjustmentsByJobOrderId: {},
+        scrapEntriesByJobOrderId: { [JO_ID]: [scrapRecord(18, FROM, TO)] },
+      }),
+      getSpeedSummary: steadySpeed(300),
+      getUserWorkCenterIds: () => [WC_ID],
+    })
+
+    const result = await calculate({
+      workCenterId: WC_ID,
+      from: FROM,
+      to: TO,
+      userId: SYSTEM_IDENTITY,
+    })
+
+    expect(result).toMatchObject({
+      productivity: { percentage: 75, status: 'ok' },
+      quality: { percentage: 80, status: 'ok' },
+      oee: { percentage: 60, status: 'ok' },
+    })
+  })
+
+  it('measures net_run_segments quality over the whole job order in product units', async () => {
+    // Stopped 06:00-06:10, then 300 picks a minute: 75 m² in the hour; 15 m² are scrapped.
+    const stopEnd = new Date('2026-01-01T06:10:00.000Z')
+    await policyService.upsertForWorkCenter(
+      WC_ID,
+      { actualOutputWindowMode: 'net_run_segments' },
+      SYSTEM_IDENTITY,
+    )
+    await insertOeeAffectingReason()
+    await UnplannedStop.create({
+      workCenterId: new Types.ObjectId(WC_ID),
+      reasonId: new Types.ObjectId(REASON_OEE_ID),
+      source: 'manual',
+      startAt: FROM,
+      endAt: stopEnd,
+      createdBy: null,
+    })
+    resetHandlers({
+      getWorkCenter: () => loomWc(),
+      getJobOrders: () => [joRecord()],
+      getProductStandardsBatch: () => ({
+        items: [{ jobOrderId: JO_ID, standards: [loomStandard()], qualityFlags: [] }],
+      }),
+      getJobOrderRecordsBatch: () => ({
+        quantityAdjustmentsByJobOrderId: {},
+        scrapEntriesByJobOrderId: { [JO_ID]: [scrapRecord(15, FROM, TO)] },
+      }),
+      getSpeedSummary: steadySpeed(300, [{ from: FROM, to: stopEnd }]),
+      getUserWorkCenterIds: () => [WC_ID],
+    })
+
+    const result = await calculate({
+      workCenterId: WC_ID,
+      from: FROM,
+      to: TO,
+      userId: SYSTEM_IDENTITY,
+    })
+
+    expect(result).toMatchObject({
+      productivity: { percentage: 75, status: 'ok' },
+      quality: { percentage: 80, status: 'ok' },
     })
   })
 })

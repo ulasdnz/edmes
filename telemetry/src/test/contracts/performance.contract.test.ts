@@ -54,3 +54,33 @@ describe('POST /internal/v1/historian/:tagId/produced-summary (performance produ
     })
   })
 })
+
+describe('POST /internal/v1/historian/:tagId/speed-summary (performance speedSummary)', () => {
+  it('answers the speed area of each requested window, in request order', async () => {
+    const tag = await Tag.create({
+      name: 'Loom speed',
+      tagTypeId: new Types.ObjectId(),
+      behavior: 'speed',
+    })
+    // The loom runs at 300 picks a minute from 06:00 and at 400 from 06:30.
+    await ingestValue(tag, 300, at(0))
+    await ingestValue(tag, 400, at(30))
+
+    const res = await request(app)
+      .post(`/internal/v1/historian/${tag.id}/speed-summary`)
+      .set({ [INTERNAL_TOKEN_HEADER]: INTERNAL_TOKEN })
+      .send({
+        windows: [
+          { from: at(0).toISOString(), to: at(30).toISOString() },
+          { from: at(30).toISOString(), to: at(60).toISOString() },
+        ],
+      })
+
+    // valueArea is speed × milliseconds; performance divides it by 60 000 for speed × minutes.
+    expect(res.status, JSON.stringify(res.body.error)).toBe(200)
+    expect(res.body.data.windows).toMatchObject([
+      { from: at(0).toISOString(), to: at(30).toISOString(), valueArea: 300 * 30 * 60_000 },
+      { from: at(30).toISOString(), to: at(60).toISOString(), valueArea: 400 * 30 * 60_000 },
+    ])
+  })
+})

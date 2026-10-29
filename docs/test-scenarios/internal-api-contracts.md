@@ -47,6 +47,9 @@
 ### POST /internal/v1/historian/:tagId/produced-summary (OEE produced counts)
 - [CRITICAL] answers one result per requested window, in request order, with `from`, `to`, `value`, `qualityFlags` and a numeric `total`; `value` is the raw counter delta of the window, which performance converts into product units with the standard's `counterMultiplier`
 
+### POST /internal/v1/historian/:tagId/speed-summary (OEE speed area)
+- [CRITICAL] answers one result per requested window, in request order, with `from`, `to` and `valueArea` (speed × milliseconds), which performance converts into product units with the standard's `idealOutputPerMinute / idealSpeed`
+
 ---
 
 Already covered elsewhere:
