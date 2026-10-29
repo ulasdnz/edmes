@@ -97,26 +97,56 @@ function actualOutputWindowsForJo(
   return result
 }
 
-// Sum produced counter values for windows belonging to this JO.
-function sumProducedForJo(
-  joWindows: Array<{ from: Date; to: Date }>,
+// Telemetry windows for a count based work center: the output windows split at standard
+// boundaries, so every produced count falls under a single counterMultiplier.
+export function splitAtStandards(
+  windows: Array<{ from: Date; to: Date }>,
+  standards: ProductStandardTimeline[],
+): Array<{ from: Date; to: Date }> {
+  return windows.flatMap(w =>
+    splitAtBoundaries(w.from, w.to, standards).map(sw => ({ from: sw.start, to: sw.end })),
+  )
+}
+
+// Output of the given windows in product units. Telemetry counts raw counter steps (strokes,
+// cycles, pulses) over the windows built by splitAtStandards, and each standard's
+// counterMultiplier turns its counts into product units. Returns null when a standard has no
+// usable counterMultiplier.
+export function countedOutput(
+  windows: Array<{ from: Date; to: Date }>,
+  standards: ProductStandardTimeline[],
   summary: ProducedSummary,
-): number {
-  // Match summary windows to JO windows by overlap; sum values.
-  // Since windows are pre-split per JO, we sum all summary window values whose
-  // [from, to] overlaps any joWindow.
+): number | null {
   let total = 0
-  for (const sw of summary.windows) {
-    const swFrom = new Date(sw.from)
-    const swTo = new Date(sw.to)
-    for (const jw of joWindows) {
-      if (swFrom.getTime() < jw.to.getTime() && swTo.getTime() > jw.from.getTime()) {
-        total += sw.value
-        break
+  for (const w of windows) {
+    for (const sw of splitAtBoundaries(w.from, w.to, standards)) {
+      const multiplier = sw.standard.counterMultiplier
+      if (multiplier == null || !Number.isFinite(multiplier) || multiplier <= 0) return null
+      for (const s of summary.windows) {
+        const from = new Date(s.from).getTime()
+        const to = new Date(s.to).getTime()
+        if (from >= sw.start.getTime() && to <= sw.end.getTime()) total += s.value * multiplier
       }
     }
   }
   return total
+}
+
+function notCalculableBreakdown(
+  jo: JobWindow,
+  productionRunMs: number,
+): JobOrderProductivityBreakdown {
+  return {
+    jobOrderId: jo.jobOrderId,
+    productId: jo.productId,
+    ratio: 0,
+    actualOutput: 0,
+    effectiveTargetOutput: 0,
+    fullJobTargetOutput: 0,
+    quantityAdjustment: 0,
+    productionRunMs,
+    notCalculable: true,
+  }
 }
 
 function productionRunMsForJo(jo: JobWindow, productionRunWindows: OeeRange[]): number {
@@ -189,17 +219,7 @@ export function calculateProductivity(input: ProductivityInput): ProductivityRes
 
     if (missingStandard) {
       anyNotCalculable = true
-      breakdowns.push({
-        jobOrderId: jo.jobOrderId,
-        productId: jo.productId,
-        ratio: 0,
-        actualOutput: 0,
-        effectiveTargetOutput: 0,
-        fullJobTargetOutput: 0,
-        quantityAdjustment: 0,
-        productionRunMs,
-        notCalculable: true,
-      })
+      breakdowns.push(notCalculableBreakdown(jo, productionRunMs))
       continue
     }
 
@@ -207,7 +227,13 @@ export function calculateProductivity(input: ProductivityInput): ProductivityRes
     let grossProduced = 0
     let invalidSpeedStandard = false
     if (isCountBased && producedSummary) {
-      grossProduced = sumProducedForJo(joWindows, producedSummary)
+      const counted = countedOutput(joWindows, standards, producedSummary)
+      if (counted === null) {
+        anyNotCalculable = true
+        breakdowns.push(notCalculableBreakdown(jo, productionRunMs))
+        continue
+      }
+      grossProduced = counted
     } else if (!isCountBased && speedSummary) {
       // speed_based ratio model: actualOutput = targetOutput × (avgSpeed / idealSpeed),
       // simplified per sub-window to:
@@ -242,17 +268,7 @@ export function calculateProductivity(input: ProductivityInput): ProductivityRes
       }
       if (invalidSpeedStandard || !Number.isFinite(speedTotal)) {
         anyNotCalculable = true
-        breakdowns.push({
-          jobOrderId: jo.jobOrderId,
-          productId: jo.productId,
-          ratio: 0,
-          actualOutput: 0,
-          effectiveTargetOutput: 0,
-          fullJobTargetOutput: 0,
-          quantityAdjustment: 0,
-          productionRunMs,
-          notCalculable: true,
-        })
+        breakdowns.push(notCalculableBreakdown(jo, productionRunMs))
         continue
       }
       grossProduced = speedTotal

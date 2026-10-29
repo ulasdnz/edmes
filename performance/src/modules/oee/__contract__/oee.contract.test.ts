@@ -6,6 +6,7 @@ import { Types } from 'mongoose'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { SYSTEM_IDENTITY } from '../../../constants/identity.js'
 import { PlannedStop } from '../../planned-stop/planned-stop.model.js'
+import * as policyService from '../../policy/policy.service.js'
 import { bootstrapSystemReasons } from '../../reason/reason.bootstrap.js'
 import { Reason } from '../../reason/reason.model.js'
 import { UnplannedStop } from '../../unplanned-stop/unplanned-stop.model.js'
@@ -148,12 +149,16 @@ function joRecord(id = JO_ID, startTime = FROM.toISOString(), endTime: string | 
   return { _id: id, workCenterId: WC_ID, productId: PROD_ID, startTime, endTime, code: 'JO-001' }
 }
 
-function standardTimeline(idealOutputPerMinute = 10) {
+function standardTimeline(
+  idealOutputPerMinute = 10,
+  counterMultiplier: number | null = 1,
+  validFrom = '2026-01-01T00:00:00.000Z',
+) {
   return {
     _id: new Types.ObjectId().toHexString(),
-    validFrom: new Date('2026-01-01T00:00:00.000Z').toISOString(),
+    validFrom,
     idealOutputPerMinute,
-    counterMultiplier: 1,
+    counterMultiplier,
     idealSpeed: null,
   }
 }
@@ -165,6 +170,36 @@ function producedSummaryFor(totalUnits: number, from: Date, to: Date) {
       { from: from.toISOString(), to: to.toISOString(), value: totalUnits, qualityFlags: [] },
     ],
     total: totalUnits,
+  }
+}
+
+// Answers produced-summary the way real telemetry does (see the telemetry provider contract
+// test): the raw counter delta of each requested window, in request order. The counter goes up
+// strokesPerMinute times a minute and stands still while the machine is stopped.
+function strokeCounter(strokesPerMinute: number, stopped: Array<{ from: Date; to: Date }> = []) {
+  return (_tagId: string, body: { windows: Array<{ from: string; to: string }> }) => {
+    const windows = body.windows.map(w => {
+      const from = new Date(w.from).getTime()
+      const to = new Date(w.to).getTime()
+      const stoppedMs = stopped.reduce(
+        (sum, s) =>
+          sum + Math.max(0, Math.min(to, s.to.getTime()) - Math.max(from, s.from.getTime())),
+        0,
+      )
+      const value = (strokesPerMinute * (to - from - stoppedMs)) / 60_000
+      return { from: w.from, to: w.to, value, qualityFlags: [] }
+    })
+    return { windows, total: windows.reduce((sum, w) => sum + w.value, 0) }
+  }
+}
+
+function scrapRecord(amount: number, startTime: Date, endTime: Date) {
+  return {
+    _id: new Types.ObjectId().toHexString(),
+    amount,
+    reasonId: null,
+    startTime: startTime.toISOString(),
+    endTime: endTime.toISOString(),
   }
 }
 
@@ -698,5 +733,148 @@ describe('Scenario 13: execution_span vs net_run_segments productivity modes', (
     // non-OEE stop → availability=100%, productivity uses full 60min → 600 produced, 600 target
     expect(result.productivity.status).toBe('ok')
     expect(result.oee.status).toBe('ok')
+  })
+})
+
+// ── Count based: counter strokes converted into parts ────────────────────────
+// A press stamps 4 parts per stroke (counterMultiplier 4) and its ideal rate is 40 parts a
+// minute. Telemetry counts strokes, so 10 strokes a minute is the ideal rate.
+
+describe('Count based OEE converts counter strokes into parts with counterMultiplier', () => {
+  const ONE_MINUTE_LATER = new Date('2026-01-01T06:01:00.000Z')
+
+  it('reports 100% productivity and 75% quality for 40 parts with 10 scrapped', async () => {
+    resetHandlers({
+      getWorkCenter: () => machineWc(),
+      getJobOrders: () => [joRecord()],
+      getProductStandardsBatch: () => ({
+        items: [{ jobOrderId: JO_ID, standards: [standardTimeline(40, 4)], qualityFlags: [] }],
+      }),
+      getJobOrderRecordsBatch: () => ({
+        quantityAdjustmentsByJobOrderId: {},
+        scrapEntriesByJobOrderId: { [JO_ID]: [scrapRecord(10, FROM, ONE_MINUTE_LATER)] },
+      }),
+      getProducedSummary: strokeCounter(10),
+      getUserWorkCenterIds: () => [WC_ID],
+    })
+
+    const result = await calculate({
+      workCenterId: WC_ID,
+      from: FROM,
+      to: ONE_MINUTE_LATER,
+      userId: SYSTEM_IDENTITY,
+    })
+
+    expect(result).toMatchObject({
+      productivity: { percentage: 100, status: 'ok' },
+      quality: { percentage: 75, status: 'ok' },
+      oee: { percentage: 75, status: 'ok' },
+    })
+  })
+
+  it('converts each part of a job order with the standard valid at that time', async () => {
+    // From 06:30 a two-cavity die runs: 2 parts per stroke, ideal 20 parts a minute.
+    resetHandlers({
+      getWorkCenter: () => machineWc(),
+      getJobOrders: () => [joRecord()],
+      getProductStandardsBatch: () => ({
+        items: [
+          {
+            jobOrderId: JO_ID,
+            standards: [
+              standardTimeline(40, 4),
+              standardTimeline(20, 2, '2026-01-01T06:30:00.000Z'),
+            ],
+            qualityFlags: [],
+          },
+        ],
+      }),
+      getJobOrderRecordsBatch: () => ({
+        quantityAdjustmentsByJobOrderId: {},
+        scrapEntriesByJobOrderId: {},
+      }),
+      getProducedSummary: strokeCounter(10),
+      getUserWorkCenterIds: () => [WC_ID],
+    })
+
+    const result = await calculate({
+      workCenterId: WC_ID,
+      from: FROM,
+      to: TO,
+      userId: SYSTEM_IDENTITY,
+    })
+
+    expect(result.productivity).toMatchObject({ percentage: 100, status: 'ok' })
+  })
+
+  it('marks productivity not calculable when a standard has no counterMultiplier', async () => {
+    // A standard created while the work center was speed based has no counterMultiplier.
+    resetHandlers({
+      getWorkCenter: () => machineWc(),
+      getJobOrders: () => [joRecord()],
+      getProductStandardsBatch: () => ({
+        items: [{ jobOrderId: JO_ID, standards: [standardTimeline(40, null)], qualityFlags: [] }],
+      }),
+      getJobOrderRecordsBatch: () => ({
+        quantityAdjustmentsByJobOrderId: {},
+        scrapEntriesByJobOrderId: {},
+      }),
+      getProducedSummary: strokeCounter(10),
+      getUserWorkCenterIds: () => [WC_ID],
+    })
+
+    const result = await calculate({
+      workCenterId: WC_ID,
+      from: FROM,
+      to: TO,
+      userId: SYSTEM_IDENTITY,
+    })
+
+    expect(result.productivity.status).toBe('not_calculable')
+    expect(result.oee.status).toBe('not_calculable')
+  })
+
+  it('measures net_run_segments quality over the whole job order in parts', async () => {
+    // Stopped 06:00-06:10, the press makes 500 strokes (2000 parts) in the hour; 500 are scrap.
+    const stopEnd = new Date('2026-01-01T06:10:00.000Z')
+    await policyService.upsertForWorkCenter(
+      WC_ID,
+      { actualOutputWindowMode: 'net_run_segments' },
+      SYSTEM_IDENTITY,
+    )
+    await insertOeeAffectingReason()
+    await UnplannedStop.create({
+      workCenterId: new Types.ObjectId(WC_ID),
+      reasonId: new Types.ObjectId(REASON_OEE_ID),
+      source: 'manual',
+      startAt: FROM,
+      endAt: stopEnd,
+      createdBy: null,
+    })
+    resetHandlers({
+      getWorkCenter: () => machineWc(),
+      getJobOrders: () => [joRecord()],
+      getProductStandardsBatch: () => ({
+        items: [{ jobOrderId: JO_ID, standards: [standardTimeline(40, 4)], qualityFlags: [] }],
+      }),
+      getJobOrderRecordsBatch: () => ({
+        quantityAdjustmentsByJobOrderId: {},
+        scrapEntriesByJobOrderId: { [JO_ID]: [scrapRecord(500, FROM, TO)] },
+      }),
+      getProducedSummary: strokeCounter(10, [{ from: FROM, to: stopEnd }]),
+      getUserWorkCenterIds: () => [WC_ID],
+    })
+
+    const result = await calculate({
+      workCenterId: WC_ID,
+      from: FROM,
+      to: TO,
+      userId: SYSTEM_IDENTITY,
+    })
+
+    expect(result).toMatchObject({
+      productivity: { percentage: 100, status: 'ok' },
+      quality: { percentage: 75, status: 'ok' },
+    })
   })
 })

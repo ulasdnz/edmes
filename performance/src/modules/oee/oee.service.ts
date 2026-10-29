@@ -14,7 +14,12 @@ import { normalize } from './interval-normalizer.js'
 import * as oeeRepository from './oee.repository.js'
 import type { OeeRange } from './oee.types.js'
 import type { ProductivityResult, ProductivityStatus } from './productivity.calc.js'
-import { calculateProductivity, splitAtBoundaries } from './productivity.calc.js'
+import {
+  calculateProductivity,
+  countedOutput,
+  splitAtBoundaries,
+  splitAtStandards,
+} from './productivity.calc.js'
 import type { QualityResult, QualityStatus } from './quality.calc.js'
 import { calculateQuality } from './quality.calc.js'
 import { calculateVirtualOee } from './virtual-work-center.js'
@@ -342,11 +347,13 @@ export async function calculateOee(input: OeeInput): Promise<OeeOutput> {
   const productionCounterTagId = workCenter.tagBindings?.productionCounterTagId
   const speedTagId = workCenter.tagBindings?.speedTagId
 
-  // Collect all actual output windows across all JOs (for batch telemetry call)
+  // Collect all actual output windows across all JOs (for batch telemetry call). Count based
+  // windows are split at standard boundaries so each count converts with one counterMultiplier.
   const allActualWindows: Array<{ from: Date; to: Date }> = []
   for (const jw of clippedJobWindows) {
     const wins = actualOutputWindowsForJo(jw)
-    allActualWindows.push(...wins)
+    const standards = productStandardsByJobOrderId[jw.jobOrderId] ?? []
+    allActualWindows.push(...(isCountBased ? splitAtStandards(wins, standards) : wins))
   }
 
   const sortedWindows = [...allActualWindows].sort((a, b) => a.from.getTime() - b.from.getTime())
@@ -363,7 +370,7 @@ export async function calculateOee(input: OeeInput): Promise<OeeOutput> {
   )
 
   const [producedSummaryResult, speedSummaryResult, knownReasonIds] = await Promise.all([
-    isCountBased && productionCounterTagId
+    isCountBased && productionCounterTagId && sortedWindows.length > 0
       ? telemetryClient.producedSummary(productionCounterTagId, sortedWindows)
       : Promise.resolve(null),
     !isCountBased && speedTagId
@@ -408,10 +415,16 @@ export async function calculateOee(input: OeeInput): Promise<OeeOutput> {
 
   if (policy.actualOutputWindowMode === 'net_run_segments') {
     const joWindowsForTelemetry = clippedJobWindows.map(jw => ({ from: jw.start, to: jw.end }))
+    const joCounterWindows = clippedJobWindows.flatMap(jw =>
+      splitAtStandards(
+        [{ from: jw.start, to: jw.end }],
+        productStandardsByJobOrderId[jw.jobOrderId] ?? [],
+      ),
+    )
 
     const [joProducedResult, joSpeedResult] = await Promise.all([
-      isCountBased && productionCounterTagId
-        ? telemetryClient.producedSummary(productionCounterTagId, joWindowsForTelemetry)
+      isCountBased && productionCounterTagId && joCounterWindows.length > 0
+        ? telemetryClient.producedSummary(productionCounterTagId, joCounterWindows)
         : Promise.resolve(null),
       !isCountBased && speedTagId
         ? telemetryClient.speedSummary(speedTagId, joWindowsForTelemetry)
@@ -421,8 +434,11 @@ export async function calculateOee(input: OeeInput): Promise<OeeOutput> {
     for (let i = 0; i < clippedJobWindows.length; i++) {
       const jw = clippedJobWindows[i]
       if (joProducedResult) {
-        // windows[i] aligns with clippedJobWindows[i]: telemetry preserves input window order
-        grossProducedPerJo[jw.jobOrderId] = joProducedResult.windows[i]?.value ?? 0
+        // A JO whose standard lacks counterMultiplier is already not calculable in productivity,
+        // and quality skips it (filtered by !jo.notCalculable), so its 0 is never summed.
+        const standards = productStandardsByJobOrderId[jw.jobOrderId] ?? []
+        grossProducedPerJo[jw.jobOrderId] =
+          countedOutput([{ from: jw.start, to: jw.end }], standards, joProducedResult) ?? 0
       } else if (joSpeedResult) {
         const standards = productStandardsByJobOrderId[jw.jobOrderId] ?? []
         const ssw = joSpeedResult.windows[i]

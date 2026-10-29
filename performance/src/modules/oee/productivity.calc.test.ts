@@ -107,6 +107,34 @@ describe('calculateProductivity — count_based', () => {
     expect(result.jobOrders[0].notCalculable).toBe(false)
   })
 
+  it('counterMultiplier converts counter steps: 250 strokes × 4 = 1000 parts', () => {
+    const input = makeInput({
+      productStandardsByJobOrderId: {
+        [JO_ID]: [
+          {
+            _id: 'std1',
+            validFrom: new Date('2026-01-01T00:00:00.000Z').toISOString(),
+            idealOutputPerMinute: 1000 / 60,
+            counterMultiplier: 4,
+            idealSpeed: null,
+          },
+        ],
+      },
+      producedSummaryByTagId: {
+        'tag-counter': {
+          windows: [{ from: T0.toISOString(), to: T1.toISOString(), value: 250, qualityFlags: [] }],
+          total: 250,
+        },
+      },
+    })
+
+    const result = calculateProductivity(input)
+
+    expect(result.status).toBe('ok')
+    expect(result.jobOrders[0].actualOutput).toBeCloseTo(1000, 5)
+    expect(result.ratio).toBeCloseTo(1.0, 5)
+  })
+
   it('quantity adjustments outside JO window are excluded from sum', () => {
     // JO window is [T0, T1]. One adjustment inside, two outside.
     const insideTime = new Date(T0.getTime() + 10 * 60 * 1000)
@@ -566,10 +594,12 @@ describe('calculateProductivity — speed_based', () => {
           },
         ],
       },
+      // The service asks telemetry for the window split at the standard boundary (T1)
       producedSummaryByTagId: {
         'tag-counter': {
           windows: [
-            { from: T0.toISOString(), to: T2.toISOString(), value: 3000, qualityFlags: [] },
+            { from: T0.toISOString(), to: T1.toISOString(), value: 1000, qualityFlags: [] },
+            { from: T1.toISOString(), to: T2.toISOString(), value: 2000, qualityFlags: [] },
           ],
           total: 3000,
         },
