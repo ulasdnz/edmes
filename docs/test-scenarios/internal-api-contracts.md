@@ -30,7 +30,8 @@
 > consumers: performance/src/lib/internal-api/work-center.client.ts, production/src/lib/internal-api.ts
 
 ### GET /internal/v1/work-centers/:id
-- [CRITICAL] a physical work center returns `type`, `productivityMode`, `status` and `tagBindings` with the names performance reads for OEE: `runModeTagId`, `speedTagId`, `producedCounterTagId`
+- [CRITICAL] a physical `count_based` work center returns `type`, `productivityMode`, `status` and `tagBindings` with the names performance reads for OEE: `runModeTagId`, `productionCounterTagId`
+- [CRITICAL] a physical `speed_based` work center returns `tagBindings.runModeTagId` and `tagBindings.speedTagId`
 - [HIGH] a virtual work center returns `type: 'virtual'` and its `metricComposition`
 - [HIGH] an unknown id -> 404 (both consumers treat 404 as "not found")
 

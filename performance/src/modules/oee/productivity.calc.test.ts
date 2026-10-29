@@ -42,7 +42,7 @@ function makeInput(overrides: Partial<ProductivityInput> = {}): ProductivityInpu
     producedSummaryByTagId: {},
     speedSummaryByTagId: {},
     productivityMode: 'count_based',
-    producedCounterTagId: 'tag-counter',
+    productionCounterTagId: 'tag-counter',
     speedTagId: undefined,
     actualOutputWindowMode: 'execution_span',
     productivityAggregationMode: 'total_ratio',
@@ -313,7 +313,7 @@ describe('calculateProductivity — count_based', () => {
       },
       speedSummaryByTagId: {},
       productivityMode: 'count_based',
-      producedCounterTagId: 'tag-counter',
+      productionCounterTagId: 'tag-counter',
       speedTagId: undefined,
       actualOutputWindowMode: 'execution_span',
       productivityAggregationMode: 'run_time_weighted_ratio',
@@ -381,7 +381,7 @@ describe('calculateProductivity — count_based', () => {
       },
       speedSummaryByTagId: {},
       productivityMode: 'count_based',
-      producedCounterTagId: 'tag-counter',
+      productionCounterTagId: 'tag-counter',
       speedTagId: undefined,
       actualOutputWindowMode: 'execution_span',
       productivityAggregationMode: 'run_time_weighted_ratio',
@@ -449,7 +449,7 @@ describe('calculateProductivity — speed_based', () => {
 
     const input = makeInput({
       productivityMode: 'speed_based',
-      producedCounterTagId: undefined,
+      productionCounterTagId: undefined,
       speedTagId: 'tag-speed',
       productStandardsByJobOrderId: {
         [JO_ID]: [
@@ -496,7 +496,7 @@ describe('calculateProductivity — speed_based', () => {
     const valueArea = 100 * 60 * 60 * 1000
     const input = makeInput({
       productivityMode: 'speed_based',
-      producedCounterTagId: undefined,
+      productionCounterTagId: undefined,
       speedTagId: 'tag-speed',
       productStandardsByJobOrderId: {
         [JO_ID]: [
@@ -591,7 +591,7 @@ describe('calculateProductivity — speed_based', () => {
     const valueArea = 50 * 60 * 60 * 1000
     const input = makeInput({
       productivityMode: 'speed_based',
-      producedCounterTagId: undefined,
+      productionCounterTagId: undefined,
       speedTagId: 'tag-speed',
       productStandardsByJobOrderId: {
         [JO_ID]: [
@@ -634,7 +634,7 @@ describe('calculateProductivity — speed_based', () => {
     const baseInput = (mult: number) =>
       makeInput({
         productivityMode: 'speed_based',
-        producedCounterTagId: undefined,
+        productionCounterTagId: undefined,
         speedTagId: 'tag-speed',
         productStandardsByJobOrderId: {
           [JO_ID]: [
@@ -674,7 +674,7 @@ describe('calculateProductivity — speed_based', () => {
     const valueArea = 100 * 60 * 60 * 1000
     const input = makeInput({
       productivityMode: 'speed_based',
-      producedCounterTagId: undefined,
+      productionCounterTagId: undefined,
       speedTagId: 'tag-speed',
       productStandardsByJobOrderId: {
         [JO_ID]: [
@@ -714,7 +714,7 @@ describe('calculateProductivity — speed_based', () => {
     for (const idealSpeed of [0, -10]) {
       const input = makeInput({
         productivityMode: 'speed_based',
-        producedCounterTagId: undefined,
+        productionCounterTagId: undefined,
         speedTagId: 'tag-speed',
         productStandardsByJobOrderId: {
           [JO_ID]: [
@@ -767,7 +767,7 @@ describe('calculateProductivity — speed_based', () => {
 
     const input = makeInput({
       productivityMode: 'speed_based',
-      producedCounterTagId: undefined,
+      productionCounterTagId: undefined,
       speedTagId: 'tag-speed',
       jobOrders: [
         { jobOrderId: JO_ID, workCenterId: WC_ID, productId: PROD_ID, start: T0, end: T2 },

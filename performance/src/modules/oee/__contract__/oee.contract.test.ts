@@ -140,7 +140,7 @@ function machineWc(id = WC_ID) {
     type: 'machine',
     productivityMode: 'count_based',
     status: 'active',
-    tagBindings: { producedCounterTagId: TAG_COUNTER },
+    tagBindings: { productionCounterTagId: TAG_COUNTER },
   }
 }
 

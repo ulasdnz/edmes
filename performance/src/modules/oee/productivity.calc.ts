@@ -41,7 +41,7 @@ export type ProductivityInput = {
   producedSummaryByTagId: Record<string, ProducedSummary>
   speedSummaryByTagId: Record<string, SpeedSummary>
   productivityMode: string
-  producedCounterTagId: string | undefined
+  productionCounterTagId: string | undefined
   speedTagId: string | undefined
   actualOutputWindowMode: 'execution_span' | 'net_run_segments'
   productivityAggregationMode: 'total_ratio' | 'run_time_weighted_ratio'
@@ -137,7 +137,7 @@ export function calculateProductivity(input: ProductivityInput): ProductivityRes
     producedSummaryByTagId,
     speedSummaryByTagId,
     productivityMode,
-    producedCounterTagId,
+    productionCounterTagId,
     speedTagId,
     actualOutputWindowMode,
     productivityAggregationMode,
@@ -146,8 +146,8 @@ export function calculateProductivity(input: ProductivityInput): ProductivityRes
 
   const isCountBased = productivityMode === 'count_based'
   const producedSummary =
-    isCountBased && producedCounterTagId
-      ? (producedSummaryByTagId[producedCounterTagId] ?? null)
+    isCountBased && productionCounterTagId
+      ? (producedSummaryByTagId[productionCounterTagId] ?? null)
       : null
   const speedSummary =
     !isCountBased && speedTagId ? (speedSummaryByTagId[speedTagId] ?? null) : null

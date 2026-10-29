@@ -35,20 +35,13 @@ const createWorkCenter = (doc: Record<string, unknown>) =>
   })
 
 describe('GET /internal/v1/work-centers/:id (performance getById, production getWorkCenterInfo)', () => {
-  it('returns the type, mode, status and tag bindings performance reads for OEE', async () => {
-    const tags = {
-      runModeTagId: new Types.ObjectId(),
-      speedTagId: new Types.ObjectId(),
-      counterTagId: new Types.ObjectId(),
-    }
+  it('returns the type, mode, status and counter tag performance reads for count based OEE', async () => {
+    const runModeTagId = new Types.ObjectId()
+    const productionCounterTagId = new Types.ObjectId()
     const workCenter = await createWorkCenter({
       type: 'physical',
       productivityMode: 'count_based',
-      tagBindings: {
-        runModeTagId: tags.runModeTagId,
-        speedTagId: tags.speedTagId,
-        productionCounterTagId: tags.counterTagId,
-      },
+      tagBindings: { runModeTagId, productionCounterTagId },
     })
 
     const res = await getInternal(`/work-centers/${workCenter.id}`)
@@ -60,9 +53,29 @@ describe('GET /internal/v1/work-centers/:id (performance getById, production get
       productivityMode: 'count_based',
       status: 'active',
       tagBindings: {
-        runModeTagId: tags.runModeTagId.toHexString(),
-        speedTagId: tags.speedTagId.toHexString(),
-        producedCounterTagId: tags.counterTagId.toHexString(),
+        runModeTagId: runModeTagId.toHexString(),
+        productionCounterTagId: productionCounterTagId.toHexString(),
+      },
+    })
+  })
+
+  it('returns the speed tag performance reads for speed based OEE', async () => {
+    const runModeTagId = new Types.ObjectId()
+    const speedTagId = new Types.ObjectId()
+    const workCenter = await createWorkCenter({
+      type: 'physical',
+      productivityMode: 'speed_based',
+      tagBindings: { runModeTagId, speedTagId },
+    })
+
+    const res = await getInternal(`/work-centers/${workCenter.id}`)
+
+    expect(res.status, JSON.stringify(res.body.error)).toBe(200)
+    expect(res.body.data).toMatchObject({
+      productivityMode: 'speed_based',
+      tagBindings: {
+        runModeTagId: runModeTagId.toHexString(),
+        speedTagId: speedTagId.toHexString(),
       },
     })
   })

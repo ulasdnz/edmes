@@ -35,7 +35,7 @@ const BASE_WC: WorkCenterSnapshot = {
   status: 'active',
   tagBindings: {
     runModeTagId: 'tag-run-id',
-    producedCounterTagId: TAG_COUNTER,
+    productionCounterTagId: TAG_COUNTER,
     speedTagId: TAG_SPEED,
   },
 }

@@ -12,7 +12,7 @@ export interface WorkCenterSnapshot {
   tagBindings?: {
     runModeTagId?: string
     speedTagId?: string
-    producedCounterTagId?: string
+    productionCounterTagId?: string
   }
   metricComposition?: unknown
 }

@@ -267,7 +267,7 @@ export async function calculateOee(input: OeeInput): Promise<OeeOutput> {
       producedSummaryByTagId: {},
       speedSummaryByTagId: {},
       productivityMode: workCenter.productivityMode ?? 'count_based',
-      producedCounterTagId: workCenter.tagBindings?.producedCounterTagId,
+      productionCounterTagId: workCenter.tagBindings?.productionCounterTagId,
       speedTagId: workCenter.tagBindings?.speedTagId,
       actualOutputWindowMode: policy.actualOutputWindowMode,
       productivityAggregationMode: policy.productivityAggregationMode,
@@ -339,7 +339,7 @@ export async function calculateOee(input: OeeInput): Promise<OeeOutput> {
 
   // ── Stage 5: telemetry + known reason ids — all parallel ─────────────────
   const isCountBased = workCenter.productivityMode === 'count_based'
-  const producedCounterTagId = workCenter.tagBindings?.producedCounterTagId
+  const productionCounterTagId = workCenter.tagBindings?.productionCounterTagId
   const speedTagId = workCenter.tagBindings?.speedTagId
 
   // Collect all actual output windows across all JOs (for batch telemetry call)
@@ -363,8 +363,8 @@ export async function calculateOee(input: OeeInput): Promise<OeeOutput> {
   )
 
   const [producedSummaryResult, speedSummaryResult, knownReasonIds] = await Promise.all([
-    isCountBased && producedCounterTagId
-      ? telemetryClient.producedSummary(producedCounterTagId, sortedWindows)
+    isCountBased && productionCounterTagId
+      ? telemetryClient.producedSummary(productionCounterTagId, sortedWindows)
       : Promise.resolve(null),
     !isCountBased && speedTagId
       ? telemetryClient.speedSummary(speedTagId, sortedWindows)
@@ -373,8 +373,8 @@ export async function calculateOee(input: OeeInput): Promise<OeeOutput> {
   ])
 
   const producedSummaryByTagId: Record<string, typeof producedSummaryResult> = {}
-  if (producedSummaryResult && producedCounterTagId) {
-    producedSummaryByTagId[producedCounterTagId] = producedSummaryResult
+  if (producedSummaryResult && productionCounterTagId) {
+    producedSummaryByTagId[productionCounterTagId] = producedSummaryResult
   }
 
   const speedSummaryByTagId: Record<string, NonNullable<typeof speedSummaryResult>> = {}
@@ -391,7 +391,7 @@ export async function calculateOee(input: OeeInput): Promise<OeeOutput> {
     producedSummaryByTagId: producedSummaryByTagId as never,
     speedSummaryByTagId: speedSummaryByTagId as never,
     productivityMode: workCenter.productivityMode ?? 'count_based',
-    producedCounterTagId,
+    productionCounterTagId,
     speedTagId,
     actualOutputWindowMode: policy.actualOutputWindowMode,
     productivityAggregationMode: policy.productivityAggregationMode,
@@ -410,8 +410,8 @@ export async function calculateOee(input: OeeInput): Promise<OeeOutput> {
     const joWindowsForTelemetry = clippedJobWindows.map(jw => ({ from: jw.start, to: jw.end }))
 
     const [joProducedResult, joSpeedResult] = await Promise.all([
-      isCountBased && producedCounterTagId
-        ? telemetryClient.producedSummary(producedCounterTagId, joWindowsForTelemetry)
+      isCountBased && productionCounterTagId
+        ? telemetryClient.producedSummary(productionCounterTagId, joWindowsForTelemetry)
         : Promise.resolve(null),
       !isCountBased && speedTagId
         ? telemetryClient.speedSummary(speedTagId, joWindowsForTelemetry)
