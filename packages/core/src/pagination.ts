@@ -83,10 +83,8 @@ function parseSort(
   defaultSort?: Record<string, 1 | -1>,
   allowedFields?: string[],
 ): Record<string, 1 | -1> {
-  if (!input) return defaultSort ?? { createdAt: -1 }
-
   const result: Record<string, 1 | -1> = {}
-  for (const segment of input.split(',')) {
+  for (const segment of (input ?? '').split(',')) {
     const trimmed = segment.trim()
     if (!trimmed) continue
 
@@ -98,7 +96,12 @@ function parseSort(
     result[field] = descending ? -1 : 1
   }
 
-  return Object.keys(result).length > 0 ? result : (defaultSort ?? { createdAt: -1 })
+  const sort = Object.keys(result).length > 0 ? result : { ...(defaultSort ?? { createdAt: -1 }) }
+  // Documents with equal sort values come back in no fixed order, and that order changes with
+  // skip and limit, so pages would repeat some documents and skip others. _id is unique, so it
+  // makes the order total.
+  if (!('_id' in sort)) sort._id = Object.values(sort).at(-1) ?? -1
+  return sort
 }
 
 function escapeRegex(str: string): string {

@@ -85,6 +85,9 @@ importers:
         specifier: ^13.0.0
         version: 13.0.0
     devDependencies:
+      '@mes/testing':
+        specifier: workspace:*
+        version: link:../testing
       '@types/express':
         specifier: ^5.0.0
         version: 5.0.6
@@ -103,6 +106,9 @@ importers:
       typescript:
         specifier: ^5.5.0
         version: 5.9.3
+      vitest:
+        specifier: ^4.0.18
+        version: 4.0.18(@types/node@20.19.37)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.2)
       winston:
         specifier: ^3.0.0
         version: 3.19.0
