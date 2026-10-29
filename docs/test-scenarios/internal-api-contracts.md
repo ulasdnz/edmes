@@ -11,9 +11,9 @@
 > target: production/src/test/contracts/performance.contract.test.ts
 > consumer: performance/src/lib/internal-api/production.client.ts
 
-### GET /internal/v1/job-orders (findStartedJobOrders, OEE job windows)
-- [CRITICAL] the exact query performance sends (`workCenterId`, `activeFrom`, `activeTo`, `limit=500`, `page=1`) is accepted with 200 and `data` is an array
-- [CRITICAL] returns the started job orders of that work center that overlap the window, running ones included (`endTime: null`), each with `_id`, `workCenterId`, `productId`, `startTime`, `endTime`, `code`; pending, out-of-window and other work centers' job orders are excluded
+### GET /internal/v1/job-order-windows (findStartedJobOrders, OEE job windows)
+- [CRITICAL] returns every started job order of the work center that overlaps `[from, to)`, oldest first, running ones included (`endTime: null`), each with `_id`, `workCenterId`, `productId`, `startTime`, `endTime`; pending, out-of-window and other work centers' job orders are excluded
+- [HIGH] a window whose `to` is not after `from` -> 400
 - [CRITICAL] a call without the internal token is rejected with 401
 
 ### POST /internal/v1/product-standards/timelines:batch (OEE productivity targets)

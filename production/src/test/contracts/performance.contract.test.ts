@@ -41,32 +41,23 @@ const createJobOrder = (doc: Record<string, unknown>) =>
     ...doc,
   })
 
-describe('GET /internal/v1/job-orders (performance findStartedJobOrders)', () => {
+describe('GET /internal/v1/job-order-windows (performance findStartedJobOrders)', () => {
   // Same query string performance builds in findStartedJobOrders.
   const performanceQuery = (wcId: Types.ObjectId) =>
     new URLSearchParams({
       workCenterId: wcId.toHexString(),
-      activeFrom: from.toISOString(),
-      activeTo: to.toISOString(),
-      limit: '500',
-      page: '1',
+      from: from.toISOString(),
+      to: to.toISOString(),
     })
 
   it('rejects a call without the internal token', async () => {
-    const res = await request(app).get(`/internal/v1/job-orders?${performanceQuery(workCenterId)}`)
+    const res = await request(app).get(
+      `/internal/v1/job-order-windows?${performanceQuery(workCenterId)}`,
+    )
     expect(res.status).toBe(401)
   })
 
-  it('accepts the exact query performance sends', async () => {
-    const res = await request(app)
-      .get(`/internal/v1/job-orders?${performanceQuery(workCenterId)}`)
-      .set(internal())
-
-    expect(res.status, JSON.stringify(res.body.error)).toBe(200)
-    expect(Array.isArray(res.body.data)).toBe(true)
-  })
-
-  it('returns the started job orders overlapping the window with the fields performance reads', async () => {
+  it('returns every started job order overlapping the window, oldest first, with the fields performance reads', async () => {
     const finished = await createJobOrder({ startTime: at(5), endTime: at(7) })
     const running = await createJobOrder({ startTime: at(9), endTime: null })
     await createJobOrder({ startTime: null })
@@ -74,20 +65,38 @@ describe('GET /internal/v1/job-orders (performance findStartedJobOrders)', () =>
     await createJobOrder({ workCenterId: new Types.ObjectId(), startTime: at(8) })
 
     const res = await request(app)
-      .get(`/internal/v1/job-orders?${performanceQuery(workCenterId)}`)
+      .get(`/internal/v1/job-order-windows?${performanceQuery(workCenterId)}`)
       .set(internal())
 
     expect(res.status, JSON.stringify(res.body.error)).toBe(200)
-    const byId = new Map(res.body.data.map((jo: { _id: string }) => [jo._id, jo]))
-    expect([...byId.keys()].sort()).toEqual([finished.id, running.id].sort())
-    expect(byId.get(running.id)).toMatchObject({
-      _id: running.id,
+    expect(res.body.data).toEqual([
+      {
+        _id: finished.id,
+        workCenterId: workCenterId.toHexString(),
+        productId: productId.toHexString(),
+        startTime: at(5),
+        endTime: at(7),
+      },
+      {
+        _id: running.id,
+        workCenterId: workCenterId.toHexString(),
+        productId: productId.toHexString(),
+        startTime: at(9),
+        endTime: null,
+      },
+    ])
+  })
+
+  it('rejects a window whose end is not after its start', async () => {
+    const query = new URLSearchParams({
       workCenterId: workCenterId.toHexString(),
-      productId: productId.toHexString(),
-      startTime: at(9),
-      endTime: null,
-      code: running.code,
+      from: to.toISOString(),
+      to: from.toISOString(),
     })
+
+    const res = await request(app).get(`/internal/v1/job-order-windows?${query}`).set(internal())
+
+    expect(res.status).toBe(400)
   })
 })
 

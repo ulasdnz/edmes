@@ -13,11 +13,26 @@ afterEach(() => {
 })
 
 describe('findStartedJobOrders', () => {
-  it('includes finished job orders overlapping the range and ignores pending null-startTime entries', async () => {
-    const from = new Date('2026-01-01T06:00:00Z')
-    const to = new Date('2026-01-01T18:00:00Z')
-    const wcId = 'aaaaaaaaaaaaaaaaaaaaaaaa'
+  const from = new Date('2026-01-01T06:00:00.000Z')
+  const to = new Date('2026-01-01T18:00:00.000Z')
+  const wcId = 'aaaaaaaaaaaaaaaaaaaaaaaa'
 
+  // The production provider contract test replays exactly this request.
+  it('asks production for the job order windows of the work center in [from, to)', async () => {
+    fetchMock.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ data: [] }) })
+
+    await productionClient.findStartedJobOrders({ workCenterId: wcId, from, to })
+
+    const url = new URL(fetchMock.mock.calls.at(-1)?.[0] as string)
+    expect(url.pathname).toBe('/internal/v1/job-order-windows')
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      workCenterId: wcId,
+      from: from.toISOString(),
+      to: to.toISOString(),
+    })
+  })
+
+  it('maps each window and ends a running job order at the end of the range', async () => {
     fetchMock.mockResolvedValueOnce({
       ok: true,
       status: 200,
@@ -29,15 +44,13 @@ describe('findStartedJobOrders', () => {
             productId: 'cccccccccccccccccccccccc',
             startTime: '2026-01-01T06:00:00.000Z',
             endTime: '2026-01-01T14:00:00.000Z',
-            code: 'JO-001',
           },
           {
             _id: 'dddddddddddddddddddddddd',
             workCenterId: wcId,
             productId: 'cccccccccccccccccccccccc',
-            startTime: null,
+            startTime: '2026-01-01T15:00:00.000Z',
             endTime: null,
-            code: 'JO-002',
           },
         ],
       }),
@@ -45,25 +58,22 @@ describe('findStartedJobOrders', () => {
 
     const result = await productionClient.findStartedJobOrders({ workCenterId: wcId, from, to })
 
-    expect(result).toHaveLength(1)
-    expect(result[0].jobOrderId).toBe('bbbbbbbbbbbbbbbbbbbbbbbb')
-    expect(result[0].start).toEqual(new Date('2026-01-01T06:00:00.000Z'))
-    expect(result[0].end).toEqual(new Date('2026-01-01T14:00:00.000Z'))
-  })
-
-  it('does not constrain the request to runtimeState=running so finished overlapping orders are returned', async () => {
-    fetchMock.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ data: [] }) })
-
-    await productionClient.findStartedJobOrders({
-      workCenterId: 'aaaaaaaaaaaaaaaaaaaaaaaa',
-      from: new Date('2026-01-01T06:00:00Z'),
-      to: new Date('2026-01-01T18:00:00Z'),
-    })
-
-    const url = fetchMock.mock.calls.at(-1)?.[0] as string
-    expect(url).not.toMatch(/runtimeState/)
-    expect(url).toContain('activeFrom=')
-    expect(url).toContain('activeTo=')
+    expect(result).toEqual([
+      {
+        jobOrderId: 'bbbbbbbbbbbbbbbbbbbbbbbb',
+        workCenterId: wcId,
+        productId: 'cccccccccccccccccccccccc',
+        start: new Date('2026-01-01T06:00:00.000Z'),
+        end: new Date('2026-01-01T14:00:00.000Z'),
+      },
+      {
+        jobOrderId: 'dddddddddddddddddddddddd',
+        workCenterId: wcId,
+        productId: 'cccccccccccccccccccccccc',
+        start: new Date('2026-01-01T15:00:00.000Z'),
+        end: to,
+      },
+    ])
   })
 
   it('returns empty array when fetch fails', async () => {

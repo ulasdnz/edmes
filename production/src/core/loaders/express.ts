@@ -13,6 +13,7 @@ import { httpLoggerMiddleware, logger, morganMiddleware } from '../../lib/logger
 import { generateOpenApiDocument } from '../../lib/openapi/setup.js'
 import { redisClient } from '../../lib/redis.js'
 import jobOrderRecordsBatchRoutes from '../../modules/internal/job-order-records-batch.routes.js'
+import jobOrderWindowsRoutes from '../../modules/internal/job-order-windows.routes.js'
 import productStandardsBatchRoutes from '../../modules/internal/product-standards-batch.routes.js'
 import shiftReferencesRoutes from '../../modules/internal/shift-references.routes.js'
 import workCenterReferencesRoutes from '../../modules/internal/work-center-references.routes.js'
@@ -114,6 +115,7 @@ export const initExpress = async () => {
   internalRouter.use(shiftReferencesRoutes)
   internalRouter.use(productStandardsBatchRoutes)
   internalRouter.use(jobOrderRecordsBatchRoutes)
+  internalRouter.use(jobOrderWindowsRoutes)
 
   app.use('/internal/v1', internalRouter)
 

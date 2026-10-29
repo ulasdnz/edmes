@@ -79,18 +79,16 @@ async function request<T>(path: string, init?: RequestInit): Promise<T | null> {
   }
 }
 
-interface RawJobOrder {
+interface RawJobOrderWindow {
   _id: string
   workCenterId: string
   productId: string
-  startTime: string | null
+  startTime: string
   endTime: string | null
-  code: string
 }
 
-// Returns started job orders (startTime != null) whose interval overlaps [from, to].
-// Includes finished orders that overlap the range; pending orders (startTime == null) are
-// already excluded server-side by activeFrom/activeTo, and defensively skipped client-side.
+// Returns every started job order whose interval overlaps [from, to), oldest first. A running
+// job order ends at `to`.
 export async function findStartedJobOrders({
   workCenterId,
   from,
@@ -102,26 +100,19 @@ export async function findStartedJobOrders({
 }): Promise<JobWindow[]> {
   const params = new URLSearchParams({
     workCenterId,
-    activeFrom: from.toISOString(),
-    activeTo: to.toISOString(),
-    limit: '500',
-    page: '1',
+    from: from.toISOString(),
+    to: to.toISOString(),
   })
-  const raw = await request<RawJobOrder[]>(`/internal/v1/job-orders?${params}`)
+  const raw = await request<RawJobOrderWindow[]>(`/internal/v1/job-order-windows?${params}`)
   if (!raw) return []
 
-  const results: JobWindow[] = []
-  for (const jo of raw) {
-    if (!jo.startTime) continue
-    results.push({
-      jobOrderId: jo._id,
-      workCenterId: jo.workCenterId,
-      productId: jo.productId,
-      start: new Date(jo.startTime),
-      end: jo.endTime ? new Date(jo.endTime) : to,
-    })
-  }
-  return results
+  return raw.map(jo => ({
+    jobOrderId: jo._id,
+    workCenterId: jo.workCenterId,
+    productId: jo.productId,
+    start: new Date(jo.startTime),
+    end: jo.endTime ? new Date(jo.endTime) : to,
+  }))
 }
 
 interface TimelineResultItem {

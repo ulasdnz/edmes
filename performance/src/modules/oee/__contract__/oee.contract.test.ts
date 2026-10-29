@@ -47,7 +47,7 @@ function makeStubServers() {
 
   const prodApp = express()
   prodApp.use(express.json())
-  prodApp.get('/internal/v1/job-orders', (req, res) => {
+  prodApp.get('/internal/v1/job-order-windows', (req, res) => {
     const fn = handlers.getJobOrders
     const params = new URLSearchParams(req.query as Record<string, string>)
     if (fn) return res.json({ data: fn(params) })
@@ -160,7 +160,7 @@ function loomWc(id = WC_ID) {
 }
 
 function joRecord(id = JO_ID, startTime = FROM.toISOString(), endTime: string | null = null) {
-  return { _id: id, workCenterId: WC_ID, productId: PROD_ID, startTime, endTime, code: 'JO-001' }
+  return { _id: id, workCenterId: WC_ID, productId: PROD_ID, startTime, endTime }
 }
 
 function standardTimeline(
