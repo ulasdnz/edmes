@@ -40,6 +40,15 @@
 
 ---
 
+## Telemetry -> performance
+> target: telemetry/src/test/contracts/performance.contract.test.ts
+> consumer: performance/src/lib/internal-api/telemetry.client.ts
+
+### POST /internal/v1/historian/:tagId/produced-summary (OEE produced counts)
+- [CRITICAL] answers one result per requested window, in request order, with `from`, `to`, `value`, `qualityFlags` and a numeric `total`; `value` is the raw counter delta of the window, which performance converts into product units with the standard's `counterMultiplier`
+
+---
+
 Already covered elsewhere:
 - `GET /internal/v1/work-centers/run-mode-monitors` -> work-center/src/modules/internal/__tests__/run-mode-monitors.test.ts
 - `GET /internal/v1/shifts/:id/references` -> production/src/modules/internal/shift-references.test.ts

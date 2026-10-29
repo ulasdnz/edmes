@@ -11,6 +11,7 @@ export default defineConfig({
       reporter: ['text', 'json', 'html'],
     },
     include: ['src/**/*.{test,spec}.ts'],
+    exclude: ['src/test/contracts/**'],
     env: {
       NODE_ENV: 'test',
       MONGO_URI: 'mongodb://localhost:27017/test',
