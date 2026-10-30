@@ -1,7 +1,7 @@
 import { type ChildProcess, spawn } from 'node:child_process'
-import { createWriteStream, existsSync, mkdirSync } from 'node:fs'
-import { readFile } from 'node:fs/promises'
-import { dirname, resolve } from 'node:path'
+import { createWriteStream, existsSync } from 'node:fs'
+import { mkdir, readdir, readFile, rm } from 'node:fs/promises'
+import { dirname, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { GenericContainer, type StartedTestContainer, Wait } from 'testcontainers'
 import type { TestProject } from 'vitest/node'
@@ -10,7 +10,9 @@ import type { TestProject } from 'vitest/node'
 // processes, the way they run in production. Tests reach the services only over HTTP and MQTT.
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
-const LOG_DIR = resolve(ROOT, 'e2e/logs')
+// Every run logs into a folder of its own, so a failed run's logs survive the runs after it.
+const LOGS_ROOT = resolve(ROOT, 'e2e/logs')
+const KEPT_RUNS = 20
 
 const PORTS = {
   user: 39100,
@@ -35,11 +37,60 @@ declare module 'vitest' {
   }
 }
 
+type Service = {
+  name: ServiceName
+  child: ChildProcess
+  logFile: string
+  // Settles with the exit code or signal once the process is gone and its log file is complete
+  closed: Promise<string>
+}
+
 const serviceUrl = (name: ServiceName) => `http://127.0.0.1:${PORTS[name]}`
 
-async function waitUntilReady(name: ServiceName, child: ChildProcess) {
+const hasExited = (child: ChildProcess) => child.exitCode !== null || child.signalCode !== null
+
+async function lastLines(file: string) {
+  const log = await readFile(file, 'utf8').catch(() => '')
+  return log.trimEnd().split('\n').slice(-30).join('\n')
+}
+
+async function pruneOldRuns() {
+  const runs = (await readdir(LOGS_ROOT, { withFileTypes: true }))
+    .filter(entry => entry.isDirectory())
+    .map(entry => entry.name)
+    .sort()
+  await Promise.all(
+    runs
+      .slice(0, -KEPT_RUNS)
+      .map(run => rm(resolve(LOGS_ROOT, run), { recursive: true, force: true })),
+  )
+}
+
+function startService(name: ServiceName, runDir: string, env: NodeJS.ProcessEnv): Service {
+  const entry = resolve(ROOT, name, 'dist/app.js')
+  if (!existsSync(entry)) throw new Error(`${entry} is missing; run pnpm build first`)
+  const logFile = resolve(runDir, `${name}.log`)
+  const log = createWriteStream(logFile)
+  const child = spawn(process.execPath, [entry], {
+    cwd: resolve(ROOT, name),
+    env,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  // Both streams write to one file, so neither may end it: the stream that ended first would cut
+  // off the other's last lines. The file ends once the process and both streams are closed.
+  child.stdout?.pipe(log, { end: false })
+  child.stderr?.pipe(log, { end: false })
+  const closed = new Promise<string>(settle => {
+    child.once('close', (code, signal) => {
+      log.end(() => settle(signal ? `signal ${signal}` : `code ${code}`))
+    })
+  })
+  return { name, child, logFile, closed }
+}
+
+async function waitUntilReady({ name, child, logFile, closed }: Service) {
   const deadline = Date.now() + 60_000
-  while (Date.now() < deadline && child.exitCode === null) {
+  while (Date.now() < deadline && !hasExited(child)) {
     try {
       const res = await fetch(`${serviceUrl(name)}/health/ready`)
       if (res.ok) return
@@ -48,11 +99,16 @@ async function waitUntilReady(name: ServiceName, child: ChildProcess) {
     }
     await new Promise(r => setTimeout(r, 250))
   }
-  const log = await readFile(resolve(LOG_DIR, `${name}.log`), 'utf8').catch(() => '')
-  throw new Error(`${name} did not become ready:\n${log.split('\n').slice(-30).join('\n')}`)
+  const reason = hasExited(child) ? `exited with ${await closed}` : 'was not ready within 60s'
+  throw new Error(`${name} ${reason}. Last lines of ${logFile}:\n${await lastLines(logFile)}`)
 }
 
 export default async function setup(project: TestProject) {
+  const runDir = resolve(LOGS_ROOT, new Date().toISOString().replace(/[:.]/g, '-'))
+  await mkdir(runDir, { recursive: true })
+  await pruneOldRuns()
+  console.log(`Service logs: ${relative(ROOT, runDir)}`)
+
   const [mongo, redis, broker] = await Promise.all([
     new GenericContainer('mongo:7')
       .withExposedPorts(27017)
@@ -98,35 +154,36 @@ export default async function setup(project: TestProject) {
     SYSTEM_ADMIN_PASSWORD: ADMIN.password,
   }
 
-  mkdirSync(LOG_DIR, { recursive: true })
-  const services = (Object.keys(PORTS) as ServiceName[]).map(name => {
-    const entry = resolve(ROOT, name, 'dist/app.js')
-    if (!existsSync(entry)) throw new Error(`${entry} is missing; run pnpm build first`)
-    const log = createWriteStream(resolve(LOG_DIR, `${name}.log`))
-    const child = spawn(process.execPath, [entry], {
-      cwd: resolve(ROOT, name),
-      env: {
-        ...env,
-        PORT: String(PORTS[name]),
-        MONGO_URI: `mongodb://${mongo.getHost()}:${mongo.getMappedPort(27017)}/e2e-${name}`,
-      },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    })
-    child.stdout?.pipe(log)
-    child.stderr?.pipe(log)
-    return { name, child }
-  })
+  const services = (Object.keys(PORTS) as ServiceName[]).map(name =>
+    startService(name, runDir, {
+      ...env,
+      PORT: String(PORTS[name]),
+      MONGO_URI: `mongodb://${mongo.getHost()}:${mongo.getMappedPort(27017)}/e2e-${name}`,
+    }),
+  )
 
-  const teardown = async () => {
+  let stopping = false
+  const stop = async () => {
+    stopping = true
     for (const { child } of services) child.kill()
+    // The services shut down while MongoDB and Redis are still up, and leave complete logs
+    await Promise.all(services.map(service => service.closed))
     await Promise.all(containers.map(container => container.stop()))
   }
 
   try {
-    await Promise.all(services.map(({ name, child }) => waitUntilReady(name, child)))
+    await Promise.all(services.map(waitUntilReady))
   } catch (err) {
-    await teardown()
+    await stop()
     throw err
+  }
+
+  // From here on a service that exits has crashed: say so at once, and fail the run at teardown.
+  for (const { name, logFile, closed } of services) {
+    void closed.then(exit => {
+      if (stopping) return
+      console.error(`${name} exited with ${exit} while the tests ran, see ${logFile}`)
+    })
   }
 
   const names = Object.keys(PORTS) as ServiceName[]
@@ -137,7 +194,18 @@ export default async function setup(project: TestProject) {
   project.provide('mqtt', { url: mqttUrl, ...MQTT })
   project.provide('internalToken', INTERNAL_TOKEN)
   project.provide('admin', ADMIN)
-  project.provide('logDir', LOG_DIR)
+  project.provide('logDir', runDir)
 
-  return teardown
+  return async () => {
+    const crashed = services.filter(({ child }) => hasExited(child))
+    await stop()
+    if (crashed.length === 0) return
+    const reports = await Promise.all(
+      crashed.map(
+        async ({ name, logFile, closed }) =>
+          `${name} exited with ${await closed} while the tests ran. Last lines of ${logFile}:\n${await lastLines(logFile)}`,
+      ),
+    )
+    throw new Error(reports.join('\n\n'))
+  }
 }

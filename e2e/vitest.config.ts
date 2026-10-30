@@ -6,6 +6,8 @@ export default defineConfig({
     globalSetup: ['src/global-setup.ts'],
     testTimeout: 60_000,
     hookTimeout: 300_000,
+    // Teardown lets the services shut down gracefully (up to 8s each) before the containers stop
+    teardownTimeout: 30_000,
     fileParallelism: false,
   },
 })
