@@ -12,7 +12,11 @@ export const createWorkCenter = async (
   req: Request,
   res: Response<SuccessResponse<IWorkCenter>>,
 ) => {
-  const wc = await workCenterService.createWorkCenter(req.body, req.user!.id)
+  const wc = await workCenterService.createWorkCenter(
+    req.body,
+    req.user!.id,
+    req.user!.workCenterIds,
+  )
 
   res.status(201).json({
     message: req.t('success.create'),
@@ -47,7 +51,12 @@ export const replaceWorkCenter = async (
   res: Response<SuccessResponse<IWorkCenter>>,
 ) => {
   await assertVisible(req)
-  const wc = await workCenterService.replaceWorkCenter(req.params.id, req.body, req.user!.id)
+  const wc = await workCenterService.replaceWorkCenter(
+    req.params.id,
+    req.body,
+    req.user!.id,
+    req.user!.workCenterIds,
+  )
 
   res.json({
     message: req.t('success.replace'),
@@ -60,7 +69,12 @@ export const updateWorkCenter = async (
   res: Response<SuccessResponse<IWorkCenter>>,
 ) => {
   await assertVisible(req)
-  const wc = await workCenterService.updateWorkCenter(req.params.id, req.body, req.user!.id)
+  const wc = await workCenterService.updateWorkCenter(
+    req.params.id,
+    req.body,
+    req.user!.id,
+    req.user!.workCenterIds,
+  )
 
   res.json({
     message: req.t('success.update'),

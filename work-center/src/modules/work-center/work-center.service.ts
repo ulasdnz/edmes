@@ -92,16 +92,25 @@ async function validateShiftIdsAssignment(ids: string[]): Promise<void> {
 type MetricCompositionInput = z.infer<typeof metricCompositionSchema>
 const COMPOSITION_FAMILIES = ['availability', 'productivity', 'quality'] as const
 
+function contributorIdsOf(composition: MetricCompositionInput | null | undefined): Set<string> {
+  const ids = new Set<string>()
+  if (!composition) return ids
+  for (const family of COMPOSITION_FAMILIES) {
+    for (const c of composition[family].contributors) {
+      ids.add(String(c.workCenterId))
+    }
+  }
+  return ids
+}
+
+// visibleIds limits the contributors to the caller's work centers; contributors already in the
+// composition (kept) may stay, so a caller can edit a composition someone else built.
 export async function validateMetricComposition(
   workCenterId: string | null,
   composition: MetricCompositionInput,
+  { visibleIds, kept = new Set() }: { visibleIds?: string[] | null; kept?: Set<string> } = {},
 ): Promise<void> {
-  const allContributorIds = new Set<string>()
-  for (const family of COMPOSITION_FAMILIES) {
-    for (const c of composition[family].contributors) {
-      allContributorIds.add(c.workCenterId)
-    }
-  }
+  const allContributorIds = contributorIdsOf(composition)
 
   if (workCenterId && allContributorIds.has(workCenterId)) {
     throw new CustomError(400, 'work_center.contributor_cannot_be_self')
@@ -115,7 +124,9 @@ export async function validateMetricComposition(
 
   for (const cId of allContributorIds) {
     const contributor = foundMap.get(cId)
-    if (!contributor) {
+    // A contributor the caller cannot see counts as missing, so its existence does not leak either
+    const hidden = visibleIds && !visibleIds.includes(cId) && !kept.has(cId)
+    if (!contributor || hidden) {
       throw new CustomError(404, 'work_center.contributor_not_found', { workCenterId: cId })
     }
     if (contributor.status !== 'active') {
@@ -193,16 +204,17 @@ async function assertNotReferencedAsContributor(workCenterId: string): Promise<v
 export async function createWorkCenter(
   data: CreateWorkCenterInput,
   userId: string,
+  visibleIds?: string[] | null,
 ): Promise<IWorkCenter> {
   await assertUniqueCode(data.code)
   await assertUniqueName(data.name)
 
   if (data.parentWorkCenterId) {
-    await validateParent(null, data.parentWorkCenterId)
+    await validateParent(null, data.parentWorkCenterId, visibleIds)
   }
 
   if (data.type === 'virtual' && data.metricComposition) {
-    await validateMetricComposition(null, data.metricComposition)
+    await validateMetricComposition(null, data.metricComposition, { visibleIds })
   }
 
   if (data.shiftIds && data.shiftIds.length > 0) {
@@ -273,6 +285,7 @@ export async function replaceWorkCenter(
   id: string,
   data: Record<string, unknown>,
   userId: string,
+  visibleIds?: string[] | null,
 ): Promise<IWorkCenter> {
   const existing = await WorkCenter.findById(id)
   if (!existing) throw new CustomError(404, 'work_center.not_found')
@@ -296,7 +309,7 @@ export async function replaceWorkCenter(
   const newParentId = parsed.parentWorkCenterId ?? null
 
   if (newParentId && newParentId !== oldParentId) {
-    await validateParent(id, newParentId)
+    await validateParent(id, newParentId, visibleIds)
   }
 
   // Validate metric composition for virtual WCs
@@ -306,7 +319,10 @@ export async function replaceWorkCenter(
         await assertNotReferencedAsContributor(id)
       }
     } else if (parsed.metricComposition) {
-      await validateMetricComposition(id, parsed.metricComposition)
+      await validateMetricComposition(id, parsed.metricComposition, {
+        visibleIds,
+        kept: contributorIdsOf(existing.metricComposition as unknown as MetricCompositionInput),
+      })
     }
   }
 
@@ -330,6 +346,7 @@ export async function updateWorkCenter(
   id: string,
   data: PatchWorkCenterInput,
   userId: string,
+  visibleIds?: string[] | null,
 ): Promise<IWorkCenter> {
   const existing = await WorkCenter.findById(id)
   if (!existing) throw new CustomError(404, 'work_center.not_found')
@@ -390,6 +407,10 @@ export async function updateWorkCenter(
 
   // Validate metric composition for virtual WCs
   let compositionChanged = false
+  const compositionAccess = {
+    visibleIds,
+    kept: contributorIdsOf(existing.metricComposition as unknown as MetricCompositionInput),
+  }
 
   if (existing.type === 'virtual') {
     if ('metricComposition' in updateFields && partialMetricComposition) {
@@ -403,7 +424,7 @@ export async function updateWorkCenter(
           await assertNotReferencedAsContributor(id)
         }
       } else {
-        await validateMetricComposition(id, updateFields.metricComposition)
+        await validateMetricComposition(id, updateFields.metricComposition, compositionAccess)
       }
       compositionChanged = true
     }
@@ -418,7 +439,7 @@ export async function updateWorkCenter(
         ...existingComp,
         ...partialMetricComposition,
       })
-      await validateMetricComposition(id, merged)
+      await validateMetricComposition(id, merged, compositionAccess)
       existing.set('metricComposition', merged)
       compositionChanged = true
     }
@@ -435,7 +456,7 @@ export async function updateWorkCenter(
   if ('parentWorkCenterId' in updateFields) {
     const newParentId = updateFields.parentWorkCenterId ?? null
     if (newParentId && newParentId !== oldParentId) {
-      await validateParent(id, newParentId)
+      await validateParent(id, newParentId, visibleIds)
     }
   }
 
@@ -465,9 +486,16 @@ export async function updateWorkCenter(
 
 // ── Hierarchy validation ─────────────────────────────────────────────────────
 
-export async function validateParent(workCenterId: string | null, parentId: string): Promise<void> {
+export async function validateParent(
+  workCenterId: string | null,
+  parentId: string,
+  visibleIds?: string[] | null,
+): Promise<void> {
   const parent = await WorkCenter.findById(parentId).select('type status _id').lean()
-  if (!parent) throw new CustomError(404, 'work_center.parent_not_found')
+  // A parent the caller cannot see counts as missing
+  if (!parent || (visibleIds && !visibleIds.includes(parentId))) {
+    throw new CustomError(404, 'work_center.parent_not_found')
+  }
   if (parent.type !== 'virtual') {
     throw new CustomError(400, 'work_center.parent_must_be_virtual')
   }

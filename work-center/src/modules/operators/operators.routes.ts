@@ -1,6 +1,7 @@
 import { requirePermission } from '@mes/auth'
 import { Router } from 'express'
 import { validateBody, validateParams } from '../../core/middleware/validate.js'
+import { requireVisibleWorkCenter } from '../../core/middleware/work-center-visibility.js'
 import * as controller from './operators.controller.js'
 import {
   checkInIdParamSchema,
@@ -9,6 +10,7 @@ import {
 } from './operators.validators.js'
 
 const router = Router()
+router.param('workCenterId', requireVisibleWorkCenter)
 
 // POST /work-centers/:workCenterId/operators — check in
 router.post(

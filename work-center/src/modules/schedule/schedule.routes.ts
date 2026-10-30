@@ -1,6 +1,7 @@
 import { requirePermission } from '@mes/auth'
 import { Router } from 'express'
 import { validateBody, validateParams, validateQuery } from '../../core/middleware/validate.js'
+import { requireVisibleWorkCenter } from '../../core/middleware/work-center-visibility.js'
 import * as controller from './schedule.controller.js'
 import {
   calendarIdParamSchema,
@@ -14,6 +15,7 @@ import {
 } from './schedule.validators.js'
 
 const router = Router()
+router.param('workCenterId', requireVisibleWorkCenter)
 
 // ── Calendar CRUD ───────────────────────────────────────────────────────────
 

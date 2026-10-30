@@ -143,6 +143,19 @@ const buildPhysicalWorkCenter = (
   }
 }
 
+const buildVirtualWorkCenter = (
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> => {
+  const suffix = nextSuffix()
+
+  return { code: `BLOCK-${suffix}`, name: `Block ${suffix}`, type: 'virtual', ...overrides }
+}
+
+const primaryComposition = (workCenterId: string) => {
+  const rule = { rule: 'primary_work_center', contributors: [{ workCenterId }] }
+  return { availability: rule, productivity: rule, quality: rule }
+}
+
 async function createInternalWorkCenter(payload: Record<string, unknown>): Promise<string> {
   const res = await request(app)
     .post('/internal/v1/work-centers')
@@ -317,6 +330,101 @@ describe('Work Center Spec Compliance Review', () => {
     expect(updated.status).toBe(404)
     expect(deleted.status).toBe(404)
     expect(await WorkCenter.findById(workCenterId).lean()).toMatchObject({ name: payload.name })
+  })
+
+  it('applies the work center visibility to its operators and calendars', async () => {
+    const workCenterId = await createInternalWorkCenter(buildPhysicalWorkCenter())
+    const calendar = {
+      validFrom: '2026-03-01T00:00:00.000Z',
+      validTo: '2026-03-31T00:00:00.000Z',
+      weeklyPattern: baseWeek(),
+    }
+    const someId = '507f1f77bcf86cd799439016'
+    const routes = [
+      ['post', 'operators', { operatorId: '507f1f77bcf86cd799439015' }],
+      ['get', 'operators'],
+      ['patch', `operators/${someId}`, {}],
+      ['post', 'calendars', calendar],
+      ['get', 'calendars'],
+      ['get', `calendars/${someId}`],
+      ['put', `calendars/${someId}`, calendar],
+      ['patch', `calendars/${someId}`, {}],
+      ['delete', `calendars/${someId}`],
+      ['put', 'exceptions/2026-03-23', { shiftIds: [] }],
+      ['delete', 'exceptions/2026-03-23'],
+      ['get', 'schedule?date=2026-03-23'],
+    ] as const
+
+    for (const [method, path, body] of routes) {
+      const res = await request(app)
+        [method](`/api/v1/work-centers/${workCenterId}/${path}`)
+        .set('x-user-id', '507f1f77bcf86cd799439017')
+        .set('x-permissions', 'readOperators,writeOperators,readSchedules,writeSchedules')
+        .set('x-work-center-ids', '')
+        .send(body)
+
+      expect(res.status, `${method.toUpperCase()} ${path}`).toBe(404)
+    }
+    expect(await OperatorCheckIn.countDocuments({ workCenterId })).toBe(0)
+    expect(await Calendar.countDocuments({ workCenterId })).toBe(0)
+  })
+
+  // Otherwise a virtual work center with a hidden machine as its primary contributor would show
+  // that machine's OEE to anyone who can create work centers.
+  it('lets a caller reference only work centers they can see', async () => {
+    const hiddenMachine = await createInternalWorkCenter(buildPhysicalWorkCenter())
+    const hiddenBlock = await createInternalWorkCenter(buildVirtualWorkCenter())
+    const ownBlock = await createInternalWorkCenter(buildVirtualWorkCenter())
+    const asUser = (test: request.Test) =>
+      test
+        .set('x-user-id', '507f1f77bcf86cd799439017')
+        .set('x-permissions', 'writeWorkCenters')
+        .set('x-work-center-ids', ownBlock)
+
+    const peek = await asUser(request(app).post('/api/v1/work-centers')).send(
+      buildVirtualWorkCenter({ metricComposition: primaryComposition(hiddenMachine) }),
+    )
+    const recomposed = await asUser(request(app).patch(`/api/v1/work-centers/${ownBlock}`)).send({
+      metricComposition: primaryComposition(hiddenMachine),
+    })
+    const adopted = await asUser(request(app).patch(`/api/v1/work-centers/${ownBlock}`)).send({
+      parentWorkCenterId: hiddenBlock,
+    })
+
+    expect([peek.status, peek.body.error?.code]).toEqual([404, 'work_center.contributor_not_found'])
+    expect([recomposed.status, recomposed.body.error?.code]).toEqual([
+      404,
+      'work_center.contributor_not_found',
+    ])
+    expect([adopted.status, adopted.body.error?.code]).toEqual([
+      404,
+      'work_center.parent_not_found',
+    ])
+  })
+
+  it('lets a caller keep contributors they cannot see in a composition they edit', async () => {
+    const hiddenMachine = await createInternalWorkCenter(buildPhysicalWorkCenter())
+    const ownMachine = await createInternalWorkCenter(buildPhysicalWorkCenter())
+    const block = await createInternalWorkCenter(
+      buildVirtualWorkCenter({ metricComposition: primaryComposition(hiddenMachine) }),
+    )
+
+    const res = await request(app)
+      .patch(`/api/v1/work-centers/${block}`)
+      .set('x-user-id', '507f1f77bcf86cd799439017')
+      .set('x-permissions', 'writeWorkCenters')
+      .set('x-work-center-ids', `${block},${ownMachine}`)
+      .send({
+        metricComposition: {
+          ...primaryComposition(hiddenMachine),
+          productivity: {
+            rule: 'primary_work_center',
+            contributors: [{ workCenterId: ownMachine }],
+          },
+        },
+      })
+
+    expect(res.status).toBe(200)
   })
 
   it('proves physical create silently strips virtual-only fields instead of rejecting them', async () => {

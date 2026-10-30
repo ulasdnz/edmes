@@ -365,7 +365,7 @@ describe('OEE across telemetry, work-center, production and performance', () => 
     )
   })
 
-  it('answers 404 to reading or changing a work center the user can no longer see', async () => {
+  it('answers 404 to reading, changing or referencing a work center the user can no longer see', async () => {
     const { api, userId } = await loginAsAdmin()
     const cell = await api.post<Created>('work-center', '/api/v1/work-centers', {
       code: 'CELL-LOCKED',
@@ -384,6 +384,17 @@ describe('OEE across telemetry, work-center, production and performance', () => 
     await expect(api.request('work-center', 'DELETE', path)).rejects.toThrow('answered 404')
     await expect(
       api.get('performance', `/api/v1/performance-policies/work-centers/${cell._id}`),
+    ).rejects.toThrow('answered 404')
+    await expect(api.get('work-center', `${path}/operators`)).rejects.toThrow('answered 404')
+    await expect(api.get('work-center', `${path}/calendars`)).rejects.toThrow('answered 404')
+    const primary = { rule: 'primary_work_center', contributors: [{ workCenterId: cell._id }] }
+    await expect(
+      api.post('work-center', '/api/v1/work-centers', {
+        code: 'BLOCK-PEEK',
+        name: 'Peek block',
+        type: 'virtual',
+        metricComposition: { availability: primary, productivity: primary, quality: primary },
+      }),
     ).rejects.toThrow('answered 404')
     const kept = await Api.internal().get<{ name: string }>(
       'work-center',
