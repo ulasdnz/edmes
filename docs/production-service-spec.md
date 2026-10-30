@@ -290,6 +290,7 @@ Tüm collection `GET` endpoint'leri `work-center-service` ile aynı pagination s
 - response: `data`, `pagination { page, limit, total, totalPages }`
 - default sort: `-createdAt`
 - `sort` semantiği work-center ile aynıdır; desteklenmeyen alanlar yok sayılır
+- büyüyen koleksiyonlarda (plan, iş emri, miktar ayarı, hurda) sıralama yalnız bir indeksin karşıladığı alanlarla sınırlıdır; başka bir alan tüm geçmişi bellekte sıralatır
 
 ### Master Data
 
@@ -333,8 +334,8 @@ Tüm collection `GET` endpoint'leri `work-center-service` ile aynı pagination s
 
 - `GET /production-plans`
   - filters: `_id`, `code`, `productId`, `createdBy`, `dueAtFrom`, `dueAtTo`, `createdAtFrom`, `createdAtTo`
-  - search fields: `code`, `description`
-  - allowed sort: `code`, `targetQuantity`, `dueAt`, `createdAt`, `updatedAt`
+  - search: `code` öneki; büyük harfe çevrilip kod indeksinden eşleşir, sonuçlar kod sırasıyla döner
+  - allowed sort: `createdAt`, `code`
 - `GET /production-plans/{id}`
 - `POST /production-plans`
 - `PATCH /production-plans/{id}`
@@ -352,8 +353,8 @@ Tüm collection `GET` endpoint'leri `work-center-service` ile aynı pagination s
     `endTimeFrom`, `endTimeTo`
     `dueAtFrom`, `dueAtTo`
     `activeFrom`, `activeTo`
-  - search fields: `code`, `description`
-  - allowed sort: `code`, `targetQuantity`, `plannedStartAt`, `startTime`, `endTime`, `dueAt`, `createdAt`, `updatedAt`
+  - search: `code` öneki; büyük harfe çevrilip kod indeksinden eşleşir, sonuçlar kod sırasıyla döner
+  - allowed sort: `createdAt`, `code`
 - `GET /job-orders/{id}`
 - `POST /job-orders`
 - `PATCH /job-orders/{id}`
@@ -382,8 +383,8 @@ Tüm collection `GET` endpoint'leri `work-center-service` ile aynı pagination s
 
 - `GET /quantity-adjustments`
   - filters: `_id`, `jobOrderId`, `workCenterId`, `productId`, `shiftId`, `createdBy`, `timeFrom`, `timeTo`, `createdAtFrom`, `createdAtTo`
-  - search fields: `reason`, `description`
-  - allowed sort: `time`, `amount`, `createdAt`, `updatedAt`
+  - search yok
+  - allowed sort: `createdAt`
 - `GET /quantity-adjustments/{id}`
 - `POST /quantity-adjustments`
 - `PATCH /quantity-adjustments/{id}`
@@ -391,8 +392,8 @@ Tüm collection `GET` endpoint'leri `work-center-service` ile aynı pagination s
 
 - `GET /scrap-entries`
   - filters: `_id`, `jobOrderId`, `workCenterId`, `productId`, `shiftId`, `reasonId`, `createdBy`, `startTimeFrom`, `startTimeTo`, `endTimeFrom`, `endTimeTo`, `createdAtFrom`, `createdAtTo`
-  - search fields: `description`
-  - allowed sort: `startTime`, `endTime`, `amount`, `createdAt`, `updatedAt`
+  - search yok
+  - allowed sort: `createdAt`
 - `GET /scrap-entries/{id}`
 - `POST /scrap-entries`
 - `PATCH /scrap-entries/{id}`
