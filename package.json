@@ -21,7 +21,8 @@
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
     "test": "turbo test",
-    "test:contract": "turbo run test:contract"
+    "test:contract": "turbo run test:contract",
+    "test:e2e": "turbo run build && pnpm --filter e2e-tests test:e2e"
   },
   "lint-staged": {
     "*.{ts,mts,js,mjs,json,css,md}": [

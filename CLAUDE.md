@@ -31,6 +31,7 @@ pnpm format                        # format only
 pnpm test                          # all tests via turbo
 pnpm --filter user-service test    # user service unit tests
 pnpm test:contract                 # contract tests (user, work-center, production, performance, telemetry)
+pnpm test:e2e                      # builds, then runs the services against real MongoDB, Redis and MQTT
 cd user && pnpm test:watch         # watch mode
 docker compose up -d --build       # full stack
 docker compose up -d --build user  # rebuild user service only
