@@ -1,5 +1,6 @@
 import { Types } from 'mongoose'
 import { describe, expect, it, vi } from 'vitest'
+import { emitJobOrderUpdated } from '../../jobs/events.js'
 import { Product } from '../product/product.model.js'
 import { ProductStandard } from '../product-standard/product-standard.model.js'
 import { ProductionPlan } from '../production-plan/production-plan.model.js'
@@ -8,7 +9,6 @@ import { ScrapEntry } from '../scrap-entry/scrap-entry.model.js'
 import { Uom } from '../uom/uom.model.js'
 import { JobOrder } from './job-order.model.js'
 import * as service from './job-order.service.js'
-import { emitJobOrderUpdated } from '../../jobs/events.js'
 
 vi.mock('../../jobs/events.js', () => ({
   emitJobOrderCreated: vi.fn(),
@@ -731,11 +731,17 @@ describe('JobOrderService', () => {
         counterMultiplier: 2,
         createdBy: userId,
       })
-      mockGetWorkCenterInfo.mockResolvedValueOnce({ type: 'physical', productivityMode: 'count_based' })
+      mockGetWorkCenterInfo.mockResolvedValueOnce({
+        type: 'physical',
+        productivityMode: 'count_based',
+      })
       const jo = await service.create(buildInput(), userId)
       vi.mocked(emitJobOrderUpdated).mockClear()
 
-      mockGetWorkCenterInfo.mockResolvedValueOnce({ type: 'physical', productivityMode: 'count_based' })
+      mockGetWorkCenterInfo.mockResolvedValueOnce({
+        type: 'physical',
+        productivityMode: 'count_based',
+      })
       await service.update(jo._id.toString(), { workCenterId: newWcId.toString() }, userId)
 
       expect(emitJobOrderUpdated).toHaveBeenCalledWith(
@@ -768,11 +774,17 @@ describe('JobOrderService', () => {
         counterMultiplier: 2,
         createdBy: userId,
       })
-      mockGetWorkCenterInfo.mockResolvedValueOnce({ type: 'physical', productivityMode: 'count_based' })
+      mockGetWorkCenterInfo.mockResolvedValueOnce({
+        type: 'physical',
+        productivityMode: 'count_based',
+      })
       const jo = await service.create(buildInput(), userId)
       vi.mocked(emitJobOrderUpdated).mockClear()
 
-      mockGetWorkCenterInfo.mockResolvedValueOnce({ type: 'physical', productivityMode: 'count_based' })
+      mockGetWorkCenterInfo.mockResolvedValueOnce({
+        type: 'physical',
+        productivityMode: 'count_based',
+      })
       await service.update(jo._id.toString(), { workCenterId: newWcId.toString() }, userId)
 
       const args = vi.mocked(emitJobOrderUpdated).mock.calls[0]
@@ -804,11 +816,7 @@ describe('JobOrderService', () => {
       const jo = await service.create(buildInput(), userId)
       vi.mocked(emitJobOrderUpdated).mockClear()
 
-      await service.update(
-        jo._id.toString(),
-        { workCenterId: workCenterId.toString() },
-        userId,
-      )
+      await service.update(jo._id.toString(), { workCenterId: workCenterId.toString() }, userId)
 
       expect(emitJobOrderUpdated).toHaveBeenCalledWith(
         jo._id.toString(),
@@ -837,11 +845,17 @@ describe('JobOrderService', () => {
         counterMultiplier: 2,
         createdBy: userId,
       })
-      mockGetWorkCenterInfo.mockResolvedValueOnce({ type: 'physical', productivityMode: 'count_based' })
+      mockGetWorkCenterInfo.mockResolvedValueOnce({
+        type: 'physical',
+        productivityMode: 'count_based',
+      })
       const jo = await service.create(buildInput(), userId)
       vi.mocked(emitJobOrderUpdated).mockClear()
 
-      mockGetWorkCenterInfo.mockResolvedValueOnce({ type: 'physical', productivityMode: 'count_based' })
+      mockGetWorkCenterInfo.mockResolvedValueOnce({
+        type: 'physical',
+        productivityMode: 'count_based',
+      })
       await service.update(jo._id.toString(), { workCenterId: newWcId.toString() }, userId)
 
       const args = vi.mocked(emitJobOrderUpdated).mock.calls[0]
