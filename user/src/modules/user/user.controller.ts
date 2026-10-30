@@ -174,6 +174,14 @@ export async function getUserWorkCenterIds(
   res.json({ data })
 }
 
+export async function addUserWorkCenter(
+  req: Request<{ id: string }>,
+  res: Response<SuccessResponse<string[]>>,
+) {
+  const data = await userService.addUserWorkCenter(req.params.id, req.body.workCenterId)
+  res.json({ data, message: req.t('success.update') })
+}
+
 export async function getUsersLanguages(req: Request, res: Response<SuccessResponse<string[]>>) {
   const languages = userService.getLanguages()
   res.json({

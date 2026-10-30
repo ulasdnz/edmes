@@ -19,6 +19,7 @@ import roleRoutes from '../../modules/role/role.routes.js'
 import { specialityPaths } from '../../modules/speciality/speciality.openapi.js'
 import specialityRoutes from '../../modules/speciality/speciality.routes.js'
 import authRoutes from '../../modules/user/auth.routes.js'
+import userInternalRoutes from '../../modules/user/user.internal.routes.js'
 import { userPaths } from '../../modules/user/user.openapi.js'
 import userRoutes from '../../modules/user/user.routes.js'
 import { errorHandler } from '../middleware/error-handler.js'
@@ -117,6 +118,7 @@ export const initExpress = async () => {
     next()
   })
   mountSharedRoutes(internalRouter)
+  internalRouter.use(userInternalRoutes)
 
   app.use('/internal/v1', internalRouter)
 

@@ -16,42 +16,22 @@ async function fetchInternal(path: string, options?: RequestInit): Promise<Respo
 }
 
 /**
- * Best-effort: add work center to creator's workCenterIds via user-service.
- * Fire-and-forget — never throws.
+ * Best-effort: add work center to creator's workCenterIds via user-service. Never throws.
  *
- * Uses GET /users/:id → PATCH /users/:id (merge into existing array).
+ * user-service adds it atomically, so work centers created at the same time all reach the list.
  */
 export async function addWorkCenterToUser(userId: string, workCenterId: string): Promise<void> {
   try {
-    // 1. Fetch current user to get existing workCenterIds
-    const getRes = await fetchInternal(`/users/${userId}`)
-    if (!getRes.ok) {
-      logger.warn('User-service visibility: user fetch failed', {
-        event: 'internal_api.user.visibility_fetch_failed',
-        userId,
-        workCenterId,
-        status: getRes.status,
-      })
-      return
-    }
-    const getBody = (await getRes.json()) as { data?: { workCenterIds?: string[] } }
-    const existing = getBody.data?.workCenterIds?.map(String) ?? []
-
-    // Already has this WC — skip
-    if (existing.includes(workCenterId)) return
-
-    // 2. PATCH with merged array
-    const merged = [...existing, workCenterId]
-    const patchRes = await fetchInternal(`/users/${userId}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ workCenterIds: merged }),
+    const res = await fetchInternal(`/users/${userId}/work-center-ids`, {
+      method: 'POST',
+      body: JSON.stringify({ workCenterId }),
     })
-    if (!patchRes.ok) {
+    if (!res.ok) {
       logger.warn('User-service rejected visibility update', {
         event: 'internal_api.user.visibility_rejected',
         userId,
         workCenterId,
-        status: patchRes.status,
+        status: res.status,
       })
     }
   } catch (err) {

@@ -222,8 +222,8 @@ export async function createWorkCenter(
     await emitMetricCompositionChanged(String(saved._id))
   }
 
-  // Best-effort: add WC to creator's workCenterIds via user-service internal API
-  addToCreatorVisibility(userId, String(saved._id))
+  // Best-effort, but awaited: the creator can use the work center once this request returns
+  await addWorkCenterToUser(userId, String(saved._id))
 
   return saved
 }
@@ -615,18 +615,4 @@ export async function hardDeleteWorkCenter(id: string): Promise<void> {
 
   await WorkCenter.deleteOne({ _id: id })
   await emitWorkCenterDeleted(id)
-}
-
-// ── Visibility (best-effort) ─────────────────────────────────────────────────
-
-function addToCreatorVisibility(userId: string, workCenterId: string): void {
-  // Best-effort, fire-and-forget — don't await
-  addWorkCenterToUser(userId, workCenterId).catch(err => {
-    logger.warn('Failed to add work center to creator visibility', {
-      event: 'work_center.visibility.sync_failed',
-      userId,
-      workCenterId,
-      error: err instanceof Error ? err.message : err,
-    })
-  })
 }

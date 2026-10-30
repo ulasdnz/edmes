@@ -406,6 +406,27 @@ export const getUserWorkCenterIds = async (userId: string): Promise<string[]> =>
   return (user.workCenterIds ?? []).map(String)
 }
 
+// Atomic, so concurrent grants for the same user (e.g. work centers created at the same time)
+// cannot overwrite each other the way a read-modify-write of the whole array does.
+export const addUserWorkCenter = async (
+  userId: string,
+  workCenterId: string,
+): Promise<string[]> => {
+  const user = await User.findOneAndUpdate(
+    { _id: userId },
+    { $addToSet: { workCenterIds: workCenterId } },
+    { returnDocument: 'after' },
+  )
+  if (!user) {
+    throw new CustomError(404, 'user.not_found')
+  }
+
+  await invalidateAuthCache(userId)
+  await emitUserUpdated(userId)
+
+  return (user.workCenterIds ?? []).map(String)
+}
+
 export const getLanguages = (): string[] => {
   return ['tr', 'en']
 }

@@ -122,6 +122,8 @@ export const userIdParamSchema = z.object({
   id: objectIdSchema,
 })
 
+export const addUserWorkCenterSchema = z.object({ workCenterId: objectIdSchema }).strict()
+
 export type RegisterInput = z.infer<typeof registerSchema>
 export type LoginInput = z.infer<typeof loginSchema>
 export type UpdateMeInput = z.infer<typeof updateMeSchema>

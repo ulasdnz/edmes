@@ -55,12 +55,8 @@ describe('internal-api user-service contract review', () => {
     )
   })
 
-  it('fetches the user first and then patches /internal/v1/users/:id with a merged workCenterIds array', async () => {
-    fetchMock.mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      json: async () => ({ data: { workCenterIds: ['507f1f77bcf86cd799439025'] } }),
-    })
+  // One atomic request: a fetch-merge-patch of the whole array loses concurrent additions
+  it('posts the work center to /internal/v1/users/:id/work-center-ids in a single request', async () => {
     fetchMock.mockResolvedValueOnce({
       ok: true,
       status: 200,
@@ -69,17 +65,13 @@ describe('internal-api user-service contract review', () => {
 
     await addWorkCenterToUser('507f1f77bcf86cd799439023', '507f1f77bcf86cd799439024')
 
+    expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(fetchMock.mock.calls[0]?.[0]).toBe(
-      'http://localhost:3000/internal/v1/users/507f1f77bcf86cd799439023',
+      'http://localhost:3000/internal/v1/users/507f1f77bcf86cd799439023/work-center-ids',
     )
-    expect(fetchMock.mock.calls[1]?.[0]).toBe(
-      'http://localhost:3000/internal/v1/users/507f1f77bcf86cd799439023',
-    )
-    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
-      method: 'PATCH',
-      body: JSON.stringify({
-        workCenterIds: ['507f1f77bcf86cd799439025', '507f1f77bcf86cd799439024'],
-      }),
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
+      method: 'POST',
+      body: JSON.stringify({ workCenterId: '507f1f77bcf86cd799439024' }),
     })
   })
 })
