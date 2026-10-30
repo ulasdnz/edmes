@@ -102,13 +102,15 @@ describe('ProductionPlanService', () => {
       expect(result.pagination.total).toBe(2)
     })
 
-    it('supports search across code and description', async () => {
+    it('searches by code, not by description', async () => {
       await service.create(buildInput({ code: 'SEARCH-1', description: 'Alpha batch' }), userId)
       await service.create(buildInput({ code: 'SEARCH-2', description: 'Beta batch' }), userId)
 
-      const result = await service.list({ page: 1, limit: 10, search: 'Alpha' })
+      const byCode = await service.list({ page: 1, limit: 10, search: 'SEARCH-1' })
+      const byDescription = await service.list({ page: 1, limit: 10, search: 'Alpha' })
 
-      expect(result.data.length).toBe(1)
+      expect(byCode.data.map(plan => plan.code)).toEqual(['SEARCH-1'])
+      expect(byDescription.data).toEqual([])
     })
   })
 

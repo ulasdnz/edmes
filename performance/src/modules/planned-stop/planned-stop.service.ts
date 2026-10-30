@@ -53,7 +53,6 @@ export interface PlannedStopListInput {
   page?: number
   limit?: number
   sort?: string
-  search?: string
   workCenterId?: string
   accessibleWorkCenterIds?: string[]
   status?: 'planned' | 'active' | 'closed' | 'cancelled'
@@ -153,7 +152,7 @@ export async function getById(id: string): Promise<IPlannedStop> {
 }
 
 export async function list(input: PlannedStopListInput): Promise<PaginatedResult<IPlannedStop>> {
-  const { page = 1, limit = 20, sort, search, from, to, ...filters } = input
+  const { page = 1, limit = 20, sort, from, to, ...filters } = input
 
   const query: Record<string, unknown> = {}
   if (filters.workCenterId) {
@@ -174,7 +173,7 @@ export async function list(input: PlannedStopListInput): Promise<PaginatedResult
   return paginate(
     PlannedStop,
     query,
-    { page, limit, sort, search },
+    { page, limit, sort },
     {
       allowedSortFields: [
         'plannedStartAt',
@@ -184,7 +183,6 @@ export async function list(input: PlannedStopListInput): Promise<PaginatedResult
         'createdAt',
         'updatedAt',
       ],
-      searchFields: ['description'],
     },
   )
 }

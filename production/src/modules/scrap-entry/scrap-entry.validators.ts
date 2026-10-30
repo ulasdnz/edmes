@@ -31,7 +31,7 @@ export const patchScrapEntrySchema = z
 
 export const scrapEntryIdParamSchema = z.object({ id: objectIdSchema })
 
-export const scrapEntryListSchema = paginationSchema.extend({
+export const scrapEntryListSchema = paginationSchema.omit({ search: true }).extend({
   _id: objectIdSchema.optional(),
   jobOrderId: objectIdSchema.optional(),
   workCenterId: objectIdSchema.optional(),

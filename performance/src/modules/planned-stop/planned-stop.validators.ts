@@ -51,7 +51,7 @@ export const startPlannedStopSchema = z
 
 export const plannedStopIdParamSchema = z.object({ id: objectIdSchema })
 
-export const plannedStopListSchema = paginationSchema.extend({
+export const plannedStopListSchema = paginationSchema.omit({ search: true }).extend({
   workCenterId: objectIdSchema.optional(),
   reasonId: objectIdSchema.optional(),
   status: z.enum(PLANNED_STOP_STATUSES).optional(),

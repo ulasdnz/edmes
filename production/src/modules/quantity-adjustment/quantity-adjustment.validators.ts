@@ -27,7 +27,7 @@ export const patchQuantityAdjustmentSchema = z
 
 export const quantityAdjustmentIdParamSchema = z.object({ id: objectIdSchema })
 
-export const quantityAdjustmentListSchema = paginationSchema.extend({
+export const quantityAdjustmentListSchema = paginationSchema.omit({ search: true }).extend({
   _id: objectIdSchema.optional(),
   jobOrderId: objectIdSchema.optional(),
   workCenterId: objectIdSchema.optional(),

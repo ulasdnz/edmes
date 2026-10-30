@@ -96,7 +96,7 @@ export async function list(
     { page, limit, sort, search },
     {
       allowedSortFields: ['code', 'targetQuantity', 'dueAt', 'createdAt', 'updatedAt'],
-      searchFields: ['code', 'description'],
+      searchFields: ['code'],
     },
   )
 }

@@ -63,8 +63,7 @@ export async function list(
   input: QuantityAdjustmentListInput,
   visibleIds?: string[],
 ): Promise<PaginatedResult<IQuantityAdjustment>> {
-  const { page, limit, sort, search, timeFrom, timeTo, createdAtFrom, createdAtTo, ...filters } =
-    input
+  const { page, limit, sort, timeFrom, timeTo, createdAtFrom, createdAtTo, ...filters } = input
   const query: Record<string, unknown> = {}
 
   for (const [key, value] of Object.entries(filters)) {
@@ -89,11 +88,8 @@ export async function list(
   return paginate(
     QuantityAdjustment,
     query,
-    { page, limit, sort, search },
-    {
-      allowedSortFields: ['time', 'amount', 'createdAt', 'updatedAt'],
-      searchFields: ['reason', 'description'],
-    },
+    { page, limit, sort },
+    { allowedSortFields: ['time', 'amount', 'createdAt', 'updatedAt'] },
   )
 }
 

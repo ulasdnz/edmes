@@ -46,7 +46,7 @@ export const convertToPlannedSchema = z
 
 export const unplannedStopIdParamSchema = z.object({ id: objectIdSchema })
 
-export const unplannedStopListSchema = paginationSchema.extend({
+export const unplannedStopListSchema = paginationSchema.omit({ search: true }).extend({
   workCenterId: objectIdSchema.optional(),
   reasonId: objectIdSchema.optional(),
   state: z.enum(['open', 'closed', 'converted']).optional(),

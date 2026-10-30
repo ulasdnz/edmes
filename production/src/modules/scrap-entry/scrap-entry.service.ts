@@ -67,7 +67,6 @@ export async function list(
     page,
     limit,
     sort,
-    search,
     startTimeFrom,
     startTimeTo,
     endTimeFrom,
@@ -106,11 +105,8 @@ export async function list(
   return paginate(
     ScrapEntry,
     query,
-    { page, limit, sort, search },
-    {
-      allowedSortFields: ['startTime', 'endTime', 'amount', 'createdAt', 'updatedAt'],
-      searchFields: ['description'],
-    },
+    { page, limit, sort },
+    { allowedSortFields: ['startTime', 'endTime', 'amount', 'createdAt', 'updatedAt'] },
   )
 }
 

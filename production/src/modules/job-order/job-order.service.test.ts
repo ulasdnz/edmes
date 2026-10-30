@@ -561,12 +561,15 @@ describe('JobOrderService', () => {
       expect(byIds.data).toEqual([])
     })
 
-    it('supports search across code and description', async () => {
+    it('searches by code, not by description', async () => {
       await service.create(buildInput({ code: 'JO-SRCH-1', description: 'Alpha batch' }), userId)
       await service.create(buildInput({ code: 'JO-SRCH-2', description: 'Beta batch' }), userId)
 
-      const result = await service.list({ page: 1, limit: 10, search: 'Alpha' })
-      expect(result.data.length).toBe(1)
+      const byCode = await service.list({ page: 1, limit: 10, search: 'SRCH-1' })
+      const byDescription = await service.list({ page: 1, limit: 10, search: 'Alpha' })
+
+      expect(byCode.data.map(jo => jo.code)).toEqual(['JO-SRCH-1'])
+      expect(byDescription.data).toEqual([])
     })
 
     it('filters by workCenterIds (comma-separated multi-value)', async () => {

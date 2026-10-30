@@ -117,7 +117,7 @@ export async function list(
         'createdAt',
         'updatedAt',
       ],
-      searchFields: ['code', 'description'],
+      searchFields: ['code'],
     },
   )
 }

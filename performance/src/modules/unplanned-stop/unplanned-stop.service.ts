@@ -46,7 +46,6 @@ export interface UnplannedStopListInput {
   page?: number
   limit?: number
   sort?: string
-  search?: string
   workCenterId?: string
   accessibleWorkCenterIds?: string[]
   state?: 'open' | 'closed' | 'converted'
@@ -164,7 +163,7 @@ export async function getById(id: string): Promise<IUnplannedStop> {
 export async function list(
   input: UnplannedStopListInput,
 ): Promise<PaginatedResult<IUnplannedStop>> {
-  const { page = 1, limit = 20, sort, search, state, from, to, ...filters } = input
+  const { page = 1, limit = 20, sort, state, from, to, ...filters } = input
 
   const query: Record<string, unknown> = {}
   if (filters.workCenterId) {
@@ -192,11 +191,8 @@ export async function list(
   return paginate(
     UnplannedStop,
     query,
-    { page, limit, sort, search },
-    {
-      allowedSortFields: ['startAt', 'endAt', 'createdAt', 'updatedAt'],
-      searchFields: ['description'],
-    },
+    { page, limit, sort },
+    { allowedSortFields: ['startAt', 'endAt', 'createdAt', 'updatedAt'] },
   )
 }
 
