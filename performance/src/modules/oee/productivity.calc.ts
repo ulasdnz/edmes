@@ -97,8 +97,8 @@ function actualOutputWindowsForJo(
   return result
 }
 
-// Telemetry windows for a count based work center: the output windows split at standard
-// boundaries, so every produced count falls under a single counterMultiplier.
+// Telemetry windows: the output windows split at standard boundaries, so every measurement
+// falls under a single standard even when the standard changes in the middle of a job order.
 export function splitAtStandards(
   windows: Array<{ from: Date; to: Date }>,
   standards: ProductStandardTimeline[],
@@ -108,28 +108,67 @@ export function splitAtStandards(
   )
 }
 
-// Output of the given windows in product units. Telemetry counts raw counter steps (strokes,
-// cycles, pulses) over the windows built by splitAtStandards, and each standard's
-// counterMultiplier turns its counts into product units. Returns null when a standard has no
-// usable counterMultiplier.
+type Measurement = { from: string; to: string; amount: number }
+
+// Output of the given windows in product units. Telemetry measured the windows built by
+// splitAtStandards, so each measurement lies inside one standard's interval and that standard's
+// rate converts it. Returns null when a standard has no usable rate.
+function convertedOutput(
+  windows: Array<{ from: Date; to: Date }>,
+  standards: ProductStandardTimeline[],
+  measurements: Measurement[],
+  unitsPerAmount: (standard: ProductStandardTimeline) => number | null,
+): number | null {
+  let total = 0
+  for (const w of windows) {
+    for (const sw of splitAtBoundaries(w.from, w.to, standards)) {
+      const rate = unitsPerAmount(sw.standard)
+      if (rate === null) return null
+      for (const m of measurements) {
+        const from = new Date(m.from).getTime()
+        const to = new Date(m.to).getTime()
+        if (from >= sw.start.getTime() && to <= sw.end.getTime()) total += m.amount * rate
+      }
+    }
+  }
+  return Number.isFinite(total) ? total : null
+}
+
+const positive = (value: number | null) =>
+  value != null && Number.isFinite(value) && value > 0 ? value : null
+
+// Count based: telemetry counts raw counter steps (strokes, cycles, pulses) and counterMultiplier
+// is the number of products per step.
 export function countedOutput(
   windows: Array<{ from: Date; to: Date }>,
   standards: ProductStandardTimeline[],
   summary: ProducedSummary,
 ): number | null {
-  let total = 0
-  for (const w of windows) {
-    for (const sw of splitAtBoundaries(w.from, w.to, standards)) {
-      const multiplier = sw.standard.counterMultiplier
-      if (multiplier == null || !Number.isFinite(multiplier) || multiplier <= 0) return null
-      for (const s of summary.windows) {
-        const from = new Date(s.from).getTime()
-        const to = new Date(s.to).getTime()
-        if (from >= sw.start.getTime() && to <= sw.end.getTime()) total += s.value * multiplier
-      }
-    }
-  }
-  return total
+  return convertedOutput(
+    windows,
+    standards,
+    summary.windows.map(w => ({ from: w.from, to: w.to, amount: w.value })),
+    standard => positive(standard.counterMultiplier),
+  )
+}
+
+// Speed based: telemetry integrates speed over time (speed × ms). At idealSpeed the machine makes
+// idealOutputPerMinute, so a speed-minute is worth idealOutputPerMinute / idealSpeed products.
+// counterMultiplier does not apply: cycle, stroke and pulse signals are modelled as count based.
+export function speedOutput(
+  windows: Array<{ from: Date; to: Date }>,
+  standards: ProductStandardTimeline[],
+  summary: SpeedSummary,
+): number | null {
+  return convertedOutput(
+    windows,
+    standards,
+    summary.windows.map(w => ({ from: w.from, to: w.to, amount: w.valueArea })),
+    standard => {
+      const idealSpeed = positive(standard.idealSpeed)
+      return idealSpeed === null ? null : standard.idealOutputPerMinute / idealSpeed / 60_000
+    },
+  )
 }
 
 function notCalculableBreakdown(
@@ -224,55 +263,18 @@ export function calculateProductivity(input: ProductivityInput): ProductivityRes
     }
 
     // Compute actual output
-    let grossProduced = 0
-    let invalidSpeedStandard = false
+    let measured: number | null = 0
     if (isCountBased && producedSummary) {
-      const counted = countedOutput(joWindows, standards, producedSummary)
-      if (counted === null) {
-        anyNotCalculable = true
-        breakdowns.push(notCalculableBreakdown(jo, productionRunMs))
-        continue
-      }
-      grossProduced = counted
+      measured = countedOutput(joWindows, standards, producedSummary)
     } else if (!isCountBased && speedSummary) {
-      // speed_based ratio model: actualOutput = targetOutput × (avgSpeed / idealSpeed),
-      // simplified per sub-window to:
-      //   subActualOutput = (idealOutputPerMinute / idealSpeed) × (actualSpeedArea / 60000)
-      // counterMultiplier is a count_based concept (raw cycle/pulse → unit conversion)
-      // and is intentionally NOT applied here. Cycle/stroke/pulse signals must be
-      // modelled as count_based with productionCounterTagId + counterMultiplier.
-      let speedTotal = 0
-      for (const jw of joWindows) {
-        if (invalidSpeedStandard) break
-        const subWindows = splitAtBoundaries(jw.from, jw.to, standards)
-        for (const sw of subWindows) {
-          const idealSpeed = sw.standard.idealSpeed
-          if (idealSpeed == null || !Number.isFinite(idealSpeed) || idealSpeed <= 0) {
-            invalidSpeedStandard = true
-            break
-          }
-          for (const ssw of speedSummary.windows) {
-            const sswFrom = new Date(ssw.from).getTime()
-            const sswTo = new Date(ssw.to).getTime()
-            const overlapStart = Math.max(sswFrom, sw.start.getTime())
-            const overlapEnd = Math.min(sswTo, sw.end.getTime())
-            if (overlapEnd <= overlapStart) continue
-            const sswDurationMs = sswTo - sswFrom
-            if (sswDurationMs <= 0) continue
-            const fraction = (overlapEnd - overlapStart) / sswDurationMs
-            const subActualSpeedArea = ssw.valueArea * fraction
-            speedTotal +=
-              (sw.standard.idealOutputPerMinute / idealSpeed) * (subActualSpeedArea / 60000)
-          }
-        }
-      }
-      if (invalidSpeedStandard || !Number.isFinite(speedTotal)) {
-        anyNotCalculable = true
-        breakdowns.push(notCalculableBreakdown(jo, productionRunMs))
-        continue
-      }
-      grossProduced = speedTotal
+      measured = speedOutput(joWindows, standards, speedSummary)
     }
+    if (measured === null) {
+      anyNotCalculable = true
+      breakdowns.push(notCalculableBreakdown(jo, productionRunMs))
+      continue
+    }
+    const grossProduced = measured
 
     const adjustments = (quantityAdjustmentsByJobOrderId[jo.jobOrderId] ?? []).filter(a => {
       const t = new Date(a.time).getTime()

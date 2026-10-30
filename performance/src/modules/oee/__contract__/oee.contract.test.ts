@@ -201,15 +201,22 @@ function strokeCounter(strokesPerMinute: number, stopped: Stop[] = []) {
 }
 
 // Answers speed-summary the way real telemetry does (see the telemetry provider contract test):
-// the speed area (speed × milliseconds) of each requested window, in request order. The speed
-// is constant while running and zero while the machine is stopped.
-function steadySpeed(speed: number, stopped: Stop[] = []) {
+// the speed area (speed × milliseconds) of each requested window, in request order. Each profile
+// entry sets the speed from its time on; the speed is zero while the machine is stopped.
+function speedProfile(profile: Array<{ from: Date; speed: number }>, stopped: Stop[] = []) {
   return (_tagId: string, body: { windows: Array<{ from: string; to: string }> }) => {
     const windows = body.windows.map(w => {
       const from = new Date(w.from).getTime()
       const to = new Date(w.to).getTime()
+      let valueArea = 0
+      profile.forEach((segment, i) => {
+        const start = Math.max(from, segment.from.getTime())
+        const end = Math.min(to, profile[i + 1]?.from.getTime() ?? to)
+        if (end > start) {
+          valueArea += segment.speed * (end - start - stoppedMsWithin(start, end, stopped))
+        }
+      })
       const durationMs = to - from
-      const valueArea = speed * (durationMs - stoppedMsWithin(from, to, stopped))
       const timeWeightedAverage = valueArea / durationMs
       return { from: w.from, to: w.to, durationMs, timeWeightedAverage, valueArea, sampleCount: 1 }
     })
@@ -220,6 +227,10 @@ function steadySpeed(speed: number, stopped: Stop[] = []) {
       total: { durationMs, timeWeightedAverage: valueArea / durationMs, valueArea },
     }
   }
+}
+
+function steadySpeed(speed: number, stopped: Stop[] = []) {
+  return speedProfile([{ from: new Date(0), speed }], stopped)
 }
 
 function scrapRecord(amount: number, startTime: Date, endTime: Date) {
@@ -923,6 +934,67 @@ describe('Speed based OEE converts the speed area into product units with idealS
       productivity: { percentage: 75, status: 'ok' },
       quality: { percentage: 80, status: 'ok' },
       oee: { percentage: 60, status: 'ok' },
+    })
+  })
+
+  it('converts each part of a job order with the standard valid at that time', async () => {
+    // From 06:30 the loom weaves a wider carpet: still 2 m² a minute, but at 200 picks a minute, so
+    // a pick is worth twice as much. Stopped 06:00-06:10, it runs at 400 picks until 06:30 and at
+    // 100 after: 40 m² + 30 m² against a 100 m² target over the run time; 14 m² are scrapped.
+    const wideFrom = new Date('2026-01-01T06:30:00.000Z')
+    const stopEnd = new Date('2026-01-01T06:10:00.000Z')
+    await policyService.upsertForWorkCenter(
+      WC_ID,
+      { actualOutputWindowMode: 'net_run_segments' },
+      SYSTEM_IDENTITY,
+    )
+    await insertOeeAffectingReason()
+    await UnplannedStop.create({
+      workCenterId: new Types.ObjectId(WC_ID),
+      reasonId: new Types.ObjectId(REASON_OEE_ID),
+      source: 'manual',
+      startAt: FROM,
+      endAt: stopEnd,
+      createdBy: null,
+    })
+    resetHandlers({
+      getWorkCenter: () => loomWc(),
+      getJobOrders: () => [joRecord()],
+      getProductStandardsBatch: () => ({
+        items: [
+          {
+            jobOrderId: JO_ID,
+            standards: [
+              loomStandard(),
+              { ...standardTimeline(2, null, wideFrom.toISOString()), idealSpeed: 200 },
+            ],
+            qualityFlags: [],
+          },
+        ],
+      }),
+      getJobOrderRecordsBatch: () => ({
+        quantityAdjustmentsByJobOrderId: {},
+        scrapEntriesByJobOrderId: { [JO_ID]: [scrapRecord(14, FROM, TO)] },
+      }),
+      getSpeedSummary: speedProfile(
+        [
+          { from: FROM, speed: 400 },
+          { from: wideFrom, speed: 100 },
+        ],
+        [{ from: FROM, to: stopEnd }],
+      ),
+    })
+
+    const result = await calculate({
+      workCenterId: WC_ID,
+      from: FROM,
+      to: TO,
+      userId: SYSTEM_IDENTITY,
+    })
+
+    expect(result).toMatchObject({
+      productivity: { percentage: 70, status: 'ok' },
+      quality: { percentage: 80, status: 'ok' },
     })
   })
 

@@ -135,6 +135,33 @@ describe('calculateProductivity — count_based', () => {
     expect(result.ratio).toBeCloseTo(1.0, 5)
   })
 
+  it('a missing counterMultiplier makes the job order not calculable instead of counting 0', () => {
+    const input = makeInput({
+      productStandardsByJobOrderId: {
+        [JO_ID]: [
+          {
+            _id: 'std1',
+            validFrom: new Date('2026-01-01T00:00:00.000Z').toISOString(),
+            idealOutputPerMinute: 1000 / 60,
+            counterMultiplier: null,
+            idealSpeed: null,
+          },
+        ],
+      },
+      producedSummaryByTagId: {
+        'tag-counter': {
+          windows: [{ from: T0.toISOString(), to: T1.toISOString(), value: 250, qualityFlags: [] }],
+          total: 250,
+        },
+      },
+    })
+
+    const result = calculateProductivity(input)
+
+    expect(result.status).toBe('not_calculable')
+    expect(result.jobOrders[0].notCalculable).toBe(true)
+  })
+
   it('quantity adjustments outside JO window are excluded from sum', () => {
     // JO window is [T0, T1]. One adjustment inside, two outside.
     const insideTime = new Date(T0.getTime() + 10 * 60 * 1000)
@@ -786,14 +813,13 @@ describe('calculateProductivity — speed_based', () => {
     //   std1 [T0..T1): idealOutputPerMinute=100, idealSpeed=100  → target1 = 6000
     //   std2 [T1..T2): idealOutputPerMinute=200, idealSpeed=50   → target2 = 12000
     //   total target = 18000
-    // Speed window covers full JO at constant actualSpeed=50:
-    //   valueArea_total = 50 × 7,200,000 = 360,000,000
-    //   sub1 fraction 0.5 → subActualSpeedArea1 = 180,000,000
-    //   sub2 fraction 0.5 → subActualSpeedArea2 = 180,000,000
+    // The service asks telemetry for the JO split at the standard boundary (T1). Constant
+    // actualSpeed=50 gives each half a valueArea of 50 × 3,600,000 = 180,000,000:
     //   subActualOutput1 = (100/100) × 180,000,000/60000 = 3000
     //   subActualOutput2 = (200/50)  × 180,000,000/60000 = 4 × 3000 = 12000
     //   actualOutput = 15000 → ratio = 15000/18000 ≈ 0.8333
-    const valueArea = 50 * 2 * 60 * 60 * 1000
+    const valueArea = 50 * 60 * 60 * 1000
+    const hour = 60 * 60 * 1000
 
     const input = makeInput({
       productivityMode: 'speed_based',
@@ -829,14 +855,22 @@ describe('calculateProductivity — speed_based', () => {
           windows: [
             {
               from: T0.toISOString(),
-              to: T2.toISOString(),
-              durationMs: 2 * 60 * 60 * 1000,
+              to: T1.toISOString(),
+              durationMs: hour,
               timeWeightedAverage: 50,
               valueArea,
-              sampleCount: 120,
+              sampleCount: 60,
+            },
+            {
+              from: T1.toISOString(),
+              to: T2.toISOString(),
+              durationMs: hour,
+              timeWeightedAverage: 50,
+              valueArea,
+              sampleCount: 60,
             },
           ],
-          total: { durationMs: 2 * 60 * 60 * 1000, timeWeightedAverage: 50, valueArea },
+          total: { durationMs: 2 * hour, timeWeightedAverage: 50, valueArea: 2 * valueArea },
         },
       },
     })

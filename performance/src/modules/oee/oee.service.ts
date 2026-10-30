@@ -16,7 +16,7 @@ import type { ProductivityResult, ProductivityStatus } from './productivity.calc
 import {
   calculateProductivity,
   countedOutput,
-  splitAtBoundaries,
+  speedOutput,
   splitAtStandards,
 } from './productivity.calc.js'
 import type { QualityResult, QualityStatus } from './quality.calc.js'
@@ -345,13 +345,12 @@ export async function calculateOee(input: OeeInput): Promise<OeeOutput> {
   const productionCounterTagId = workCenter.tagBindings?.productionCounterTagId
   const speedTagId = workCenter.tagBindings?.speedTagId
 
-  // Collect all actual output windows across all JOs (for batch telemetry call). Count based
-  // windows are split at standard boundaries so each count converts with one counterMultiplier.
+  // Collect all actual output windows across all JOs (for batch telemetry call), split at
+  // standard boundaries so each measurement converts with the standard valid at that time.
   const allActualWindows: Array<{ from: Date; to: Date }> = []
   for (const jw of clippedJobWindows) {
-    const wins = actualOutputWindowsForJo(jw)
     const standards = productStandardsByJobOrderId[jw.jobOrderId] ?? []
-    allActualWindows.push(...(isCountBased ? splitAtStandards(wins, standards) : wins))
+    allActualWindows.push(...splitAtStandards(actualOutputWindowsForJo(jw), standards))
   }
 
   const sortedWindows = [...allActualWindows].sort((a, b) => a.from.getTime() - b.from.getTime())
@@ -371,7 +370,7 @@ export async function calculateOee(input: OeeInput): Promise<OeeOutput> {
     isCountBased && productionCounterTagId && sortedWindows.length > 0
       ? telemetryClient.producedSummary(productionCounterTagId, sortedWindows)
       : Promise.resolve(null),
-    !isCountBased && speedTagId
+    !isCountBased && speedTagId && sortedWindows.length > 0
       ? telemetryClient.speedSummary(speedTagId, sortedWindows)
       : Promise.resolve(null),
     reasonService.findExistingIds(allScrapReasonIds),
@@ -412,8 +411,7 @@ export async function calculateOee(input: OeeInput): Promise<OeeOutput> {
   const grossProducedPerJo: Record<string, number> = {}
 
   if (policy.actualOutputWindowMode === 'net_run_segments') {
-    const joWindowsForTelemetry = clippedJobWindows.map(jw => ({ from: jw.start, to: jw.end }))
-    const joCounterWindows = clippedJobWindows.flatMap(jw =>
+    const joWindows = clippedJobWindows.flatMap(jw =>
       splitAtStandards(
         [{ from: jw.start, to: jw.end }],
         productStandardsByJobOrderId[jw.jobOrderId] ?? [],
@@ -421,59 +419,23 @@ export async function calculateOee(input: OeeInput): Promise<OeeOutput> {
     )
 
     const [joProducedResult, joSpeedResult] = await Promise.all([
-      isCountBased && productionCounterTagId && joCounterWindows.length > 0
-        ? telemetryClient.producedSummary(productionCounterTagId, joCounterWindows)
+      isCountBased && productionCounterTagId && joWindows.length > 0
+        ? telemetryClient.producedSummary(productionCounterTagId, joWindows)
         : Promise.resolve(null),
-      !isCountBased && speedTagId
-        ? telemetryClient.speedSummary(speedTagId, joWindowsForTelemetry)
+      !isCountBased && speedTagId && joWindows.length > 0
+        ? telemetryClient.speedSummary(speedTagId, joWindows)
         : Promise.resolve(null),
     ])
 
-    for (let i = 0; i < clippedJobWindows.length; i++) {
-      const jw = clippedJobWindows[i]
-      if (joProducedResult) {
-        // A JO whose standard lacks counterMultiplier is already not calculable in productivity,
-        // and quality skips it (filtered by !jo.notCalculable), so its 0 is never summed.
-        const standards = productStandardsByJobOrderId[jw.jobOrderId] ?? []
-        grossProducedPerJo[jw.jobOrderId] =
-          countedOutput([{ from: jw.start, to: jw.end }], standards, joProducedResult) ?? 0
-      } else if (joSpeedResult) {
-        const standards = productStandardsByJobOrderId[jw.jobOrderId] ?? []
-        const ssw = joSpeedResult.windows[i]
-        if (ssw) {
-          // Same speed_based ratio model used by productivity.calc.ts —
-          // counterMultiplier is NOT applied. If any sub-window has invalid
-          // idealSpeed, productivity has already marked the JO not_calculable
-          // and quality won't sum this gross (filtered by !jo.notCalculable).
-          let speedTotal = 0
-          let invalid = false
-          const subWindows = splitAtBoundaries(jw.start, jw.end, standards)
-          for (const sub of subWindows) {
-            const idealSpeed = sub.standard.idealSpeed
-            if (idealSpeed == null || !Number.isFinite(idealSpeed) || idealSpeed <= 0) {
-              invalid = true
-              break
-            }
-            const sswFrom = new Date(ssw.from).getTime()
-            const sswTo = new Date(ssw.to).getTime()
-            const overlapStart = Math.max(sswFrom, sub.start.getTime())
-            const overlapEnd = Math.min(sswTo, sub.end.getTime())
-            if (overlapEnd <= overlapStart) continue
-            const sswDurationMs = sswTo - sswFrom
-            if (sswDurationMs <= 0) continue
-            const fraction = (overlapEnd - overlapStart) / sswDurationMs
-            const subActualSpeedArea = ssw.valueArea * fraction
-            speedTotal +=
-              (sub.standard.idealOutputPerMinute / idealSpeed) * (subActualSpeedArea / 60000)
-          }
-          grossProducedPerJo[jw.jobOrderId] =
-            invalid || !Number.isFinite(speedTotal) ? 0 : speedTotal
-        } else {
-          grossProducedPerJo[jw.jobOrderId] = 0
-        }
-      } else {
-        grossProducedPerJo[jw.jobOrderId] = 0
-      }
+    // A JO whose standard cannot convert its measurements is already not calculable in
+    // productivity, and quality skips it (filtered by !jo.notCalculable), so its 0 is never summed.
+    for (const jw of clippedJobWindows) {
+      const fullWindow = [{ from: jw.start, to: jw.end }]
+      const standards = productStandardsByJobOrderId[jw.jobOrderId] ?? []
+      let gross: number | null = 0
+      if (joProducedResult) gross = countedOutput(fullWindow, standards, joProducedResult)
+      else if (joSpeedResult) gross = speedOutput(fullWindow, standards, joSpeedResult)
+      grossProducedPerJo[jw.jobOrderId] = gross ?? 0
     }
   } else {
     for (const jo of productivity.jobOrders) {
