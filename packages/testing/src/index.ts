@@ -1,4 +1,5 @@
 export { createAuthMocks, type MockUser } from './auth.js'
 export { setupMongoTestContainer } from './mongo.js'
+export { profileOperations } from './profile.js'
 export { createRedisMock, type RedisMock } from './redis.js'
 export { createTestAgent, type TestAgent } from './request.js'

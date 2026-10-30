@@ -174,16 +174,8 @@ export async function list(input: PlannedStopListInput): Promise<PaginatedResult
     PlannedStop,
     query,
     { page, limit, sort },
-    {
-      allowedSortFields: [
-        'plannedStartAt',
-        'plannedEndAt',
-        'actualStartAt',
-        'actualEndAt',
-        'createdAt',
-        'updatedAt',
-      ],
-    },
+    // Only an order an index serves; any other sorts the whole history in memory
+    { allowedSortFields: ['createdAt'] },
   )
 }
 

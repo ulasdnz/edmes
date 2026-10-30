@@ -1,3 +1,4 @@
+import { profileOperations } from '@mes/testing'
 import { Types } from 'mongoose'
 import { describe, expect, it, vi } from 'vitest'
 import { emitJobOrderUpdated } from '../../jobs/events.js'
@@ -895,5 +896,76 @@ describe('JobOrderService', () => {
       const args = vi.mocked(emitJobOrderUpdated).mock.calls[0]
       expect(args[2]).toBe(workCenterId.toString())
     })
+  })
+})
+
+// Lists page newest first. At scale only an index in that order keeps a page cheap: it reads about
+// as many keys as the page holds and sorts nothing in memory, however long the history.
+describe('JobOrderService list indexes', () => {
+  // 12 work centers with 100 job orders each, oldest first; the oldest `running` of each work
+  // center are still running, the rest have ended
+  async function seedHistory(running = 0) {
+    await JobOrder.createIndexes()
+    const workCenters = Array.from({ length: 12 }, () => new Types.ObjectId())
+    await JobOrder.collection.insertMany(
+      workCenters.flatMap((workCenterId, w) =>
+        Array.from({ length: 100 }, (_, i) => ({
+          code: `JO-${w}-${String(i).padStart(3, '0')}`,
+          productId: new Types.ObjectId(),
+          workCenterId,
+          targetQuantity: 10,
+          startTime: new Date('2026-01-01T06:00:00Z'),
+          endTime: i < running ? null : new Date('2026-01-01T14:00:00Z'),
+          createdBy: new Types.ObjectId(),
+          createdAt: new Date(Date.UTC(2026, 0, 1, 0, w * 100 + i)),
+        })),
+      ),
+    )
+    return workCenters
+  }
+
+  it("pages the job orders of the caller's work centers from an index, newest first", async () => {
+    const workCenters = await seedHistory()
+    const visible = workCenters.slice(0, 3).map(String)
+
+    const { result, operations } = await profileOperations(JobOrder.collection.collectionName, () =>
+      service.list({ page: 1, limit: 20 }, visible),
+    )
+
+    expect(result.data[0].code).toBe('JO-2-099')
+    const find = operations.find(op => op.op === 'query')
+    expect(find?.planSummary).toContain('IXSCAN { workCenterId: 1, createdAt: -1, _id: -1 }')
+    expect(find?.hasSortStage).toBeFalsy()
+    expect(find?.keysExamined).toBeLessThanOrEqual(3 * 21)
+  })
+
+  // Running job orders are a handful among years of ended ones
+  it('pages running job orders from an index of the open ones', async () => {
+    const workCenters = await seedHistory(3)
+    const visible = workCenters.slice(0, 3).map(String)
+
+    const { result, operations } = await profileOperations(JobOrder.collection.collectionName, () =>
+      service.list({ page: 1, limit: 20, runtimeState: 'running' }, visible),
+    )
+
+    expect(result.data).toHaveLength(9)
+    const find = operations.find(op => op.op === 'query')
+    expect(find?.hasSortStage).toBeFalsy()
+    expect(find?.keysExamined).toBeLessThanOrEqual(3 * 4)
+  })
+
+  it('pages every job order from the creation index and counts them without reading them', async () => {
+    await seedHistory()
+
+    const { result, operations } = await profileOperations(JobOrder.collection.collectionName, () =>
+      service.list({ page: 1, limit: 20 }),
+    )
+
+    expect(result.pagination.total).toBe(1200)
+    const find = operations.find(op => op.op === 'query')
+    expect(find?.planSummary).toBe('IXSCAN { createdAt: -1, _id: -1 }')
+    expect(find?.keysExamined).toBeLessThanOrEqual(21)
+    // countDocuments counts with an aggregation that reads every matching document
+    expect(operations.some(op => op.command?.aggregate)).toBe(false)
   })
 })

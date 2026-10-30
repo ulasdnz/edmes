@@ -17,6 +17,9 @@ const productionPlanSchema = new Schema(
   { timestamps: true, strict: true },
 )
 
+// Lists page newest first
+productionPlanSchema.index({ createdAt: -1, _id: -1 })
+
 productionPlanSchema.set('toObject', {
   transform: (_doc: unknown, ret: Record<string, unknown>) => {
     delete ret.__v

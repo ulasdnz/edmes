@@ -6,8 +6,8 @@ const { Schema, model } = mongoose
 const jobOrderSchema = new Schema(
   {
     code: { type: String, required: true, unique: true, trim: true },
-    productId: { type: Schema.Types.ObjectId, ref: 'Product', required: true, index: true },
-    workCenterId: { type: Schema.Types.ObjectId, required: true, index: true },
+    productId: { type: Schema.Types.ObjectId, ref: 'Product', required: true },
+    workCenterId: { type: Schema.Types.ObjectId, required: true },
     productionPlanId: {
       type: Schema.Types.ObjectId,
       ref: 'ProductionPlan',
@@ -31,6 +31,14 @@ const jobOrderSchema = new Schema(
 
 jobOrderSchema.index({ workCenterId: 1, startTime: 1, endTime: 1 })
 jobOrderSchema.index({ productId: 1, workCenterId: 1 })
+// Lists page newest first, within the caller's work centers or across all of them
+jobOrderSchema.index({ workCenterId: 1, createdAt: -1, _id: -1 })
+jobOrderSchema.index({ createdAt: -1, _id: -1 })
+// Running job orders are a handful among years of ended ones
+jobOrderSchema.index(
+  { workCenterId: 1, createdAt: -1, _id: -1 },
+  { name: 'workCenterId_1_createdAt_-1__id_-1_open', partialFilterExpression: { endTime: null } },
+)
 
 jobOrderSchema.set('toObject', {
   transform: (_doc: unknown, ret: Record<string, unknown>) => {

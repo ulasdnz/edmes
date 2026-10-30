@@ -78,7 +78,11 @@ export async function paginate<T>(
 
   const [data, total] = await Promise.all([
     dataQuery.exec() as Promise<T[]>,
-    model.countDocuments(query as QueryFilter<T>).exec(),
+    // Counting matches reads every one of them; without a filter the collection's metadata
+    // already holds the count
+    Object.keys(query).length === 0
+      ? model.estimatedDocumentCount().exec()
+      : model.countDocuments(query as QueryFilter<T>).exec(),
   ])
 
   return {

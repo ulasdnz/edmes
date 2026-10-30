@@ -95,7 +95,8 @@ export async function list(
     query,
     { page, limit, sort, search },
     {
-      allowedSortFields: ['code', 'targetQuantity', 'dueAt', 'createdAt', 'updatedAt'],
+      // Only orders an index serves; any other sorts the whole history in memory
+      allowedSortFields: ['createdAt', 'code'],
       codeField: 'code',
     },
   )

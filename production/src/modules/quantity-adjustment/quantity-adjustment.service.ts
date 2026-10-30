@@ -89,7 +89,8 @@ export async function list(
     QuantityAdjustment,
     query,
     { page, limit, sort },
-    { allowedSortFields: ['time', 'amount', 'createdAt', 'updatedAt'] },
+    // Only an order an index serves; any other sorts the whole history in memory
+    { allowedSortFields: ['createdAt'] },
   )
 }
 

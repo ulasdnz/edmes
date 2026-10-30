@@ -32,6 +32,9 @@ unplannedStopSchema.index(
 )
 unplannedStopSchema.index({ workCenterId: 1, startAt: 1, endAt: 1 })
 unplannedStopSchema.index({ reasonId: 1 })
+// Lists page newest first, within the caller's work centers or across all of them
+unplannedStopSchema.index({ workCenterId: 1, createdAt: -1, _id: -1 })
+unplannedStopSchema.index({ createdAt: -1, _id: -1 })
 
 unplannedStopSchema.set('toObject', {
   transform: (_doc: unknown, ret: Record<string, unknown>) => {

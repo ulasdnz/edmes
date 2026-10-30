@@ -5,8 +5,8 @@ const { Schema, model } = mongoose
 
 const scrapEntrySchema = new Schema(
   {
-    jobOrderId: { type: Schema.Types.ObjectId, ref: 'JobOrder', required: true, index: true },
-    workCenterId: { type: Schema.Types.ObjectId, required: true, index: true },
+    jobOrderId: { type: Schema.Types.ObjectId, ref: 'JobOrder', required: true },
+    workCenterId: { type: Schema.Types.ObjectId, required: true },
     productId: { type: Schema.Types.ObjectId, required: true },
     shiftId: { type: Schema.Types.ObjectId, required: true },
     amount: { type: Number, required: true },
@@ -22,6 +22,9 @@ const scrapEntrySchema = new Schema(
 )
 
 scrapEntrySchema.index({ jobOrderId: 1, startTime: 1, endTime: 1 })
+// Lists page newest first, within the caller's work centers or across all of them
+scrapEntrySchema.index({ workCenterId: 1, createdAt: -1, _id: -1 })
+scrapEntrySchema.index({ createdAt: -1, _id: -1 })
 
 scrapEntrySchema.set('toObject', {
   transform: (_doc: unknown, ret: Record<string, unknown>) => {

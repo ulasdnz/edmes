@@ -1,3 +1,4 @@
+import { profileOperations } from '@mes/testing'
 import mongoose, { Types } from 'mongoose'
 import { describe, expect, it, vi } from 'vitest'
 import { Product } from '../product/product.model.js'
@@ -221,5 +222,30 @@ describe('ProductionPlanService', () => {
       const fakeId = new Types.ObjectId().toString()
       await expect(service.remove(fakeId)).rejects.toThrow('error.not_found')
     })
+  })
+})
+
+describe('ProductionPlanService list index', () => {
+  it('pages plans from the creation index, newest first', async () => {
+    await ProductionPlan.createIndexes()
+    await ProductionPlan.collection.insertMany(
+      Array.from({ length: 1000 }, (_, i) => ({
+        code: `PLAN-${String(i).padStart(4, '0')}`,
+        productId: new Types.ObjectId(),
+        targetQuantity: 10,
+        createdBy: new Types.ObjectId(userId),
+        createdAt: new Date(Date.UTC(2026, 0, 1, 0, i)),
+      })),
+    )
+
+    const { result, operations } = await profileOperations(
+      ProductionPlan.collection.collectionName,
+      () => service.list({ page: 1, limit: 20 }),
+    )
+
+    expect(result.data[0].code).toBe('PLAN-0999')
+    const find = operations.find(op => op.op === 'query')
+    expect(find?.planSummary).toBe('IXSCAN { createdAt: -1, _id: -1 }')
+    expect(find?.keysExamined).toBeLessThanOrEqual(21)
   })
 })

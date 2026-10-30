@@ -1,3 +1,4 @@
+import { profileOperations } from '@mes/testing'
 import { Types } from 'mongoose'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -474,5 +475,46 @@ describe('PlannedStopService', () => {
       // prevent "unused variable" warnings from linters
       expect(PlannedStop.modelName).toBe('PlannedStop')
     })
+  })
+})
+
+describe('PlannedStopService list index', () => {
+  it("pages the planned stops of the caller's work centers from an index, newest first", async () => {
+    await PlannedStop.createIndexes()
+    const workCenters = Array.from({ length: 12 }, () => new Types.ObjectId())
+    await PlannedStop.collection.insertMany(
+      workCenters.flatMap((workCenterId, w) =>
+        Array.from({ length: 100 }, (_, i) => {
+          const at = new Date(Date.UTC(2026, 0, 1, 0, w * 100 + i))
+          return {
+            workCenterId,
+            reasonId: new Types.ObjectId(),
+            plannedOwnerId: new Types.ObjectId(userId),
+            source: 'manual',
+            startMode: 'manual',
+            status: 'closed',
+            plannedStartAt: at,
+            plannedEndAt: new Date(at.getTime() + 600_000),
+            createdAt: at,
+          }
+        }),
+      ),
+    )
+
+    const { result, operations } = await profileOperations(
+      PlannedStop.collection.collectionName,
+      () =>
+        service.list({
+          page: 1,
+          limit: 20,
+          accessibleWorkCenterIds: workCenters.slice(0, 3).map(String),
+        }),
+    )
+
+    expect(result.data).toHaveLength(20)
+    const find = operations.find(op => op.op === 'query')
+    expect(find?.planSummary).toContain('IXSCAN { workCenterId: 1, createdAt: -1, _id: -1 }')
+    expect(find?.hasSortStage).toBeFalsy()
+    expect(find?.keysExamined).toBeLessThanOrEqual(3 * 21)
   })
 })

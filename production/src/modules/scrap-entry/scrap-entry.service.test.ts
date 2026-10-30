@@ -1,3 +1,4 @@
+import { profileOperations } from '@mes/testing'
 import { Types } from 'mongoose'
 import { describe, expect, it, vi } from 'vitest'
 import {
@@ -475,5 +476,38 @@ describe('ScrapEntryService', () => {
       expect(args[1]).toBe(jo._id.toString())
       expect(args[2]).toBe(wcId.toString())
     })
+  })
+})
+
+describe('ScrapEntryService list index', () => {
+  it("pages the scrap entries of the caller's work centers from an index, newest first", async () => {
+    await ScrapEntry.createIndexes()
+    const workCenters = Array.from({ length: 12 }, () => new Types.ObjectId())
+    await ScrapEntry.collection.insertMany(
+      workCenters.flatMap((workCenterId, w) =>
+        Array.from({ length: 100 }, (_, i) => ({
+          jobOrderId: new Types.ObjectId(),
+          workCenterId,
+          productId,
+          shiftId,
+          amount: 1,
+          startTime: joStart,
+          endTime: new Date(joStart.getTime() + 60_000),
+          createdBy: new Types.ObjectId(userId),
+          createdAt: new Date(Date.UTC(2026, 0, 1, 0, w * 100 + i)),
+        })),
+      ),
+    )
+
+    const { result, operations } = await profileOperations(
+      ScrapEntry.collection.collectionName,
+      () => scrapService.list({ page: 1, limit: 20 }, workCenters.slice(0, 3).map(String)),
+    )
+
+    expect(result.data).toHaveLength(20)
+    const find = operations.find(op => op.op === 'query')
+    expect(find?.planSummary).toContain('IXSCAN { workCenterId: 1, createdAt: -1, _id: -1 }')
+    expect(find?.hasSortStage).toBeFalsy()
+    expect(find?.keysExamined).toBeLessThanOrEqual(3 * 21)
   })
 })

@@ -106,7 +106,8 @@ export async function list(
     ScrapEntry,
     query,
     { page, limit, sort },
-    { allowedSortFields: ['startTime', 'endTime', 'amount', 'createdAt', 'updatedAt'] },
+    // Only an order an index serves; any other sorts the whole history in memory
+    { allowedSortFields: ['createdAt'] },
   )
 }
 

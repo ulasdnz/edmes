@@ -192,7 +192,8 @@ export async function list(
     UnplannedStop,
     query,
     { page, limit, sort },
-    { allowedSortFields: ['startAt', 'endAt', 'createdAt', 'updatedAt'] },
+    // Only an order an index serves; any other sorts the whole history in memory
+    { allowedSortFields: ['createdAt'] },
   )
 }
 
