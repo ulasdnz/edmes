@@ -3,7 +3,6 @@ import { runInContext } from '@mes/core'
 import { createStreamConsumer } from '@mes/events'
 import { sharedCacheDel } from '../lib/cache.js'
 import { listRunModeMonitors } from '../lib/internal-api/run-mode-monitors.client.js'
-import { invalidateUserWorkCenterIds } from '../lib/internal-api/user.client.js'
 import {
   getById as getWorkCenter,
   invalidate as invalidateWorkCenter,
@@ -62,11 +61,6 @@ const streams = {
       await sharedCacheDel(buildAuthContextCacheKey(data.userId))
       logger.debug('Invalidated auth context cache', {
         event: 'cache.auth_context.invalidated',
-        userId: data.userId,
-      })
-      await invalidateUserWorkCenterIds(data.userId)
-      logger.debug('Invalidated user work center ids cache', {
-        event: 'cache.user_work_center_ids.invalidated',
         userId: data.userId,
       })
     },

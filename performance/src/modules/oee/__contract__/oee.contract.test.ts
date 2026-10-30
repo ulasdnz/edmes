@@ -21,19 +21,11 @@ type StubHandlers = {
   getJobOrderRecordsBatch?: (body: unknown) => unknown
   getProducedSummary?: (tagId: string, body: unknown) => unknown
   getSpeedSummary?: (tagId: string, body: unknown) => unknown
-  getUserWorkCenterIds?: (userId: string) => unknown
 }
 
 let handlers: StubHandlers = {}
 
 function makeStubServers() {
-  const userApp = express()
-  userApp.get('/internal/v1/users/:userId/work-center-ids', (req, res) => {
-    const fn = handlers.getUserWorkCenterIds
-    if (fn) return res.json({ data: fn(req.params.userId) })
-    res.json({ data: [] })
-  })
-
   const wcApp = express()
   wcApp.get('/internal/v1/work-centers/:id', (req, res) => {
     const fn = handlers.getWorkCenter
@@ -84,16 +76,13 @@ function makeStubServers() {
     res.status(404).json({})
   })
 
-  return { userApp, wcApp, prodApp, telemApp }
+  return { wcApp, prodApp, telemApp }
 }
 
 const servers: Server[] = []
 
 beforeAll(async () => {
-  const { userApp, wcApp, prodApp, telemApp } = makeStubServers()
-  await new Promise<void>(res => {
-    servers.push(userApp.listen(19901, res))
-  })
+  const { wcApp, prodApp, telemApp } = makeStubServers()
   await new Promise<void>(res => {
     servers.push(wcApp.listen(19902, res))
   })
@@ -296,7 +285,6 @@ describe('Scenario 1: single JO, no stops, constant counter — 100% OEE', () =>
         scrapEntriesByJobOrderId: {},
       }),
       getProducedSummary: () => producedSummaryFor(600, FROM, TO), // 10/min × 60 min = 600
-      getUserWorkCenterIds: () => [WC_ID],
     })
 
     const result = await calculate({
@@ -354,7 +342,6 @@ describe('Scenario 2: 10-min OEE-affecting unplanned stop → availability=80%',
         scrapEntriesByJobOrderId: {},
       }),
       getProducedSummary: () => producedSummaryFor(500, FROM, TO),
-      getUserWorkCenterIds: () => [WC_ID],
     })
 
     const result = await calculate({
@@ -407,7 +394,6 @@ describe('Scenario 3: non-effective planned stop → availability=100%', () => {
         scrapEntriesByJobOrderId: {},
       }),
       getProducedSummary: () => producedSummaryFor(500, FROM, TO),
-      getUserWorkCenterIds: () => [WC_ID],
     })
 
     const result = await calculate({
@@ -454,7 +440,6 @@ describe('Scenario 4: MICRO_STOP excluded by repo query', () => {
         scrapEntriesByJobOrderId: {},
       }),
       getProducedSummary: () => producedSummaryFor(600, FROM, TO),
-      getUserWorkCenterIds: () => [WC_ID],
     })
 
     const result = await calculate({
@@ -483,7 +468,6 @@ describe('Scenario 5: no product standard → productivity not_calculable', () =
         scrapEntriesByJobOrderId: {},
       }),
       getProducedSummary: () => producedSummaryFor(600, FROM, TO),
-      getUserWorkCenterIds: () => [WC_ID],
     })
 
     const result = await calculate({
@@ -538,7 +522,6 @@ describe('Scenario 6: virtual WC with primary_work_center composition', () => {
         scrapEntriesByJobOrderId: {},
       }),
       getProducedSummary: () => producedSummaryFor(600, FROM, TO),
-      getUserWorkCenterIds: () => [WC_ID],
     })
 
     const result = await calculate({
@@ -561,7 +544,6 @@ describe('Scenario 7: empty range — no job orders → no_context', () => {
     resetHandlers({
       getWorkCenter: () => machineWc(),
       getJobOrders: () => [],
-      getUserWorkCenterIds: () => [WC_ID],
     })
 
     const result = await calculate({
@@ -597,15 +579,12 @@ describe('Scenario 8: to <= from fails validator', () => {
 describe('Scenario 9: visibility — user without WC access → 404', () => {
   it('throws 404 when user work center ids do not include the requested WC', async () => {
     const OTHER_WC = new Types.ObjectId().toHexString()
-    resetHandlers({
-      getWorkCenter: () => machineWc(),
-      getUserWorkCenterIds: () => [OTHER_WC], // does NOT include WC_ID
-    })
+    resetHandlers({ getWorkCenter: () => machineWc() })
 
     const userId = new Types.ObjectId().toHexString()
 
     await expect(
-      calculate({ workCenterId: WC_ID, from: FROM, to: TO, userId }),
+      calculate({ workCenterId: WC_ID, from: FROM, to: TO, userId, workCenterIds: [OTHER_WC] }),
     ).rejects.toMatchObject({ statusCode: 404 })
   })
 })
@@ -654,7 +633,6 @@ describe('Scenario 10: converted unplanned stop linked to planned stop', () => {
         scrapEntriesByJobOrderId: {},
       }),
       getProducedSummary: () => producedSummaryFor(500, FROM, TO),
-      getUserWorkCenterIds: () => [WC_ID],
     })
 
     const result = await calculate({
@@ -699,7 +677,6 @@ describe('Scenario 12: work center not found → 404', () => {
 
     resetHandlers({
       getWorkCenter: () => null,
-      getUserWorkCenterIds: () => [unknownWcId],
     })
 
     await expect(
@@ -758,7 +735,6 @@ describe('Scenario 13: execution_span vs net_run_segments productivity modes', (
           new Date(body.windows[body.windows.length - 1].to),
         )
       },
-      getUserWorkCenterIds: () => [WC_ID],
     })
 
     // First run with execution_span (default): uses full JO window
@@ -795,7 +771,6 @@ describe('Count based OEE converts counter strokes into parts with counterMultip
         scrapEntriesByJobOrderId: { [JO_ID]: [scrapRecord(10, FROM, ONE_MINUTE_LATER)] },
       }),
       getProducedSummary: strokeCounter(10),
-      getUserWorkCenterIds: () => [WC_ID],
     })
 
     const result = await calculate({
@@ -834,7 +809,6 @@ describe('Count based OEE converts counter strokes into parts with counterMultip
         scrapEntriesByJobOrderId: {},
       }),
       getProducedSummary: strokeCounter(10),
-      getUserWorkCenterIds: () => [WC_ID],
     })
 
     const result = await calculate({
@@ -860,7 +834,6 @@ describe('Count based OEE converts counter strokes into parts with counterMultip
         scrapEntriesByJobOrderId: {},
       }),
       getProducedSummary: strokeCounter(10),
-      getUserWorkCenterIds: () => [WC_ID],
     })
 
     const result = await calculate({
@@ -902,7 +875,6 @@ describe('Count based OEE converts counter strokes into parts with counterMultip
         scrapEntriesByJobOrderId: { [JO_ID]: [scrapRecord(500, FROM, TO)] },
       }),
       getProducedSummary: strokeCounter(10, [{ from: FROM, to: stopEnd }]),
-      getUserWorkCenterIds: () => [WC_ID],
     })
 
     const result = await calculate({
@@ -938,7 +910,6 @@ describe('Speed based OEE converts the speed area into product units with idealS
         scrapEntriesByJobOrderId: { [JO_ID]: [scrapRecord(18, FROM, TO)] },
       }),
       getSpeedSummary: steadySpeed(300),
-      getUserWorkCenterIds: () => [WC_ID],
     })
 
     const result = await calculate({
@@ -983,7 +954,6 @@ describe('Speed based OEE converts the speed area into product units with idealS
         scrapEntriesByJobOrderId: { [JO_ID]: [scrapRecord(15, FROM, TO)] },
       }),
       getSpeedSummary: steadySpeed(300, [{ from: FROM, to: stopEnd }]),
-      getUserWorkCenterIds: () => [WC_ID],
     })
 
     const result = await calculate({

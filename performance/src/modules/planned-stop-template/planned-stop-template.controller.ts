@@ -2,22 +2,18 @@ import { CustomError } from '@mes/core'
 import type { Request, Response } from 'express'
 import { SYSTEM_IDENTITY } from '../../constants/identity.js'
 import type { SuccessResponse } from '../../core/types/api.types.js'
-import { getUserWorkCenterIds } from '../../lib/internal-api/user.client.js'
 import type { IPlannedStopTemplate } from './planned-stop-template.model.js'
 import * as service from './planned-stop-template.service.js'
 
-async function assertAllWorkCentersVisible(userId: string, workCenterIds: string[]): Promise<void> {
-  if (userId === SYSTEM_IDENTITY) return
-  if (workCenterIds.length === 0) return
-  const allowed = await getUserWorkCenterIds(userId)
+function assertAllWorkCentersVisible(user: Request['user'], workCenterIds: string[]): void {
+  if (user!.id === SYSTEM_IDENTITY) return
+  const allowed = user!.workCenterIds ?? []
   const forbidden = workCenterIds.find(id => !allowed.includes(id))
   if (forbidden) throw new CustomError(404, 'error.not_found')
 }
 
-async function assertWorkCenterVisible(userId: string, workCenterId: string): Promise<void> {
-  if (userId === SYSTEM_IDENTITY) return
-  const allowed = await getUserWorkCenterIds(userId)
-  if (!allowed.includes(workCenterId)) throw new CustomError(404, 'error.not_found')
+function assertWorkCenterVisible(user: Request['user'], workCenterId: string): void {
+  assertAllWorkCentersVisible(user, [workCenterId])
 }
 
 export const create = async (
@@ -25,7 +21,7 @@ export const create = async (
   res: Response<SuccessResponse<IPlannedStopTemplate>>,
 ) => {
   const workCenterIds: string[] = req.body.workCenterIds ?? []
-  await assertAllWorkCentersVisible(req.user!.id, workCenterIds)
+  assertAllWorkCentersVisible(req.user, workCenterIds)
   const doc = await service.create(req.body, req.user!.id)
   res.status(201).json({ message: req.t('success.create'), data: doc })
 }
@@ -42,10 +38,9 @@ export const list = async (
   req: Request,
   res: Response<SuccessResponse<IPlannedStopTemplate[]>>,
 ) => {
-  const userId = req.user!.id
   const query = req.query as Record<string, unknown>
-  if (userId !== SYSTEM_IDENTITY) {
-    const allowed = await getUserWorkCenterIds(userId)
+  if (req.user!.id !== SYSTEM_IDENTITY) {
+    const allowed = req.user!.workCenterIds ?? []
     if (query.workCenterId) {
       if (!allowed.includes(String(query.workCenterId)))
         throw new CustomError(404, 'error.not_found')
@@ -62,7 +57,7 @@ export const update = async (
   res: Response<SuccessResponse<IPlannedStopTemplate>>,
 ) => {
   const workCenterIds: string[] = req.body.workCenterIds ?? []
-  await assertAllWorkCentersVisible(req.user!.id, workCenterIds)
+  assertAllWorkCentersVisible(req.user, workCenterIds)
   const doc = await service.update(req.params.id, req.body, req.user!.id)
   res.json({ message: req.t('success.update'), data: doc })
 }
@@ -76,7 +71,7 @@ export const remove = async (
 }
 
 export const startFromTemplate = async (req: Request<{ id: string }>, res: Response) => {
-  await assertWorkCenterVisible(req.user!.id, req.body.workCenterId)
+  assertWorkCenterVisible(req.user, req.body.workCenterId)
   const doc = await service.startFromTemplate(req.params.id, req.body, req.user!.id)
   res.status(201).json({ message: req.t('success.create'), data: doc })
 }

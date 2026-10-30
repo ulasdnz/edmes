@@ -9,6 +9,7 @@ export const getOee = async (req: Request, res: Response) => {
     from,
     to,
     userId: req.user!.id,
+    workCenterIds: req.user!.workCenterIds,
   })
   res.json({ data: result })
 }

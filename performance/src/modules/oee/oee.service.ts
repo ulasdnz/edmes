@@ -2,7 +2,6 @@ import { CustomError } from '@mes/core'
 import { SYSTEM_IDENTITY } from '../../constants/identity.js'
 import * as productionClient from '../../lib/internal-api/production.client.js'
 import * as telemetryClient from '../../lib/internal-api/telemetry.client.js'
-import { getUserWorkCenterIds } from '../../lib/internal-api/user.client.js'
 import * as workCenterClient from '../../lib/internal-api/work-center.client.js'
 import { clip } from '../../utils/intervals.js'
 import * as policyService from '../policy/policy.service.js'
@@ -62,6 +61,8 @@ export type CalculateInput = {
   from: Date
   to: Date
   userId: string
+  // The caller's visible work centers, from its auth context
+  workCenterIds?: string[]
 }
 
 function toPercentage(ratio: number): number {
@@ -79,14 +80,11 @@ function resolveOeeStatus(a: FactorStatus, p: FactorStatus, q: FactorStatus): Oe
 }
 
 export async function calculate(input: CalculateInput): Promise<OeePublicResponse> {
-  const { workCenterId, from, to, userId } = input
+  const { workCenterId, from, to, userId, workCenterIds = [] } = input
   const range: OeeRange = { from, to }
 
-  if (userId !== SYSTEM_IDENTITY) {
-    const allowedIds = await getUserWorkCenterIds(userId)
-    if (!allowedIds.includes(workCenterId)) {
-      throw new CustomError(404, 'error.not_found')
-    }
+  if (userId !== SYSTEM_IDENTITY && !workCenterIds.includes(workCenterId)) {
+    throw new CustomError(404, 'error.not_found')
   }
 
   const wc = await workCenterClient.getById(workCenterId)
