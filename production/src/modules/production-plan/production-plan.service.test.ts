@@ -102,14 +102,16 @@ describe('ProductionPlanService', () => {
       expect(result.pagination.total).toBe(2)
     })
 
-    it('searches by code, not by description', async () => {
+    it('searches codes by prefix and lists matches in code order, never descriptions', async () => {
       await service.create(buildInput({ code: 'SEARCH-1', description: 'Alpha batch' }), userId)
       await service.create(buildInput({ code: 'SEARCH-2', description: 'Beta batch' }), userId)
 
-      const byCode = await service.list({ page: 1, limit: 10, search: 'SEARCH-1' })
+      const byPrefix = await service.list({ page: 1, limit: 10, search: 'search' })
+      const inside = await service.list({ page: 1, limit: 10, search: 'EARCH-1' })
       const byDescription = await service.list({ page: 1, limit: 10, search: 'Alpha' })
 
-      expect(byCode.data.map(plan => plan.code)).toEqual(['SEARCH-1'])
+      expect(byPrefix.data.map(plan => plan.code)).toEqual(['SEARCH-1', 'SEARCH-2'])
+      expect(inside.data).toEqual([])
       expect(byDescription.data).toEqual([])
     })
   })

@@ -27,7 +27,12 @@ interface PaginateOptions {
   allowedSortFields?: string[]
   select?: string | Record<string, number>
   populate?: string | PopulateOptions | (string | PopulateOptions)[]
+  // Case-insensitive search anywhere in these fields. No index can serve it, so it suits small
+  // collections only.
   searchFields?: string[]
+  // A unique code field. The search matches it by prefix through its index, read the way a code is
+  // stored (trimmed, upper case), and returns matches in code order.
+  codeField?: string
 }
 
 export async function paginate<T>(
@@ -37,11 +42,20 @@ export async function paginate<T>(
   options: PaginateOptions = {},
 ): Promise<PaginatedResult<T>> {
   const { page, limit, search } = input
+  const { codeField } = options
   const skip = (page - 1) * limit
-  const sort = parseSort(input.sort, options.defaultSort, options.allowedSortFields)
+  const codePrefix = codeField && search ? escapeRegex(search.trim().toUpperCase()) : ''
+  const sort = parseSort(
+    input.sort,
+    codeField && codePrefix ? { [codeField]: 1 } : options.defaultSort,
+    options.allowedSortFields,
+    codeField,
+  )
 
   const query: Record<string, unknown> = { ...filters }
-  if (search && options.searchFields?.length) {
+  if (codeField && codePrefix) {
+    query[codeField] = { $regex: `^${codePrefix}` }
+  } else if (search && options.searchFields?.length) {
     const escaped = escapeRegex(search)
     query.$or = options.searchFields.map(field => ({
       [field]: { $regex: escaped, $options: 'i' },
@@ -82,6 +96,7 @@ function parseSort(
   input?: string,
   defaultSort?: Record<string, 1 | -1>,
   allowedFields?: string[],
+  uniqueField?: string,
 ): Record<string, 1 | -1> {
   const result: Record<string, 1 | -1> = {}
   for (const segment of (input ?? '').split(',')) {
@@ -99,8 +114,11 @@ function parseSort(
   const sort = Object.keys(result).length > 0 ? result : { ...(defaultSort ?? { createdAt: -1 }) }
   // Documents with equal sort values come back in no fixed order, and that order changes with
   // skip and limit, so pages would repeat some documents and skip others. _id is unique, so it
-  // makes the order total.
-  if (!('_id' in sort)) sort._id = Object.values(sort).at(-1) ?? -1
+  // makes the order total. A unique field already does, and _id after it would keep the field's
+  // index from serving the sort.
+  if (!('_id' in sort) && !(uniqueField && uniqueField in sort)) {
+    sort._id = Object.values(sort).at(-1) ?? -1
+  }
   return sort
 }
 

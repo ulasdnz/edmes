@@ -561,14 +561,16 @@ describe('JobOrderService', () => {
       expect(byIds.data).toEqual([])
     })
 
-    it('searches by code, not by description', async () => {
+    it('searches codes by prefix and lists matches in code order, never descriptions', async () => {
       await service.create(buildInput({ code: 'JO-SRCH-1', description: 'Alpha batch' }), userId)
       await service.create(buildInput({ code: 'JO-SRCH-2', description: 'Beta batch' }), userId)
 
-      const byCode = await service.list({ page: 1, limit: 10, search: 'SRCH-1' })
+      const byPrefix = await service.list({ page: 1, limit: 10, search: 'jo-srch' })
+      const inside = await service.list({ page: 1, limit: 10, search: 'SRCH-1' })
       const byDescription = await service.list({ page: 1, limit: 10, search: 'Alpha' })
 
-      expect(byCode.data.map(jo => jo.code)).toEqual(['JO-SRCH-1'])
+      expect(byPrefix.data.map(jo => jo.code)).toEqual(['JO-SRCH-1', 'JO-SRCH-2'])
+      expect(inside.data).toEqual([])
       expect(byDescription.data).toEqual([])
     })
 
