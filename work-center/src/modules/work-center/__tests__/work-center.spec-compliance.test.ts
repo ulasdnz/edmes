@@ -294,6 +294,31 @@ describe('Work Center Spec Compliance Review', () => {
     expect(allowed.body.data._id).toBe(workCenterId)
   })
 
+  it('applies the same visibility to replacing, updating and deleting a work center', async () => {
+    const payload = buildPhysicalWorkCenter()
+    const workCenterId = await createInternalWorkCenter(payload)
+    const { type: _type, ...replacement } = payload
+    const outsider = (test: request.Test) =>
+      test
+        .set('x-user-id', '507f1f77bcf86cd799439017')
+        .set('x-permissions', 'writeWorkCenters,deleteWorkCenters')
+        .set('x-work-center-ids', '')
+
+    const replaced = await outsider(request(app).put(`/api/v1/work-centers/${workCenterId}`)).send({
+      ...replacement,
+      name: 'Taken over',
+    })
+    const updated = await outsider(request(app).patch(`/api/v1/work-centers/${workCenterId}`)).send(
+      { name: 'Taken over' },
+    )
+    const deleted = await outsider(request(app).delete(`/api/v1/work-centers/${workCenterId}`))
+
+    expect(replaced.status).toBe(404)
+    expect(updated.status).toBe(404)
+    expect(deleted.status).toBe(404)
+    expect(await WorkCenter.findById(workCenterId).lean()).toMatchObject({ name: payload.name })
+  })
+
   it('proves physical create silently strips virtual-only fields instead of rejecting them', async () => {
     const res = await request(app)
       .post('/internal/v1/work-centers')
