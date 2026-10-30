@@ -1,5 +1,6 @@
 // Errors
 
+export { codeSchema } from './code.js'
 export type { default as CustomErrorDefault } from './errors/index.js'
 export { CustomError } from './errors/index.js'
 export type { ErrorHandlerOptions } from './middleware/error-handler.js'
@@ -21,9 +22,9 @@ export { isShuttingDown, setShuttingDown } from './shutdown.js'
 export {
   isUtcZonedDateTimeString,
   parseUtcZonedDateTime,
+  UTC_ZONED_DATETIME_REGEX,
   utcDateSchema,
   utcDateTimeStringSchema,
-  UTC_ZONED_DATETIME_REGEX,
 } from './time.js'
 // Types
 export type {

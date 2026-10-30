@@ -1,8 +1,8 @@
+import { codeSchema } from '@mes/core'
 import { paginationSchema } from '@mes/core/pagination'
 import { z } from 'zod'
 import { objectIdSchema } from '../../utils/validators.js'
 
-const codeSchema = z.string().trim().min(1).max(50)
 const nameSchema = z.string().trim().min(1).max(200)
 
 export const createProductSchema = z
@@ -34,7 +34,7 @@ export const productIdParamSchema = z.object({ id: objectIdSchema })
 
 export const productListSchema = paginationSchema.extend({
   _id: objectIdSchema.optional(),
-  code: z.string().optional(),
+  code: codeSchema.optional(),
   kind: z.enum(['finished', 'semi_finished']).optional(),
   categoryId: objectIdSchema.optional(),
   uomId: objectIdSchema.optional(),

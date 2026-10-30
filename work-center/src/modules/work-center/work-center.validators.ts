@@ -1,10 +1,10 @@
+import { codeSchema } from '@mes/core'
 import { paginationSchema } from '@mes/core/pagination'
 import { z } from 'zod'
 import { objectIdSchema } from '../../utils/validators.js'
 
 // ── Shared field schemas ─────────────────────────────────────────────────────
 
-const codeSchema = z.string().trim().min(1).max(50)
 const nameSchema = z.string().trim().min(1).max(100)
 const descriptionSchema = z.string().max(500).nullable()
 

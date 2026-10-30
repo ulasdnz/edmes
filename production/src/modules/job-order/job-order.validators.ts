@@ -1,9 +1,7 @@
-import { utcDateSchema } from '@mes/core'
+import { codeSchema, utcDateSchema } from '@mes/core'
 import { paginationSchema } from '@mes/core/pagination'
 import { z } from 'zod'
 import { objectIdSchema } from '../../utils/validators.js'
-
-const codeSchema = z.string().trim().min(1).max(50)
 
 export const createJobOrderSchema = z
   .object({
@@ -50,7 +48,7 @@ export const endJobOrderSchema = z
 
 export const jobOrderListSchema = paginationSchema.extend({
   _id: objectIdSchema.optional(),
-  code: z.string().optional(),
+  code: codeSchema.optional(),
   productId: objectIdSchema.optional(),
   workCenterId: objectIdSchema.optional(),
   productionPlanId: objectIdSchema.optional(),

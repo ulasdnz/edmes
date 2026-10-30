@@ -1,8 +1,8 @@
+import { codeSchema } from '@mes/core'
 import { paginationSchema } from '@mes/core/pagination'
 import { z } from 'zod'
 import { objectIdSchema } from '../../utils/validators.js'
 
-const codeSchema = z.string().trim().min(1).max(50)
 const nameSchema = z.string().trim().min(1).max(100)
 const symbolSchema = z.string().trim().min(1).max(20)
 
@@ -26,7 +26,7 @@ export const patchUomSchema = z
 export const uomIdParamSchema = z.object({ id: objectIdSchema })
 
 export const uomListSchema = paginationSchema.extend({
-  code: z.string().optional(),
+  code: codeSchema.optional(),
   name: z.string().optional(),
   symbol: z.string().optional(),
 })

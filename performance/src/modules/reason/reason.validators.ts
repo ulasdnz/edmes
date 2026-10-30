@@ -1,13 +1,7 @@
+import { codeSchema } from '@mes/core'
 import { z } from 'zod'
 import { objectIdSchema } from '../../utils/validators.js'
 import { REASON_USAGES } from './reason.model.js'
-
-const codeSchema = z
-  .string()
-  .trim()
-  .min(1)
-  .max(64)
-  .regex(/^[A-Z0-9_-]+$/, { message: 'error.invalid_code' })
 
 const nameSchema = z.string().trim().min(1).max(128)
 
@@ -89,7 +83,7 @@ const fieldsSchema = z
   .pipe(z.array(z.enum(['_id'])).min(1))
 
 export const reasonListSchema = z.object({
-  code: z.string().trim().optional(),
+  code: codeSchema.optional(),
   name: z.string().trim().optional(),
   usage: csvUsages.optional(),
   affectsOee: z.coerce.boolean().optional(),

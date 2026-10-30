@@ -403,6 +403,30 @@ describe('OEE across telemetry, work-center, production and performance', () => 
     expect(kept.name).toBe('Locked cell')
   })
 
+  // People, barcode scanners and other systems match records by code, so a code has one spelling.
+  it('stores codes in one spelling, so KG and kg cannot be two units', async () => {
+    const { api } = await loginAsAdmin()
+    const unit = { name: 'E2E kilogram', symbol: 'kg' }
+
+    const created = await api.post<{ code: string }>('production', '/api/v1/uoms', {
+      ...unit,
+      code: ' kg-e2e ',
+    })
+    const cell = await api.post<{ code: string }>('work-center', '/api/v1/work-centers', {
+      code: 'cell-lower',
+      name: 'Lower case cell',
+      type: 'virtual',
+    })
+
+    expect([created.code, cell.code]).toEqual(['KG-E2E', 'CELL-LOWER'])
+    await expect(
+      api.post('production', '/api/v1/uoms', { ...unit, name: 'E2E kilo', code: 'KG-E2E' }),
+    ).rejects.toThrow('answered 409')
+    await expect(
+      api.post('production', '/api/v1/uoms', { ...unit, name: 'E2E chassis', code: 'ŞASİ' }),
+    ).rejects.toThrow('answered 400')
+  })
+
   // A service can fail in the background (a crashed stream consumer, a failed startup job)
   // while every request still succeeds. Its error log is the only trace.
   it('leaves no error in any service log', async () => {
