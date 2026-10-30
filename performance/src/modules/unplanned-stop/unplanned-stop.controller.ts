@@ -3,13 +3,9 @@ import type { PaginationMeta } from '@mes/core/pagination'
 import type { Request, Response } from 'express'
 import { SYSTEM_IDENTITY } from '../../constants/identity.js'
 import type { SuccessResponse } from '../../core/types/api.types.js'
+import { assertWorkCenterVisible } from '../../lib/work-center-visibility.js'
 import type { IUnplannedStop } from './unplanned-stop.model.js'
 import * as service from './unplanned-stop.service.js'
-
-function assertWorkCenterVisible(user: Request['user'], workCenterId: string): void {
-  if (user!.id === SYSTEM_IDENTITY) return
-  if (!user!.workCenterIds?.includes(workCenterId)) throw new CustomError(404, 'error.not_found')
-}
 
 export const create = async (req: Request, res: Response<SuccessResponse<IUnplannedStop>>) => {
   assertWorkCenterVisible(req.user, req.body.workCenterId)
@@ -22,6 +18,7 @@ export const getById = async (
   res: Response<SuccessResponse<IUnplannedStop>>,
 ) => {
   const doc = await service.getById(req.params.id)
+  assertWorkCenterVisible(req.user, doc.workCenterId.toString())
   res.json({ data: doc })
 }
 
