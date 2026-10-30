@@ -256,6 +256,56 @@ describe('ProductStandardService', () => {
       ).rejects.toThrow('error.product_standard_applied')
     })
 
+    // A die drops from 4 to 2 parts a stroke while a job order runs. The 2-part standard has
+    // already converted that job order's strokes, so editing it would rewrite its OEE.
+    it('blocks update of a standard that took effect while a started job order was running', async () => {
+      await service.create(
+        buildInput({ counterMultiplier: 4, validFrom: new Date('2026-01-01T00:00:00Z') }),
+        userId,
+      )
+      await JobOrder.create({
+        code: `JO-MID-${Date.now()}`,
+        productId: defaultProductId,
+        workCenterId,
+        targetQuantity: 10,
+        startTime: new Date('2026-02-01T06:00:00Z'),
+        startedBy: userId,
+        createdBy: userId,
+      })
+      const midJob = await service.create(
+        buildInput({ counterMultiplier: 2, validFrom: new Date('2026-02-01T06:30:00Z') }),
+        userId,
+      )
+
+      await expect(
+        service.update(midJob._id.toString(), { counterMultiplier: 3 }, userId),
+      ).rejects.toThrow('error.product_standard_applied')
+    })
+
+    it('allows update of a standard that takes effect in the future while a job order runs', async () => {
+      await service.create(
+        buildInput({ counterMultiplier: 4, validFrom: new Date('2026-01-01T00:00:00Z') }),
+        userId,
+      )
+      await JobOrder.create({
+        code: `JO-RUNNING-${Date.now()}`,
+        productId: defaultProductId,
+        workCenterId,
+        targetQuantity: 10,
+        startTime: new Date('2026-02-01T06:00:00Z'),
+        startedBy: userId,
+        createdBy: userId,
+      })
+      const future = await service.create(
+        buildInput({ counterMultiplier: 2, validFrom: new Date(Date.now() + 86_400_000) }),
+        userId,
+      )
+
+      const updated = await service.update(future._id.toString(), { counterMultiplier: 3 }, userId)
+
+      expect(updated.counterMultiplier).toBe(3)
+    })
+
     it('rejects patching idealSpeed to null on a speed_based work center', async () => {
       mockGetWorkCenterInfo.mockResolvedValue({
         type: 'physical',
@@ -394,6 +444,31 @@ describe('ProductStandardService', () => {
       })
 
       await expect(service.remove(standard._id.toString())).rejects.toThrow(
+        'error.product_standard_applied',
+      )
+    })
+
+    it('blocks delete of a standard that took effect while a started job order was running', async () => {
+      await service.create(
+        buildInput({ counterMultiplier: 4, validFrom: new Date('2026-01-01T00:00:00Z') }),
+        userId,
+      )
+      await JobOrder.create({
+        code: `JO-DEL-MID-${Date.now()}`,
+        productId: defaultProductId,
+        workCenterId,
+        targetQuantity: 10,
+        startTime: new Date('2026-02-01T06:00:00Z'),
+        endTime: new Date('2026-02-01T14:00:00Z'),
+        startedBy: userId,
+        createdBy: userId,
+      })
+      const midJob = await service.create(
+        buildInput({ counterMultiplier: 2, validFrom: new Date('2026-02-01T06:30:00Z') }),
+        userId,
+      )
+
+      await expect(service.remove(midJob._id.toString())).rejects.toThrow(
         'error.product_standard_applied',
       )
     })

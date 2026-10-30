@@ -22,6 +22,7 @@ type AppliedJobOrder = {
   productId: mongoose.Types.ObjectId
   workCenterId: mongoose.Types.ObjectId
   startTime: Date | null
+  endTime: Date | null
 }
 type AppliedJobOrderModel = mongoose.Model<AppliedJobOrder>
 
@@ -54,9 +55,12 @@ async function validateCreateStandard(data: CreateProductStandardInput): Promise
   })
 }
 
+// A standard is applied once a started job order has run under it: the job order's run so far
+// overlaps the standard's validity [validFrom, next validFrom). That includes a standard that
+// took effect in the middle of a running job order, which converted part of its output.
 async function isApplied(standardId: string): Promise<boolean> {
   const standard = await ProductStandard.findById(standardId).lean()
-  if (!standard) return false
+  if (!standard || standard.validFrom > new Date()) return false
 
   let JobOrder: AppliedJobOrderModel
   try {
@@ -70,27 +74,22 @@ async function isApplied(standardId: string): Promise<boolean> {
     return false
   }
 
-  const jobOrders = await JobOrder.find({
+  const next = await ProductStandard.findOne({
     productId: standard.productId,
     workCenterId: standard.workCenterId,
-    startTime: { $ne: null },
+    validFrom: { $gt: standard.validFrom },
   })
-    .select('startTime')
-    .lean<Array<{ _id: unknown; startTime: Date }>>()
+    .sort({ validFrom: 1 })
+    .select('validFrom')
+    .lean()
 
-  for (const jo of jobOrders) {
-    const applicable = await ProductStandard.findOne({
-      productId: standard.productId,
-      workCenterId: standard.workCenterId,
-      validFrom: { $lte: jo.startTime },
-    })
-      .sort({ validFrom: -1 })
-      .select('_id')
-      .lean()
-
-    if (applicable && applicable._id.toString() === standardId) return true
-  }
-  return false
+  const ranUnderIt = await JobOrder.exists({
+    productId: standard.productId,
+    workCenterId: standard.workCenterId,
+    startTime: next ? { $lt: next.validFrom } : { $ne: null },
+    $or: [{ endTime: null }, { endTime: { $gt: standard.validFrom } }],
+  })
+  return ranUnderIt !== null
 }
 
 export async function create(
