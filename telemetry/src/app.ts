@@ -1,6 +1,5 @@
 import { config } from './config/index.js'
 import { initLoaders } from './core/loaders/index.js'
-import { shutdownSubscribers } from './jobs/subscribers.js'
 import { logger } from './lib/logger.js'
 import { closeMqtt } from './lib/mqtt.js'
 import { closeRedis } from './lib/redis.js'
@@ -36,7 +35,7 @@ const startServer = async (): Promise<void> => {
         logger.info('HTTP server closed', { event: 'server.http.closed' })
 
         try {
-          await Promise.all([disconnectDB(), closeRedis(), closeMqtt(), shutdownSubscribers()])
+          await Promise.all([disconnectDB(), closeRedis(), closeMqtt()])
           logger.info('Data connections closed', { event: 'server.shutdown.completed' })
           process.exit(0)
         } catch (err) {

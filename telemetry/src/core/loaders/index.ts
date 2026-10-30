@@ -1,5 +1,4 @@
 import { CustomError } from '../../core/errors/index.js'
-import { initSubscribers } from '../../jobs/subscribers.js'
 import { logger } from '../../lib/logger.js'
 import { initMqtt, onMqttMessage } from '../../lib/mqtt.js'
 import { initRedis } from '../../lib/redis.js'
@@ -18,7 +17,6 @@ export const initLoaders = async () => {
 
     await initMongoose()
     await initRedis()
-    initSubscribers()
     await bindingCacheInit()
     await initMqtt()
 
