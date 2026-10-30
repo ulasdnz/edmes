@@ -427,6 +427,48 @@ describe('Work Center Spec Compliance Review', () => {
     expect(res.status).toBe(200)
   })
 
+  // A contributor without a weight is stored with weight: null, and a composition comes back
+  // that way: editing it must not reject what the service itself saved.
+  it('merges a partial composition into one whose contributors have no weight', async () => {
+    const first = await createInternalWorkCenter(buildPhysicalWorkCenter())
+    const second = await createInternalWorkCenter(buildPhysicalWorkCenter())
+    const block = await createInternalWorkCenter(
+      buildVirtualWorkCenter({ metricComposition: primaryComposition(first) }),
+    )
+
+    const res = await request(app)
+      .patch(`/internal/v1/work-centers/${block}`)
+      .set(INTERNAL_TOKEN_HEADER, process.env.INTERNAL_API_TOKEN as string)
+      .send({
+        partialMetricComposition: {
+          productivity: { rule: 'primary_work_center', contributors: [{ workCenterId: second }] },
+        },
+      })
+
+    expect(res.status).toBe(200)
+    const { availability, productivity } = res.body.data.metricComposition
+    expect(availability.contributors[0].workCenterId).toBe(first)
+    expect(productivity.contributors[0].workCenterId).toBe(second)
+  })
+
+  it('replaces a virtual work center with the composition it was read with', async () => {
+    const machine = await createInternalWorkCenter(buildPhysicalWorkCenter())
+    const block = await createInternalWorkCenter(
+      buildVirtualWorkCenter({ metricComposition: primaryComposition(machine) }),
+    )
+    const read = await request(app)
+      .get(`/internal/v1/work-centers/${block}`)
+      .set(INTERNAL_TOKEN_HEADER, process.env.INTERNAL_API_TOKEN as string)
+    const { code, name, metricComposition } = read.body.data
+
+    const res = await request(app)
+      .put(`/internal/v1/work-centers/${block}`)
+      .set(INTERNAL_TOKEN_HEADER, process.env.INTERNAL_API_TOKEN as string)
+      .send({ code, name, metricComposition })
+
+    expect(res.status).toBe(200)
+  })
+
   it('proves physical create silently strips virtual-only fields instead of rejecting them', async () => {
     const res = await request(app)
       .post('/internal/v1/work-centers')

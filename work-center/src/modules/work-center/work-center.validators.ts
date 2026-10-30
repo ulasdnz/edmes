@@ -41,7 +41,8 @@ function hasOneProductivityTag(data: {
 const contributorSchema = z
   .object({
     workCenterId: objectIdSchema,
-    weight: z.number().min(0).max(1).optional(),
+    // The model stores a missing weight as null, so a composition read back must validate too
+    weight: z.number().min(0).max(1).nullish(),
   })
   .strict()
 
