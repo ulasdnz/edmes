@@ -288,6 +288,17 @@ describe('ProductStandardService', () => {
       expect(result.data[0].workCenterId.toString()).toBe(workCenterId.toString())
     })
 
+    it('keeps the list within visibleIds when the client filters by another work center', async () => {
+      const hiddenWc = new Types.ObjectId().toString()
+      await service.create(buildInput({ counterMultiplier: 2, workCenterId: hiddenWc }), userId)
+
+      const result = await service.list({ page: 1, limit: 10, workCenterId: hiddenWc }, [
+        workCenterId.toString(),
+      ])
+
+      expect(result.data).toEqual([])
+    })
+
     it('filters by date range (validFromFrom/validFromTo)', async () => {
       await service.create(
         buildInput({ counterMultiplier: 2, validFrom: new Date('2026-01-15') }),

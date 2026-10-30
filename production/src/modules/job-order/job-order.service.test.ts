@@ -532,6 +532,35 @@ describe('JobOrderService', () => {
       expect(result.data[0].code).toBe('JO-V1')
     })
 
+    it('keeps the list within visibleIds whatever work center filter the client sends', async () => {
+      const hiddenWc = new Types.ObjectId()
+      await ProductStandard.create({
+        productId: defaultProductId,
+        workCenterId: hiddenWc,
+        validFrom: new Date('2020-01-01'),
+        idealOutputPerMinute: 10,
+        counterMultiplier: 2,
+        createdBy: userId,
+      })
+      await service.create(
+        buildInput({ code: 'JO-HIDDEN', workCenterId: hiddenWc.toString() }),
+        userId,
+      )
+      const visibleIds = [workCenterId.toString()]
+
+      const byId = await service.list(
+        { page: 1, limit: 10, workCenterId: hiddenWc.toString() },
+        visibleIds,
+      )
+      const byIds = await service.list(
+        { page: 1, limit: 10, workCenterIds: hiddenWc.toString() },
+        visibleIds,
+      )
+
+      expect(byId.data).toEqual([])
+      expect(byIds.data).toEqual([])
+    })
+
     it('supports search across code and description', async () => {
       await service.create(buildInput({ code: 'JO-SRCH-1', description: 'Alpha batch' }), userId)
       await service.create(buildInput({ code: 'JO-SRCH-2', description: 'Beta batch' }), userId)

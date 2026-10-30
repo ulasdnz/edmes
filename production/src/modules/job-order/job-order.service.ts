@@ -9,6 +9,7 @@ import {
 } from '../../jobs/events.js'
 import { getWorkCenterInfo } from '../../lib/internal-api.js'
 import { logger } from '../../lib/logger.js'
+import { limitToVisibleWorkCenters } from '../../utils/visibility.js'
 import { Product } from '../product/product.model.js'
 import { ProductStandard } from '../product-standard/product-standard.model.js'
 import { ProductionPlan } from '../production-plan/production-plan.model.js'
@@ -315,8 +316,6 @@ function buildJobOrderFilters(
 ): Record<string, unknown> {
   const query: Record<string, unknown> = {}
 
-  if (visibleIds) query.workCenterId = { $in: visibleIds }
-
   const simpleKeys = [
     '_id',
     'code',
@@ -364,5 +363,7 @@ function buildJobOrderFilters(
     }
   }
 
+  // Last, so that no filter above can replace it
+  limitToVisibleWorkCenters(query, visibleIds)
   return query
 }

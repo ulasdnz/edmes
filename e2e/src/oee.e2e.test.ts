@@ -341,6 +341,30 @@ describe('OEE across telemetry, work-center, production and performance', () => 
     await expect(oeeOf(api, cell._id, from, to)).rejects.toThrow('answered 404')
   })
 
+  // A user who lost access to a work center must not read its records by asking for it by id.
+  it('keeps lists within the work centers the user can see, whatever filter it sends', async () => {
+    const { api, userId } = await loginAsAdmin()
+    const line = await createPressLine(api, 'PRESS-05')
+    await createStandard(api, line, new Date(Date.now() - 3_600_000), 40, 4)
+    await api.post('production', '/api/v1/job-orders', {
+      code: 'JO-E2E-HIDDEN',
+      productId: line.product._id,
+      workCenterId: line.press._id,
+      targetQuantity: 10,
+    })
+    const me = await api.get<{ workCenterIds: string[] }>('user', '/api/v1/users/me')
+    await api.patch('user', `/api/v1/users/${userId}`, {
+      workCenterIds: me.workCenterIds.filter(id => id !== line.press._id),
+    })
+
+    const press = line.press._id
+    expect(await api.get('production', `/api/v1/job-orders?workCenterId=${press}`)).toEqual([])
+    expect(await api.get('production', `/api/v1/job-orders?workCenterIds=${press}`)).toEqual([])
+    expect(await api.get('production', `/api/v1/product-standards?workCenterId=${press}`)).toEqual(
+      [],
+    )
+  })
+
   // A service can fail in the background (a crashed stream consumer, a failed startup job)
   // while every request still succeeds. Its error log is the only trace.
   it('leaves no error in any service log', async () => {

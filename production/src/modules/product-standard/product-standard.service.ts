@@ -8,6 +8,7 @@ import {
 } from '../../jobs/events.js'
 import { getWorkCenterInfo } from '../../lib/internal-api.js'
 import { logger } from '../../lib/logger.js'
+import { limitToVisibleWorkCenters } from '../../utils/visibility.js'
 import { Product } from '../product/product.model.js'
 import { type IProductStandard, ProductStandard } from './product-standard.model.js'
 import type {
@@ -160,9 +161,7 @@ export async function list(
     }
   }
 
-  if (visibleIds) {
-    query.workCenterId = query.workCenterId ? query.workCenterId : { $in: visibleIds }
-  }
+  limitToVisibleWorkCenters(query, visibleIds)
 
   return paginate(
     ProductStandard,

@@ -266,6 +266,22 @@ describe('ScrapEntryService', () => {
       expect(result.data.length).toBe(1)
     })
 
+    it('keeps the list within visibleIds when the client filters by another work center', async () => {
+      const hiddenWc = new Types.ObjectId()
+      const hidden = await createStartedJobOrder({
+        code: `JO-HIDDEN-${Date.now()}`,
+        workCenterId: hiddenWc,
+      })
+      await scrapService.create(buildInput(hidden._id.toString()), userId)
+
+      const result = await scrapService.list(
+        { page: 1, limit: 10, workCenterId: hiddenWc.toString() },
+        [wcId.toString()],
+      )
+
+      expect(result.data).toEqual([])
+    })
+
     it('filters by startTime date range', async () => {
       const jo = await createStartedJobOrder()
       await scrapService.create(

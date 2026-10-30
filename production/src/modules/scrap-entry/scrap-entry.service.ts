@@ -6,6 +6,7 @@ import {
   emitScrapEntryUpdated,
 } from '../../jobs/events.js'
 import { assertShiftExists } from '../../lib/internal-api.js'
+import { limitToVisibleWorkCenters } from '../../utils/visibility.js'
 import { JobOrder } from '../job-order/job-order.model.js'
 import { type IScrapEntry, ScrapEntry } from './scrap-entry.model.js'
 import type {
@@ -100,9 +101,7 @@ export async function list(
     }
   }
 
-  if (visibleIds) {
-    query.workCenterId = query.workCenterId ? query.workCenterId : { $in: visibleIds }
-  }
+  limitToVisibleWorkCenters(query, visibleIds)
 
   return paginate(
     ScrapEntry,
