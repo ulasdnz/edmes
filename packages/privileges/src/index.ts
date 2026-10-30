@@ -54,6 +54,7 @@ export const PRODUCTION_PRIVILEGES: readonly Privilege[] = Object.freeze([
   { code: 'readProductStandards', text: 'Read Product Standards' },
   { code: 'writeProductStandards', text: 'Write Product Standards' },
   { code: 'deleteProductStandards', text: 'Delete Product Standards' },
+  { code: 'backdateProductStandards', text: 'Backdate Product Standards' },
   { code: 'readProductionPlans', text: 'Read Production Plans' },
   { code: 'writeProductionPlans', text: 'Write Production Plans' },
   { code: 'deleteProductionPlans', text: 'Delete Production Plans' },

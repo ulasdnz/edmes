@@ -11,6 +11,7 @@ const productStandardSchema = new Schema(
     idealOutputPerMinute: { type: Number, required: true },
     counterMultiplier: { type: Number, default: null },
     idealSpeed: { type: Number, default: null },
+    backdateReason: { type: String, default: null },
     createdBy: { type: Schema.Types.ObjectId, required: true },
     updatedBy: { type: Schema.Types.ObjectId, default: null },
   },

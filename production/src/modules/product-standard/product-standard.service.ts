@@ -45,7 +45,10 @@ async function assertProductivityModeRequirements(
   }
 }
 
-async function validateCreateStandard(data: CreateProductStandardInput): Promise<void> {
+async function validateCreateStandard(
+  data: CreateProductStandardInput,
+  canBackdate: boolean,
+): Promise<void> {
   const product = await Product.findById(data.productId)
   if (!product) throw new CustomError(404, 'error.not_found')
 
@@ -53,50 +56,70 @@ async function validateCreateStandard(data: CreateProductStandardInput): Promise
     counterMultiplier: data.counterMultiplier,
     idealSpeed: data.idealSpeed,
   })
+
+  // Measured production was converted with the standards valid at the time, so a new standard
+  // may take some of it over only as a deliberate correction, with its reason on record. Without
+  // a validFrom the standard starts now, after everything measured.
+  if (data.validFrom && (await measuredFrom(data.productId, data.workCenterId, data.validFrom))) {
+    if (!canBackdate) throw new CustomError(409, 'error.product_standard_backdated')
+    if (!data.backdateReason) throw new CustomError(400, 'error.backdate_reason_required')
+  }
 }
 
-// A standard is applied once a started job order has run under it: the job order's run so far
-// overlaps the standard's validity [validFrom, next validFrom). That includes a standard that
-// took effect in the middle of a running job order, which converted part of its output.
-async function isApplied(standardId: string): Promise<boolean> {
-  const standard = await ProductStandard.findById(standardId).lean()
-  if (!standard || standard.validFrom > new Date()) return false
+// Whether production has been measured under a standard of the product on the work center valid
+// from validFrom: a started job order's run so far overlaps [validFrom, next standard's validFrom).
+async function measuredFrom(
+  productId: mongoose.Types.ObjectId | string,
+  workCenterId: mongoose.Types.ObjectId | string,
+  validFrom: Date,
+): Promise<boolean> {
+  if (validFrom > new Date()) return false
 
   let JobOrder: AppliedJobOrderModel
   try {
     JobOrder = mongoose.model('JobOrder') as unknown as AppliedJobOrderModel
   } catch (err) {
-    logger.error('JobOrder model not registered during isApplied check', {
+    logger.error('JobOrder model not registered during the measured production check', {
       event: 'product_standard.model_not_registered',
-      standardId,
+      productId,
+      workCenterId,
       error: err instanceof Error ? err.message : err,
     })
     return false
   }
 
   const next = await ProductStandard.findOne({
-    productId: standard.productId,
-    workCenterId: standard.workCenterId,
-    validFrom: { $gt: standard.validFrom },
+    productId,
+    workCenterId,
+    validFrom: { $gt: validFrom },
   })
     .sort({ validFrom: 1 })
     .select('validFrom')
     .lean()
 
-  const ranUnderIt = await JobOrder.exists({
-    productId: standard.productId,
-    workCenterId: standard.workCenterId,
+  const ran = await JobOrder.exists({
+    productId,
+    workCenterId,
     startTime: next ? { $lt: next.validFrom } : { $ne: null },
-    $or: [{ endTime: null }, { endTime: { $gt: standard.validFrom } }],
+    $or: [{ endTime: null }, { endTime: { $gt: validFrom } }],
   })
-  return ranUnderIt !== null
+  return ran !== null
+}
+
+// A standard is applied once production has been measured under it. That includes a standard
+// that took effect in the middle of a running job order, which converted part of its output.
+async function isApplied(standardId: string): Promise<boolean> {
+  const standard = await ProductStandard.findById(standardId).lean()
+  if (!standard) return false
+  return measuredFrom(standard.productId, standard.workCenterId, standard.validFrom)
 }
 
 export async function create(
   data: CreateProductStandardInput,
   userId: string,
+  { canBackdate = false }: { canBackdate?: boolean } = {},
 ): Promise<IProductStandard> {
-  await validateCreateStandard(data)
+  await validateCreateStandard(data, canBackdate)
   const doc = await ProductStandard.create({
     ...data,
     validFrom: data.validFrom ?? new Date(),

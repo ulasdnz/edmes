@@ -41,6 +41,19 @@ const buildInput = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 })
 
+// A started job order of the default product on the work center; without an endTime it still runs
+const runJobOrder = (startTime: string, endTime: string | null = null) =>
+  JobOrder.create({
+    code: `JO-${new Types.ObjectId().toHexString().toUpperCase()}`,
+    productId: defaultProductId,
+    workCenterId,
+    targetQuantity: 10,
+    startTime: new Date(startTime),
+    endTime: endTime ? new Date(endTime) : null,
+    startedBy: userId,
+    createdBy: userId,
+  })
+
 describe('ProductStandardService', () => {
   beforeEach(async () => {
     await seedProduct()
@@ -133,6 +146,90 @@ describe('ProductStandardService', () => {
       await expect(
         service.create(buildInput({ counterMultiplier: 3, validFrom }), userId),
       ).rejects.toThrow()
+    })
+
+    // Measured production was converted with the standards valid at the time. A standard dated
+    // into that period would take it over and silently change OEE already reported.
+    it('rejects a standard dated into a running job order', async () => {
+      await runJobOrder('2026-02-01T06:00:00Z')
+
+      await expect(
+        service.create(
+          buildInput({ counterMultiplier: 2, validFrom: new Date('2026-02-01T06:30:00Z') }),
+          userId,
+        ),
+      ).rejects.toMatchObject({ statusCode: 409, message: 'error.product_standard_backdated' })
+    })
+
+    it('rejects a standard dated into a finished job order', async () => {
+      await runJobOrder('2026-02-01T06:00:00Z', '2026-02-01T14:00:00Z')
+
+      await expect(
+        service.create(
+          buildInput({ counterMultiplier: 2, validFrom: new Date('2026-02-01T10:00:00Z') }),
+          userId,
+        ),
+      ).rejects.toMatchObject({ statusCode: 409, message: 'error.product_standard_backdated' })
+    })
+
+    // A die drops from 4 to 2 parts a stroke during a job order: the new standard applies from now.
+    it('accepts a standard valid from now while a job order runs', async () => {
+      await runJobOrder('2026-02-01T06:00:00Z')
+
+      const doc = await service.create(buildInput({ counterMultiplier: 2 }), userId)
+
+      expect(doc.counterMultiplier).toBe(2)
+    })
+
+    it('accepts a past validFrom when nothing has been produced since', async () => {
+      await runJobOrder('2026-02-01T06:00:00Z', '2026-02-01T14:00:00Z')
+      const validFrom = new Date('2026-03-01T00:00:00Z')
+
+      const doc = await service.create(buildInput({ counterMultiplier: 2, validFrom }), userId)
+
+      expect(doc.validFrom).toEqual(validFrom)
+    })
+
+    it('lets a user who may backdate standards date one into measured production, with a reason', async () => {
+      await runJobOrder('2026-02-01T06:00:00Z')
+      const backdateReason = 'Two of the four die holes were closed from 06:30'
+
+      const doc = await service.create(
+        buildInput({
+          counterMultiplier: 2,
+          validFrom: new Date('2026-02-01T06:30:00Z'),
+          backdateReason,
+        }),
+        userId,
+        { canBackdate: true },
+      )
+
+      expect(doc.backdateReason).toBe(backdateReason)
+    })
+
+    it('requires a reason to date a standard into measured production', async () => {
+      await runJobOrder('2026-02-01T06:00:00Z')
+
+      await expect(
+        service.create(
+          buildInput({ counterMultiplier: 2, validFrom: new Date('2026-02-01T06:30:00Z') }),
+          userId,
+          { canBackdate: true },
+        ),
+      ).rejects.toMatchObject({ statusCode: 400, message: 'error.backdate_reason_required' })
+    })
+
+    it('accepts a past validFrom when the next standard took over before production started', async () => {
+      await service.create(
+        buildInput({ counterMultiplier: 4, validFrom: new Date('2026-03-01T00:00:00Z') }),
+        userId,
+      )
+      await runJobOrder('2026-03-10T06:00:00Z')
+      const validFrom = new Date('2026-02-01T00:00:00Z')
+
+      const doc = await service.create(buildInput({ counterMultiplier: 2, validFrom }), userId)
+
+      expect(doc.validFrom).toEqual(validFrom)
     })
   })
 
@@ -263,19 +360,11 @@ describe('ProductStandardService', () => {
         buildInput({ counterMultiplier: 4, validFrom: new Date('2026-01-01T00:00:00Z') }),
         userId,
       )
-      await JobOrder.create({
-        code: `JO-MID-${Date.now()}`,
-        productId: defaultProductId,
-        workCenterId,
-        targetQuantity: 10,
-        startTime: new Date('2026-02-01T06:00:00Z'),
-        startedBy: userId,
-        createdBy: userId,
-      })
       const midJob = await service.create(
         buildInput({ counterMultiplier: 2, validFrom: new Date('2026-02-01T06:30:00Z') }),
         userId,
       )
+      await runJobOrder('2026-02-01T06:00:00Z')
 
       await expect(
         service.update(midJob._id.toString(), { counterMultiplier: 3 }, userId),
@@ -453,20 +542,11 @@ describe('ProductStandardService', () => {
         buildInput({ counterMultiplier: 4, validFrom: new Date('2026-01-01T00:00:00Z') }),
         userId,
       )
-      await JobOrder.create({
-        code: `JO-DEL-MID-${Date.now()}`,
-        productId: defaultProductId,
-        workCenterId,
-        targetQuantity: 10,
-        startTime: new Date('2026-02-01T06:00:00Z'),
-        endTime: new Date('2026-02-01T14:00:00Z'),
-        startedBy: userId,
-        createdBy: userId,
-      })
       const midJob = await service.create(
         buildInput({ counterMultiplier: 2, validFrom: new Date('2026-02-01T06:30:00Z') }),
         userId,
       )
+      await runJobOrder('2026-02-01T06:00:00Z', '2026-02-01T14:00:00Z')
 
       await expect(service.remove(midJob._id.toString())).rejects.toThrow(
         'error.product_standard_applied',

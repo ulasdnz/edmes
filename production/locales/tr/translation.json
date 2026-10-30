@@ -17,6 +17,8 @@
     "ideal_speed_required": "İdeal hız hız tabanlı iş merkezleri için zorunludur",
     "must_be_positive": "Değer pozitif bir sayı olmalıdır",
     "product_standard_applied": "Uygulanmış ürün standardı değiştirilemez veya silinemez",
+    "product_standard_backdated": "Yeni ürün standardı, ölçülmüş üretime geriye dönük uygulanamaz",
+    "backdate_reason_required": "Ürün standardını ölçülmüş üretime geriye dönük uygulamak için gerekçe zorunludur",
     "product_standard_last_revision": "İş emirleri mevcutken bu ürün-iş merkezi kombinasyonu için son ürün standardı silinemez",
     "plan_target_exceeded": "Alt iş emri hedefleri toplamı üretim planı hedefini aşar",
     "plan_product_mismatch": "İş emri ürünü üretim planı ürünüyle eşleşmelidir",

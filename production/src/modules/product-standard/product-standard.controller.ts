@@ -1,3 +1,4 @@
+import { hasPermission } from '@mes/auth'
 import { CustomError } from '@mes/core'
 import type { PaginatedResult } from '@mes/core/pagination'
 import type { Request, Response } from 'express'
@@ -14,7 +15,9 @@ function assertVisible(workCenterId: string, visibleIds?: string[]): void {
 
 export const create = async (req: Request, res: Response<SuccessResponse<IProductStandard>>) => {
   assertVisible(req.body.workCenterId, req.user!.workCenterIds)
-  const doc = await service.create(req.body, req.user!.id)
+  const doc = await service.create(req.body, req.user!.id, {
+    canBackdate: hasPermission(req.user, 'backdateProductStandards'),
+  })
   res.status(201).json({ message: req.t('success.create'), data: doc })
 }
 

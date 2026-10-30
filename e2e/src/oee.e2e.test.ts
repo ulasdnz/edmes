@@ -61,6 +61,7 @@ function createStandard(
   validFrom: Date,
   idealOutputPerMinute: number,
   counterMultiplier: number,
+  backdateReason?: string,
 ) {
   return api.post('production', '/api/v1/product-standards', {
     productId: line.product._id,
@@ -68,6 +69,7 @@ function createStandard(
     validFrom: validFrom.toISOString(),
     idealOutputPerMinute,
     counterMultiplier,
+    backdateReason,
   })
 }
 
@@ -153,18 +155,20 @@ describe('OEE across telemetry, work-center, production and performance', () => 
   })
 
   // In the middle of a job order some die holes close, so each stroke stamps 2 parts instead of
-  // 4, and later they open again. The operator records each change as a new standard, after the
-  // job order has started. Over three minutes at 10 strokes a minute the press makes
-  // 40 + 20 + 40 = 100 parts against a 100 part target, and 25 parts are scrapped.
+  // 4, and later they open again; each change is a new standard. Over three minutes at 10 strokes
+  // a minute the press makes 40 + 20 + 40 = 100 parts against a 100 part target, and 25 parts are
+  // scrapped.
   it('count based: converts each minute with the standard valid at that time (4, 2, 4 per stroke)', async () => {
     const { api } = await loginAsAdmin()
     const start = new Date(Math.floor(Date.now() / 60_000) * 60_000 - 10 * 60_000)
     const minute = (n: number) => new Date(start.getTime() + n * 60_000)
     const line = await createPressLine(api, 'PRESS-02')
+    // The test replays the past, so the standards that take effect during the job order are set
+    // before it starts: once production is measured, no new standard can be dated into it.
     await createStandard(api, line, new Date(start.getTime() - 3_600_000), 40, 4)
-    const jobOrder = await startJobOrder(api, line, 'JO-E2E-002', start)
     await createStandard(api, line, minute(1), 20, 2)
     await createStandard(api, line, minute(2), 40, 4)
+    const jobOrder = await startJobOrder(api, line, 'JO-E2E-002', start)
 
     await publishStrokes(line, start, minute(3))
     await scrap(api, line, jobOrder, 25, start, minute(3))
@@ -174,6 +178,34 @@ describe('OEE across telemetry, work-center, production and performance', () => 
       productivity: { percentage: 100, status: 'ok' },
       quality: { percentage: 75, status: 'ok' },
       oee: { percentage: 75, status: 'ok' },
+    })
+  })
+
+  // A minute into a job order three of the four die holes blocked, so each stroke stamped 1 part,
+  // but nobody recorded it until the run was over and every stroke counted as 4 parts. A
+  // supervisor who may backdate standards dates the 1 part standard back to that minute, with the
+  // reason, and OEE follows: 40 + 10 + 10 = 60 parts instead of 120, half of them scrapped.
+  it('lets a supervisor correct a standard after the fact, with a reason', async () => {
+    const { api } = await loginAsAdmin()
+    const start = new Date(Math.floor(Date.now() / 60_000) * 60_000 - 10 * 60_000)
+    const minute = (n: number) => new Date(start.getTime() + n * 60_000)
+    const line = await createPressLine(api, 'PRESS-03')
+    await createStandard(api, line, new Date(start.getTime() - 3_600_000), 40, 4)
+    const jobOrder = await startJobOrder(api, line, 'JO-E2E-004', start)
+    await publishStrokes(line, start, minute(3))
+    await scrap(api, line, jobOrder, 30, start, minute(3))
+    await strokesIngested(line, start, minute(3), 30)
+    expect(await oeeOf(api, line.press._id, start, minute(3))).toMatchObject({
+      quality: { percentage: 75, status: 'ok' },
+    })
+
+    await expect(createStandard(api, line, minute(1), 10, 1)).rejects.toThrow('answered 400')
+    await createStandard(api, line, minute(1), 10, 1, 'Three die holes blocked from minute 1')
+
+    expect(await oeeOf(api, line.press._id, start, minute(3))).toMatchObject({
+      productivity: { percentage: 100, status: 'ok' },
+      quality: { percentage: 50, status: 'ok' },
+      oee: { percentage: 50, status: 'ok' },
     })
   })
 

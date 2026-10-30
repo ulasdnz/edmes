@@ -11,6 +11,8 @@ export const createProductStandardSchema = z
     idealOutputPerMinute: z.number().positive(),
     counterMultiplier: z.number().positive().nullable().optional(),
     idealSpeed: z.number().positive().nullable().optional(),
+    // Why the standard is dated into production already measured; required to do so
+    backdateReason: z.string().trim().min(1).max(500).optional(),
   })
   .strict()
 

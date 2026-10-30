@@ -17,6 +17,8 @@
     "ideal_speed_required": "Ideal speed is required for speed-based work centers",
     "must_be_positive": "Value must be a positive number",
     "product_standard_applied": "Applied product standard cannot be modified or deleted",
+    "product_standard_backdated": "A new product standard cannot apply to production that has already been measured",
+    "backdate_reason_required": "A reason is required to apply a product standard to production that has already been measured",
     "product_standard_last_revision": "Cannot delete the last product standard for this product-work center combination while job orders exist",
     "plan_target_exceeded": "Sum of child job order targets would exceed production plan target",
     "plan_product_mismatch": "Job order product must match production plan product",
