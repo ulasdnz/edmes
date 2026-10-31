@@ -1,0 +1,13 @@
+version: 2
+updates:
+  # Moves the commit SHAs the workflows pin their actions to, all in one pull request a month
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    # A release becomes a candidate only after a week, time for a compromised one to be caught
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ['*']
