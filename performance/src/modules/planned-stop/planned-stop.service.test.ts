@@ -1,3 +1,4 @@
+import { CustomError } from '@mes/core'
 import { profileOperations } from '@mes/testing'
 import { Types } from 'mongoose'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -309,6 +310,65 @@ describe('PlannedStopService', () => {
         endAt: null,
       })
       expect(openUnplanned).toBeNull()
+    })
+
+    it('closes the planned stop when telemetry cannot be reached for the run mode', async () => {
+      const reason = await seedPlannedReason()
+      const wcId = new Types.ObjectId().toString()
+      const stop = await service.create(
+        {
+          workCenterId: wcId,
+          reasonId: reason._id.toString(),
+          plannedOwnerId: new Types.ObjectId().toString(),
+          plannedStartAt: new Date('2026-06-15T10:00:00.000Z'),
+          plannedEndAt: new Date('2026-06-15T11:00:00.000Z'),
+        },
+        userId,
+      )
+      await service.start(stop._id.toString(), userId, {
+        actualStartAt: new Date('2026-06-15T10:00:00.000Z'),
+      })
+      getWorkCenter.mockResolvedValueOnce({
+        _id: wcId,
+        type: 'machine',
+        tagBindings: { runModeTagId: new Types.ObjectId().toString() },
+      })
+      getLatest.mockRejectedValueOnce(new CustomError(503, 'error.telemetry_unreachable'))
+
+      const closed = await service.close(
+        stop._id.toString(),
+        { actualEndAt: new Date('2026-06-15T10:30:00.000Z') },
+        userId,
+      )
+
+      expect(closed.status).toBe('closed')
+    })
+
+    it('closes the planned stop when the work center service cannot be reached', async () => {
+      const reason = await seedPlannedReason()
+      const wcId = new Types.ObjectId().toString()
+      const stop = await service.create(
+        {
+          workCenterId: wcId,
+          reasonId: reason._id.toString(),
+          plannedOwnerId: new Types.ObjectId().toString(),
+          plannedStartAt: new Date('2026-06-15T10:00:00.000Z'),
+          plannedEndAt: new Date('2026-06-15T11:00:00.000Z'),
+        },
+        userId,
+      )
+      await service.start(stop._id.toString(), userId, {
+        actualStartAt: new Date('2026-06-15T10:00:00.000Z'),
+      })
+      getWorkCenter.mockRejectedValueOnce(new CustomError(503, 'error.work_center_unreachable'))
+
+      const closed = await service.close(
+        stop._id.toString(),
+        { actualEndAt: new Date('2026-06-15T10:30:00.000Z') },
+        userId,
+      )
+
+      expect(closed.status).toBe('closed')
     })
 
     it('opens unplanned when value<1 after close and no covering planned exists', async () => {

@@ -1041,3 +1041,29 @@ describe('Speed based OEE converts the speed area into product units with idealS
     })
   })
 })
+
+describe('A service the OEE reads cannot answer → 503, never a result from missing data', () => {
+  const down = () => {
+    throw new Error('service is down')
+  }
+
+  it.each([
+    ['work center', { getWorkCenter: down }, 'error.work_center_unreachable'],
+    ['production', { getJobOrders: down }, 'error.production_unreachable'],
+    ['telemetry', { getProducedSummary: down }, 'error.telemetry_unreachable'],
+  ])('fails when the %s service answers with a server error', async (_service, failing, code) => {
+    resetHandlers({
+      getWorkCenter: () => machineWc(),
+      getJobOrders: () => [joRecord()],
+      getProductStandardsBatch: () => ({
+        items: [{ jobOrderId: JO_ID, standards: [standardTimeline(10)], qualityFlags: [] }],
+      }),
+      getProducedSummary: () => producedSummaryFor(600, FROM, TO),
+      ...failing,
+    })
+
+    await expect(
+      calculate({ workCenterId: WC_ID, from: FROM, to: TO, userId: SYSTEM_IDENTITY }),
+    ).rejects.toMatchObject({ statusCode: 503, message: code })
+  })
+})

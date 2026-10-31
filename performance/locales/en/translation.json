@@ -23,7 +23,10 @@
     "micro_stop_missing": "System-managed MICRO_STOP reason is missing",
     "micro_stop_invalid": "System-managed MICRO_STOP reason violates required invariants",
     "upsert_failed": "Failed to upsert record",
-    "virtual_work_center_not_supported_here": "Virtual work center cannot be used in this context"
+    "virtual_work_center_not_supported_here": "Virtual work center cannot be used in this context",
+    "production_unreachable": "The production service cannot be reached right now. Please try again shortly.",
+    "telemetry_unreachable": "The telemetry service cannot be reached right now. Please try again shortly.",
+    "work_center_unreachable": "The work center service cannot be reached right now. Please try again shortly."
   },
   "diagnostic": {
     "no_job_order_in_range": "No job order found in the requested time range",

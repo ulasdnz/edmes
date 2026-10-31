@@ -23,7 +23,10 @@
     "micro_stop_missing": "Sistem yönetimli MICRO_STOP sebebi eksik",
     "micro_stop_invalid": "Sistem yönetimli MICRO_STOP sebebi gerekli değişmezleri karşılamıyor",
     "upsert_failed": "Kayıt güncellenemedi veya oluşturulamadı",
-    "virtual_work_center_not_supported_here": "Sanal iş merkezi bu bağlamda kullanılamaz"
+    "virtual_work_center_not_supported_here": "Sanal iş merkezi bu bağlamda kullanılamaz",
+    "production_unreachable": "Üretim servisine şu anda ulaşılamıyor. Lütfen biraz sonra tekrar deneyin.",
+    "telemetry_unreachable": "Telemetri servisine şu anda ulaşılamıyor. Lütfen biraz sonra tekrar deneyin.",
+    "work_center_unreachable": "İş merkezi servisine şu anda ulaşılamıyor. Lütfen biraz sonra tekrar deneyin."
   },
   "diagnostic": {
     "no_job_order_in_range": "İstenen zaman aralığında iş emri bulunamadı",

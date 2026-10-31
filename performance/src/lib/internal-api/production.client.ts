@@ -1,5 +1,5 @@
 import { INTERNAL_TOKEN_HEADER } from '@mes/auth'
-import { getTraceId } from '@mes/core'
+import { CustomError, getTraceId } from '@mes/core'
 import { config } from '../../config/index.js'
 import type { JobWindow } from '../../modules/oee/oee.types.js'
 import { logger } from '../logger.js'
@@ -59,23 +59,25 @@ async function request<T>(path: string, init?: RequestInit): Promise<T | null> {
       },
     })
     if (res.status === 404) return null
+    // A failed answer is not an empty one; read as empty it would make the OEE wrong
     if (!res.ok) {
       logger.warn('Production internal fetch failed', {
         event: 'internal_api.production.fetch_failed',
         status: res.status,
         path,
       })
-      return null
+      throw new CustomError(503, 'error.production_unreachable')
     }
     const body = (await res.json()) as { data?: T }
     return body.data ?? null
   } catch (err) {
+    if (err instanceof CustomError) throw err
     logger.warn('Production internal fetch errored', {
       event: 'internal_api.production.fetch_errored',
       path,
       error: err instanceof Error ? err.message : err,
     })
-    return null
+    throw new CustomError(503, 'error.production_unreachable')
   }
 }
 

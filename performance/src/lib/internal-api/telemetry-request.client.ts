@@ -1,5 +1,5 @@
 import { INTERNAL_TOKEN_HEADER } from '@mes/auth'
-import { getTraceId } from '@mes/core'
+import { CustomError, getTraceId } from '@mes/core'
 import { config } from '../../config/index.js'
 import { logger } from '../logger.js'
 
@@ -15,22 +15,24 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T | 
       },
     })
     if (res.status === 404) return null
+    // A failed answer is not an empty one; callers must not read it as no samples
     if (!res.ok) {
       logger.warn('Telemetry internal fetch failed', {
         event: 'internal_api.telemetry.fetch_failed',
         path,
         status: res.status,
       })
-      return null
+      throw new CustomError(503, 'error.telemetry_unreachable')
     }
     const body = (await res.json()) as { data?: T }
     return body.data ?? null
   } catch (err) {
+    if (err instanceof CustomError) throw err
     logger.warn('Telemetry internal fetch errored', {
       event: 'internal_api.telemetry.fetch_errored',
       path,
       error: err instanceof Error ? err.message : err,
     })
-    return null
+    throw new CustomError(503, 'error.telemetry_unreachable')
   }
 }

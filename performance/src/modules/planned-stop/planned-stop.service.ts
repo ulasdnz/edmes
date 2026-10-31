@@ -9,8 +9,9 @@ import {
   emitPlannedStopStarted,
   emitPlannedStopUpdated,
 } from '../../jobs/events.js'
-import { getLatest } from '../../lib/internal-api/run-mode-telemetry.client.js'
+import { getLatest, type LatestSample } from '../../lib/internal-api/run-mode-telemetry.client.js'
 import { getById as getWorkCenter } from '../../lib/internal-api/work-center.client.js'
+import { logger } from '../../lib/logger.js'
 import { Reason } from '../reason/reason.model.js'
 import {
   closeIfOpen as closeOpenUnplanned,
@@ -322,11 +323,23 @@ async function maybeOpenUnplannedAfterClose(
   })
   if (covering) return
 
-  const wc = await getWorkCenter(workCenterId)
-  const runModeTagId = wc?.tagBindings?.runModeTagId
-  if (!runModeTagId) return
+  let latest: LatestSample | null
+  try {
+    const wc = await getWorkCenter(workCenterId)
+    const runModeTagId = wc?.tagBindings?.runModeTagId
+    if (!runModeTagId) return
 
-  const latest = await getLatest(runModeTagId)
+    latest = await getLatest(runModeTagId)
+  } catch (err) {
+    // The planned stop is closed already; a service that cannot answer must not fail the close
+    logger.warn('Run mode could not be read after a planned stop closed', {
+      event: 'planned_stop.run_mode_check_failed',
+      plannedStopId: closed._id.toString(),
+      workCenterId,
+      error: err instanceof Error ? err.message : err,
+    })
+    return
+  }
   if (!latest) return
   if (latest.value >= 1) return
 

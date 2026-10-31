@@ -76,24 +76,20 @@ describe('findStartedJobOrders', () => {
     ])
   })
 
-  it('returns empty array when fetch fails', async () => {
+  it('reports production as unreachable instead of returning no job orders', async () => {
     fetchMock.mockResolvedValueOnce({ ok: false, status: 500 })
-    const result = await productionClient.findStartedJobOrders({
-      workCenterId: 'aaaaaaaaaaaaaaaaaaaaaaaa',
-      from: new Date(),
-      to: new Date(),
-    })
-    expect(result).toEqual([])
+
+    await expect(
+      productionClient.findStartedJobOrders({ workCenterId: wcId, from, to }),
+    ).rejects.toMatchObject({ statusCode: 503, message: 'error.production_unreachable' })
   })
 
-  it('returns empty array on network error', async () => {
+  it('reports production as unreachable when the request cannot reach it', async () => {
     fetchMock.mockRejectedValueOnce(new Error('network'))
-    const result = await productionClient.findStartedJobOrders({
-      workCenterId: 'aaaaaaaaaaaaaaaaaaaaaaaa',
-      from: new Date(),
-      to: new Date(),
-    })
-    expect(result).toEqual([])
+
+    await expect(
+      productionClient.findStartedJobOrders({ workCenterId: wcId, from, to }),
+    ).rejects.toMatchObject({ statusCode: 503, message: 'error.production_unreachable' })
   })
 })
 
@@ -138,18 +134,20 @@ describe('findProductStandardTimelinesBatch', () => {
     expect(result['bbbbbbbbbbbbbbbbbbbbbbbb'][0].idealOutputPerMinute).toBe(10)
   })
 
-  it('returns empty map on failure', async () => {
+  it('reports production as unreachable instead of returning no standards', async () => {
     fetchMock.mockResolvedValueOnce({ ok: false, status: 500 })
-    const result = await productionClient.findProductStandardTimelinesBatch([
-      {
-        jobOrderId: 'bbbbbbbbbbbbbbbbbbbbbbbb',
-        workCenterId: 'aaaaaaaaaaaaaaaaaaaaaaaa',
-        productId: 'cccccccccccccccccccccccc',
-        from: new Date(),
-        to: new Date(),
-      },
-    ])
-    expect(result).toEqual({})
+
+    await expect(
+      productionClient.findProductStandardTimelinesBatch([
+        {
+          jobOrderId: 'bbbbbbbbbbbbbbbbbbbbbbbb',
+          workCenterId: 'aaaaaaaaaaaaaaaaaaaaaaaa',
+          productId: 'cccccccccccccccccccccccc',
+          from: new Date(),
+          to: new Date(),
+        },
+      ]),
+    ).rejects.toMatchObject({ statusCode: 503, message: 'error.production_unreachable' })
   })
 })
 
@@ -186,19 +184,20 @@ describe('findJobOrderRecordsBatch', () => {
     expect(result.scrapEntriesByJobOrderId['bbbbbbbbbbbbbbbbbbbbbbbb']).toHaveLength(0)
   })
 
-  it('returns empty maps on failure', async () => {
+  it('reports production as unreachable instead of returning no records', async () => {
     fetchMock.mockResolvedValueOnce({ ok: false, status: 500 })
-    const result = await productionClient.findJobOrderRecordsBatch({
-      items: [
-        {
-          jobOrderId: 'bbbbbbbbbbbbbbbbbbbbbbbb',
-          from: new Date(),
-          to: new Date(),
-        },
-      ],
-      include: ['quantity_adjustments'],
-    })
-    expect(result.quantityAdjustmentsByJobOrderId).toEqual({})
-    expect(result.scrapEntriesByJobOrderId).toEqual({})
+
+    await expect(
+      productionClient.findJobOrderRecordsBatch({
+        items: [
+          {
+            jobOrderId: 'bbbbbbbbbbbbbbbbbbbbbbbb',
+            from: new Date(),
+            to: new Date(),
+          },
+        ],
+        include: ['quantity_adjustments'],
+      }),
+    ).rejects.toMatchObject({ statusCode: 503, message: 'error.production_unreachable' })
   })
 })

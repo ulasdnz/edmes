@@ -62,20 +62,32 @@ describe('producedSummary', () => {
     expect(result).toEqual(payload)
   })
 
-  it('returns null on non-ok response', async () => {
-    fetchMock.mockResolvedValue({ ok: false, status: 500, json: async () => ({}) })
+  it('returns null when telemetry does not know the tag', async () => {
+    fetchMock.mockResolvedValue({ ok: false, status: 404, json: async () => ({}) })
     const result = await producedSummary('tag-1', [
       { from: new Date('2026-04-01T00:00:00.000Z'), to: new Date('2026-04-01T00:10:00.000Z') },
     ])
     expect(result).toBeNull()
   })
 
-  it('returns null when fetch throws', async () => {
+  it('reports telemetry as unreachable instead of returning no produced count', async () => {
+    fetchMock.mockResolvedValue({ ok: false, status: 500, json: async () => ({}) })
+
+    await expect(
+      producedSummary('tag-1', [
+        { from: new Date('2026-04-01T00:00:00.000Z'), to: new Date('2026-04-01T00:10:00.000Z') },
+      ]),
+    ).rejects.toMatchObject({ statusCode: 503, message: 'error.telemetry_unreachable' })
+  })
+
+  it('reports telemetry as unreachable when the request cannot reach it', async () => {
     fetchMock.mockRejectedValue(new Error('network'))
-    const result = await producedSummary('tag-1', [
-      { from: new Date('2026-04-01T00:00:00.000Z'), to: new Date('2026-04-01T00:10:00.000Z') },
-    ])
-    expect(result).toBeNull()
+
+    await expect(
+      producedSummary('tag-1', [
+        { from: new Date('2026-04-01T00:00:00.000Z'), to: new Date('2026-04-01T00:10:00.000Z') },
+      ]),
+    ).rejects.toMatchObject({ statusCode: 503, message: 'error.telemetry_unreachable' })
   })
 })
 
