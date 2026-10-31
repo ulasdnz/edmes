@@ -5,7 +5,7 @@ import { CustomError } from '@mes/core'
 import jwt from 'jsonwebtoken'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { resolveAuthUser } from './authenticate.js'
-import { configureAuth } from './config.js'
+import { type AuthMiddlewareConfig, configureAuth } from './config.js'
 import { AuthError } from './error.js'
 
 const JWT_SECRET = 'authenticate-test-secret'
@@ -35,20 +35,25 @@ const userService = http.createServer((req, res) => {
   res.end(JSON.stringify(status === 200 ? { data: authContext } : { error: { code: 'x' } }))
 })
 
+let config: AuthMiddlewareConfig
+
 beforeAll(async () => {
   userService.listen(0, '127.0.0.1')
   await once(userService, 'listening')
-  configureAuth({
+  // The default timeout: on a busy machine the first call can outlast a short one, and only the
+  // hang test is about the timeout
+  config = {
     jwtSecret: JWT_SECRET,
     userServiceInternalUrl: `http://127.0.0.1:${(userService.address() as AddressInfo).port}`,
     internalApiToken: 'test-internal-api-token-at-least-32-chars',
-    userServiceTimeoutMs: TIMEOUT_MS,
     cacheWrapDedup: (_key, _ttl, fetcher) => fetcher(),
-  })
+  }
+  configureAuth(config)
 })
 
 afterEach(() => {
   reply = 'ok'
+  configureAuth(config)
 })
 
 afterAll(() => {
@@ -95,6 +100,7 @@ describe('resolveAuthUser', () => {
 
   it('gives up when user-service does not answer in time', async () => {
     reply = 'hang'
+    configureAuth({ ...config, userServiceTimeoutMs: TIMEOUT_MS })
     const startedAt = Date.now()
     await expectUnavailable(resolveAuthUser(token()))
     expect(Date.now() - startedAt).toBeLessThan(TIMEOUT_MS + 1000)
