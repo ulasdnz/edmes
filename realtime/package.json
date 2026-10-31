@@ -14,12 +14,12 @@
   "devDependencies": {
     "@types/express": "^5.0.6",
     "@types/jsonwebtoken": "^9.0.10",
-    "@types/node": "^25.3.5",
+    "@types/node": "^24.19.2",
     "jsonwebtoken": "^9.0.3",
     "socket.io-client": "^4.8.4",
-    "tsx": "^4.21.0",
+    "tsx": "^4.23.15",
     "typescript": "^5.9.3",
-    "vitest": "^3.2.1"
+    "vitest": "^4.1.12"
   },
   "dependencies": {
     "@mes/auth": "workspace:*",
@@ -29,11 +29,11 @@
     "@mes/health": "workspace:*",
     "@mes/logger": "workspace:*",
     "dotenv": "^17.3.1",
-    "express": "^5.2.1",
+    "express": "^5.3.0",
     "ioredis": "^5.10.0",
-    "socket.io": "^4.8.1",
+    "socket.io": "^4.8.4",
     "winston": "^3.19.0",
-    "zod": "^4.3.6"
+    "zod": "^4.6.7"
   },
   "type": "module"
 }

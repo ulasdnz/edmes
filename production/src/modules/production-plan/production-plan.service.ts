@@ -15,7 +15,7 @@ import type {
   ProductionPlanListInput,
 } from './production-plan.validators.js'
 
-function getJobOrderModel(): mongoose.Model<any> | null {
+function getJobOrderModel() {
   try {
     return mongoose.model('JobOrder')
   } catch (err) {

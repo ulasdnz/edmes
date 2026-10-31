@@ -1,7 +1,7 @@
 import { CustomError } from '@mes/core'
 import mongoose, { Types } from 'mongoose'
 import { emitReasonCreated, emitReasonDeleted, emitReasonUpdated } from '../../jobs/events.js'
-import { type IReason, Reason } from './reason.model.js'
+import { type IReason, Reason, type ReasonUsage } from './reason.model.js'
 import type { CreateReasonInput, PatchReasonInput, ReasonListInput } from './reason.validators.js'
 
 const REFERENCING_COLLECTIONS: Array<{ model: string; field: string }> = [
@@ -131,7 +131,7 @@ export async function findIds({
   usages,
 }: {
   affectsOee: boolean
-  usages: string[]
+  usages: ReasonUsage[]
 }): Promise<Set<string>> {
   // $in matches reasons whose usages array contains AT LEAST ONE of the provided values (OR semantics).
   const docs = await Reason.find({ affectsOee, usages: { $in: usages } })

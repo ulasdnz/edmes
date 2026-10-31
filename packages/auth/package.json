@@ -31,10 +31,10 @@
   "devDependencies": {
     "@types/express": "^5.0.0",
     "@types/jsonwebtoken": "^9.0.7",
-    "@types/node": "^20.0.0",
-    "express": "^5.0.0",
+    "@types/node": "^24.19.2",
+    "express": "^5.3.0",
     "jsonwebtoken": "^9.0.2",
     "typescript": "^5.5.0",
-    "vitest": "^3.2.4"
+    "vitest": "^4.1.12"
   }
 }
