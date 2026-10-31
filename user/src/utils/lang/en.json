@@ -65,7 +65,9 @@
     "invalid_or_expired_code": "Invalid or expired verification code."
   },
   "upload": {
-    "only_images": "Only images are allowed!"
+    "only_images": "Only JPEG, PNG or WebP images are allowed",
+    "file_too_large": "File must be 5 MB or smaller",
+    "invalid_file": "The file could not be read from the request"
   },
   "success": {
     "register": "User registered successfully",

@@ -6,6 +6,7 @@ import { SYSTEM_IDENTITY } from '../../constants/identity.js'
 import { SYSTEM_ADMIN_ROLE_NAME } from '../../constants/system-admin.js'
 import CustomError from '../../core/errors/index.js'
 import { isSystemAdminByUsername } from '../../core/loaders/system-admin.js'
+import { saveImage } from '../../core/middleware/upload.js'
 import { invalidateAuthCache } from '../../jobs/auth-cache.events.js'
 import { emitUserCreated, emitUserDeleted, emitUserUpdated } from '../../jobs/events.js'
 import { logger } from '../../lib/logger.js'
@@ -204,6 +205,9 @@ export const updateAvatar = async (
     throw new CustomError(404, 'user.not_found')
   }
 
+  // Before the old avatar goes: an upload that is not an image must leave the current one in place
+  const photoUrl = await saveImage(file)
+
   if (user.photoUrl && !user.photoUrl.includes('node.js_logo')) {
     const oldFilePath = user.photoUrl.replace('/uploads/', 'uploads/')
     try {
@@ -217,7 +221,7 @@ export const updateAvatar = async (
     }
   }
 
-  user.photoUrl = `/uploads/${file.filename}`
+  user.photoUrl = photoUrl
   await user.save()
 
   return user

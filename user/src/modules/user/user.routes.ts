@@ -5,7 +5,7 @@
 
 import { requirePermission } from '@mes/auth'
 import { Router } from 'express'
-import { upload } from '../../core/middleware/upload.js'
+import { uploadImage } from '../../core/middleware/upload.js'
 import { validateBody, validateParams, validateQuery } from '../../core/middleware/validate.js'
 import * as userController from './user.controller.js'
 import {
@@ -22,7 +22,7 @@ const router = Router()
 // "me" endpoints — any authenticated user
 router.get('/users/me', userController.getUser)
 router.patch('/users/me', validateBody(updateMeSchema), userController.updateUser)
-router.patch('/users/me/avatar', upload.single('photo'), userController.updateAvatar)
+router.patch('/users/me/avatar', uploadImage('photo'), userController.updateAvatar)
 router.delete('/users/me', userController.deleteUser)
 
 // Admin endpoints — require specific permissions

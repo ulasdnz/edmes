@@ -177,6 +177,7 @@ export const userPaths: ZodOpenApiPathsObject = {
       },
       responses: {
         '200': { description: 'Avatar updated' },
+        '400': { description: 'No file, not a JPEG, PNG or WebP image, or over 5 MB' },
       },
     },
   },
