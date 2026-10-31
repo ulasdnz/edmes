@@ -1,7 +1,7 @@
 import { profileOperations } from '@mes/testing'
 import { Types } from 'mongoose'
 import { describe, expect, it, vi } from 'vitest'
-import { emitJobOrderStarted, emitJobOrderUpdated } from '../../jobs/events.js'
+import { emitJobOrderEnded, emitJobOrderStarted, emitJobOrderUpdated } from '../../jobs/events.js'
 import { Product } from '../product/product.model.js'
 import { ProductStandard } from '../product-standard/product-standard.model.js'
 import { ProductionPlan } from '../production-plan/production-plan.model.js'
@@ -206,6 +206,38 @@ describe('JobOrderService', () => {
       await expect(service.remove(jo._id.toString())).rejects.toThrow(
         'error.job_order_started_no_delete',
       )
+    })
+
+    it('keeps a job order that another request starts while it is being deleted', async () => {
+      const jo = await service.create(buildInput(), userId)
+      const deleteJobOrder = JobOrder.findOneAndDelete.bind(JobOrder)
+      const deleteSpy = vi.spyOn(JobOrder, 'findOneAndDelete').mockImplementationOnce((async (
+        filter: Record<string, unknown>,
+      ) => {
+        // The start lands after remove's checks pass and before it deletes
+        await service.start(jo._id.toString(), {}, userId)
+        return deleteJobOrder(filter)
+      }) as never)
+
+      await expect(service.remove(jo._id.toString())).rejects.toThrow(
+        'error.job_order_started_no_delete',
+      )
+      deleteSpy.mockRestore()
+      expect(await JobOrder.findById(jo._id)).not.toBeNull()
+    })
+
+    it('answers the second of two simultaneous deletes with not found', async () => {
+      const jo = await service.create(buildInput(), userId)
+
+      const results = await Promise.allSettled([
+        service.remove(jo._id.toString()),
+        service.remove(jo._id.toString()),
+      ])
+
+      const rejected = results.filter(r => r.status === 'rejected')
+      expect(results.filter(r => r.status === 'fulfilled')).toHaveLength(1)
+      expect(rejected).toHaveLength(1)
+      expect(rejected[0].reason.message).toBe('error.not_found')
     })
 
     it('blocks delete when QuantityAdjustment records reference the job order', async () => {
@@ -441,6 +473,27 @@ describe('JobOrderService', () => {
       await expect(service.end(jo._id.toString(), {}, userId)).rejects.toThrow(
         'error.job_order_already_ended',
       )
+    })
+
+    it('ends a job order once when two ends for it arrive together', async () => {
+      const jo = await service.create(buildInput(), userId)
+      const startTime = new Date('2026-03-01T06:00:00Z')
+      await service.start(jo._id.toString(), { startTime }, userId)
+      vi.mocked(emitJobOrderEnded).mockClear()
+
+      const results = await Promise.allSettled([
+        service.end(jo._id.toString(), { endTime: new Date('2026-03-01T10:00:00Z') }, userId),
+        service.end(jo._id.toString(), { endTime: new Date('2026-03-01T11:00:00Z') }, userId),
+      ])
+
+      const fulfilled = results.filter(r => r.status === 'fulfilled')
+      const rejected = results.filter(r => r.status === 'rejected')
+      expect(fulfilled).toHaveLength(1)
+      expect(rejected).toHaveLength(1)
+      expect(rejected[0].reason.message).toBe('error.job_order_already_ended')
+      const stored = await JobOrder.findById(jo._id).lean()
+      expect(stored?.endTime).toEqual(fulfilled[0].value.endTime)
+      expect(emitJobOrderEnded).toHaveBeenCalledTimes(1)
     })
 
     it('rejects endTime before startTime', async () => {

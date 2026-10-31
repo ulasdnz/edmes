@@ -191,8 +191,15 @@ export async function remove(id: string): Promise<IJobOrder> {
   ])
   if (qaCount + scrapCount > 0) throw new CustomError(409, 'error.referenced')
 
-  const doc = await JobOrder.findOneAndDelete({ _id: id })
-  if (!doc) throw new CustomError(404, 'error.not_found')
+  // A start can land between the checks above and the delete. The filter keeps a started order,
+  // and with it any adjustment or scrap recorded on it since.
+  const doc = await JobOrder.findOneAndDelete({ _id: id, startTime: null })
+  if (!doc) {
+    if (await JobOrder.exists({ _id: id })) {
+      throw new CustomError(409, 'error.job_order_started_no_delete')
+    }
+    throw new CustomError(404, 'error.not_found')
+  }
   emitJobOrderDeleted(id, doc.workCenterId.toString())
   return doc
 }
@@ -288,12 +295,13 @@ export async function end(
   })
   if (overlapping) throw new CustomError(409, 'error.job_order_overlap')
 
+  // Of two ends that pass the checks above together, the filter lets only the first one write
   const updated = await JobOrder.findOneAndUpdate(
-    { _id: id },
+    { _id: id, endTime: null },
     { $set: { endTime: actualEnd, endedBy: userId, updatedBy: userId } },
     { returnDocument: 'after', runValidators: true },
   )
-  if (!updated) throw new CustomError(404, 'error.not_found')
+  if (!updated) throw new CustomError(409, 'error.job_order_already_ended')
   emitJobOrderEnded(id, jo.workCenterId.toString())
   return updated
 }
