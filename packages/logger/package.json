@@ -20,11 +20,11 @@
     "node": ">=24.0.0"
   },
   "dependencies": {
-    "@mes/core": "workspace:*"
+    "@mes/core": "workspace:*",
+    "morgan": "^1.12.1"
   },
   "peerDependencies": {
     "express": "^5.0.0",
-    "morgan": "^1.0.0",
     "winston": "^3.0.0"
   },
   "devDependencies": {
@@ -32,7 +32,6 @@
     "@types/morgan": "^1.9.10",
     "@types/node": "^24.19.2",
     "express": "^5.3.0",
-    "morgan": "^1.12.1",
     "typescript": "^5.5.0",
     "winston": "^3.0.0"
   }
