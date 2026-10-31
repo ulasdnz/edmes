@@ -36,9 +36,9 @@ COPY production/ ./production/
 # This pulls in only the referenced workspace packages instead of the root graph.
 RUN pnpm --filter production-service exec tsc -b tsconfig.json
 
-# Magically deploy the exact dependencies (including workspace dependencies)
+# Deploy the versions pnpm-lock.yaml pins (including workspace dependencies)
 # into a clean "/prod/production" folder. This completely isolates the service.
-RUN pnpm --filter=production-service --prod deploy --legacy /prod/production
+RUN pnpm --filter=production-service --prod deploy /prod/production
 
 # Copy i18n translation files (outside dist, referenced via relative path from loaders)
 RUN cp -r production/locales /prod/production/locales

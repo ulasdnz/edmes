@@ -28,7 +28,7 @@ COPY realtime/ ./realtime/
 
 RUN pnpm --filter realtime-service exec tsc -b tsconfig.json
 
-RUN pnpm --filter=realtime-service --prod deploy --legacy /prod/realtime
+RUN pnpm --filter=realtime-service --prod deploy /prod/realtime
 
 # ---------------------------------------
 # Stage 2: Runner (Production Image)

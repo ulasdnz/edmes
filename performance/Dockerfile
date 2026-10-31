@@ -36,9 +36,9 @@ COPY performance/ ./performance/
 # This pulls in only the referenced workspace packages instead of the root graph.
 RUN pnpm --filter performance-service exec tsc -b tsconfig.json
 
-# Magically deploy the exact dependencies (including workspace dependencies)
+# Deploy the versions pnpm-lock.yaml pins (including workspace dependencies)
 # into a clean "/prod/performance" folder. This completely isolates the service.
-RUN pnpm --filter=performance-service --prod deploy --legacy /prod/performance
+RUN pnpm --filter=performance-service --prod deploy /prod/performance
 
 # Copy i18n translation files (outside dist, referenced via relative path from loaders)
 RUN cp -r performance/locales /prod/performance/locales

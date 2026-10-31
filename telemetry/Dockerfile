@@ -33,7 +33,7 @@ RUN pnpm --filter telemetry-service exec tsc -b tsconfig.json
 
 RUN mkdir -p telemetry/dist/utils/lang && cp -r telemetry/src/utils/lang/* telemetry/dist/utils/lang/
 
-RUN pnpm --filter=telemetry-service --prod deploy --legacy /prod/telemetry
+RUN pnpm --filter=telemetry-service --prod deploy /prod/telemetry
 
 # ---------------------------------------
 # Stage 2: Runner (Production Image)

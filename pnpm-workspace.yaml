@@ -18,3 +18,8 @@ onlyBuiltDependencies:
   - msgpackr-extract
   - protobufjs
   - ssh2
+
+# Lets `pnpm deploy` build each service image from pnpm-lock.yaml. Workspace packages stay
+# symlinked while their peers resolve alike in every project; a `file:` workspace entry in the
+# lockfile means one was copied, and its local changes then need `pnpm install`.
+injectWorkspacePackages: true
