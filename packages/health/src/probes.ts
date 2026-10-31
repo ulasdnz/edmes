@@ -53,16 +53,3 @@ export function redisProbe(
     },
   }
 }
-
-export function bullmqProbe(
-  queue: { isPaused: () => Promise<boolean> },
-  name = 'bullmq',
-  timeoutMs = DEFAULT_TIMEOUT_MS,
-): HealthProbe {
-  return {
-    name,
-    check: async () => {
-      await withTimeout(queue.isPaused(), timeoutMs, name)
-    },
-  }
-}

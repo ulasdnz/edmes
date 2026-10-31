@@ -1,5 +1,5 @@
 export { createHealthRoutes } from './health.js'
-export { bullmqProbe, mongoProbe, redisProbe } from './probes.js'
+export { mongoProbe, redisProbe } from './probes.js'
 export type {
   HealthConfig,
   HealthProbe,
