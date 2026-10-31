@@ -1,9 +1,16 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('dotenv', () => ({ default: { config: vi.fn() } }))
 
 describe('RealtimeConfig.validation', () => {
   const originalEnv = process.env
+
+  // The first import compiles the config module and loads its dependencies. Paid here, that
+  // one-time cost, which a busy machine stretches past a test's time limit, stays out of the tests.
+  beforeAll(async () => {
+    process.env = { ...originalEnv, REDIS_URL: 'redis://localhost:6379' }
+    await import('./index.js')
+  })
 
   beforeEach(() => {
     vi.resetModules()

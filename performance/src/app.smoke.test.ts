@@ -1,5 +1,5 @@
 import request from 'supertest'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
 
 vi.mock('./core/loaders/mongoose.js', () => ({
   initMongoose: vi.fn(async () => {}),
@@ -40,8 +40,17 @@ vi.mock('./modules/run-mode/run-mode.reconciler.js', () => ({
 }))
 
 describe('app smoke', () => {
+  // Loading the app's modules is setup: on a busy machine it can outlast a test's time limit, and
+  // hooks have a longer one
+  let initExpress: typeof import('./core/loaders/express.js').initExpress
+  let initLoaders: typeof import('./core/loaders/index.js').initLoaders
+
+  beforeAll(async () => {
+    initExpress = (await import('./core/loaders/express.js')).initExpress
+    initLoaders = (await import('./core/loaders/index.js')).initLoaders
+  })
+
   it('GET /health/live returns 200 after initExpress', async () => {
-    const { initExpress } = await import('./core/loaders/express.js')
     const app = await initExpress()
     const res = await request(app).get('/health/live')
     expect(res.status).toBe(200)
@@ -49,7 +58,6 @@ describe('app smoke', () => {
   })
 
   it('GET /health/ready returns 200 after initLoaders', async () => {
-    const { initLoaders } = await import('./core/loaders/index.js')
     const app = await initLoaders()
     expect(app).toBeDefined()
     const res = await request(app!).get('/health/ready')

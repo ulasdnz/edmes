@@ -1,4 +1,4 @@
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('dotenv', () => ({ default: { config: vi.fn() } }))
 
@@ -25,6 +25,14 @@ describe('TelemetryConfig.validation', () => {
     process.env.MQTT_USERNAME = 'mes'
     process.env.MQTT_PASSWORD = 'secret'
   }
+
+  // The first import compiles the config module and loads its dependencies. Paid here, that
+  // one-time cost, which a busy machine stretches past a test's time limit, stays out of the tests.
+  beforeAll(async () => {
+    process.env = { ...originalEnv }
+    validEnv()
+    await import('./index.js')
+  })
 
   // ── happy path ────────────────────────────────────────────────────────
 
