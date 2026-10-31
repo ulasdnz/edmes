@@ -2,7 +2,7 @@
 # (docker-compose) proposes newer patches and minors, majors are upgraded by hand
 services:
   traefik:
-    image: traefik:v2.11.61@sha256:48eb9f2db7e36cb812632788841d1f3f08dae2d5f6c51a528a090951eb88bf9b
+    image: traefik:v3.7.16@sha256:1336e85aaed293bd63d005086e0dd013b04078b26aaeb1c18b26a2f928af7e65
     container_name: api_gateway
     restart: unless-stopped
     security_opt:
