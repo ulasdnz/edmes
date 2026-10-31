@@ -74,7 +74,7 @@ testing → source-only (no build, vitest transpiles directly)
 - **API Gateway**: Traefik (routing, rate limiting, compression)
 - **Database**: MongoDB 7 (Mongoose 9)
 - **Cache & Events**: Redis 7 (ioredis for cache, Redis Streams for cross-service events)
-- **Observability**: Grafana + Loki + Promtail (centralized logging, <1GB RAM total)
+- **Observability**: Grafana + Loki + Alloy (centralized logging, <1GB RAM total)
 - **i18n**: i18next with filesystem backend, HTTP middleware for per-request locale
 
 ### Cross-Service Communication
@@ -231,6 +231,6 @@ Types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`
 - Two-phase build: `tsc -b` for packages, then service-level `tsc`.
 - `.tsbuildinfo` excluded via `.dockerignore`.
 - `node-linker=hoisted` in Docker `.npmrc` for flat module resolution.
-- Named volumes persist all stateful data: MongoDB, Redis, user uploads, Loki, Grafana, Promtail positions.
+- Named volumes persist all stateful data: MongoDB, Redis, user uploads, Loki, Grafana, Alloy positions.
 - All infra services have healthchecks. `depends_on` uses `condition: service_healthy`.
 - Loki labels: only `level` (from JSON) + `service` (from Docker Compose metadata) — query everything else via `| json` in LogQL.
