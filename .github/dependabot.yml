@@ -25,6 +25,24 @@ updates:
       interval: monthly
     cooldown:
       default-days: 7
+    # A new major is a migration (Node 27, MongoDB 8, Traefik 3...), done by hand, not merged
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
     groups:
       base-images:
+        patterns: ['*']
+
+  # Moves the infrastructure images docker-compose.yml pins, in one pull request a month
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
+    groups:
+      infrastructure:
         patterns: ['*']
