@@ -168,13 +168,19 @@ Erişilebilirlik sütunu kodda gördüğüm kanıta dayanıyor; "çıkarım" diy
 
 Sıfır audit sonucu ve geçen testler "hatasız" garantisi değildir. Erişilebilirlik sütunundaki "çıkarım"lar kod okumasına dayanıyor, istismar denemesine değil.
 
-## Ayrı öneriler (kapsam dışı, uygulanmadı)
+## Ayrı öneriler (kapsam dışı)
+
+İlk üçü aynı gün ayrıca ele alındı; sonuçları maddelerin altında.
 
 1. **Avatar yüklemede içerik doğrulaması yok.** Filtre yalnız istemcinin gönderdiği `mimetype`'a bakıyor; uzantı `originalname`'den alınıyor (`user/src/core/middleware/upload.ts`). `image/png` ile bir `.html` dosyası yüklenebilir. Yüklenenler doğrudan servis ediliyorsa bu, kalıcı XSS demek. Öneri: magic byte kontrolü yapmak ve uzantıyı izinli listeden üretmek.
+   **Sonuç: uygulandı.** Dosya bellekte tutuluyor. Yalnız ilk byte'ları JPEG, PNG ya da WebP olan dosya diske yazılıyor; uzantısı da içerikten geliyor. Resim olmayan dosya ve 5 MB üstü dosya artık 500 değil, 400 dönüyor. Bugün Traefik `/uploads`'u yönlendirmiyor, yani açık dışarıdan istismar edilemiyordu; ama avatarları göstermek için bu yolun açılması gerekecek.
 2. **`trust proxy` `true`.** Bu ayar `X-Forwarded-For`'a koşulsuz güveniyor; servislere Traefik'i atlayarak erişilebiliyorsa `req.ip` sahtelenebilir. Öneri: Traefik'in hop sayısı ya da ağıyla sınırlamak.
+   **Sonuç: gereksiz.** Traefik v2.11, bu depodaki entrypoint ayarlarıyla, istemcinin gönderdiği `X-Forwarded-For`'u siliyor ve yerine bağlanan adresi yazıyor. Bu, gerçek bir Traefik ve whoami denemesiyle doğrulandı. Servislerin portları da dışarı açık değil. Ayar ancak Traefik'in önüne, başlıklarına güvenilen bir proxy eklenirse yeniden ele alınmalı.
 3. **BullMQ kullanılmıyor.** `@mes/health`'teki dev bağımlılığı ve `bullmqProbe` export'u kaldırılmalı. Bu, `uuid@11.1.0` kopyasını da götürür.
+   **Sonuç: uygulandı.** `bullmq`, `@mes/health`'te zorunlu peer dependency olduğu için pnpm onu otomatik kuruyordu. Bu yüzden yalnız dev'de değil, altı üretim imajının hepsinde vardı: 5.81.5, yaklaşık 3,4 MB, native `msgpackr-extract` ile birlikte. Kilitten 12 paket çıktı.
 4. **`minimumReleaseAge: 10080`'i kalıcı yapmak** (`pnpm-workspace.yaml`). Bu incelemede yalnız komut satırından kullanıldı; kalıcı hali Dependabot cooldown'u ile aynı ilkeyi yerel kurulumlara da getirir.
 5. **Docker base imajlarını tam sürüme sabitlemek** ve Dependabot'a `docker` ekosistemini eklemek. Şu an `node:24-alpine`, her build'de o anki 24.x'i çekiyor.
 6. **Yerel Node'u güncellemek.** Yerel 24.14.1, Ekim 2026 güvenlik yamasından (24.22.1) önceki bir sürüm.
 7. **CI'a `pnpm audit --prod` adımı eklemek** (opsiyonel). Üretim ağacı sıfırda tutulsun diye.
 8. **realtime'da `cors: { origin: '*' }`** (`realtime/src/gateway/socket.ts:49`). JWT ile birlikte kabul edilebilir, ama gözden geçirilmeli.
+9. **İmajlar kilit dosyasıyla kurulmuyor** (BullMQ'yu kaldırırken bulundu). Dockerfile'lardaki `pnpm deploy --legacy`, pnpm 10'da paylaşılan kilidi kullanmıyor; servisin bağımlılıklarını build anında yeniden çözüyor. Node 26 provası için build edilen user imajında `ioredis` 5.11.1 ve `qs` 6.17.1 var; kilitte 5.10.0 ve 6.16.1. Yani testlerden geçen sürümlerle üretime giden sürümler ayrışabiliyor, ve bu incelemedeki audit ile 7 günlük bekleme kuralı imajlara yansımıyor. Ayrı bir iş olarak ele alınmalı.
