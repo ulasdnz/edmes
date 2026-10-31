@@ -168,7 +168,11 @@ describe('QuantityAdjustmentService', () => {
 
     it('filters by jobOrderId', async () => {
       const jo1 = await createStartedJobOrder({ code: `JO-F1-${Date.now()}` })
-      const jo2 = await createStartedJobOrder({ code: `JO-F2-${Date.now()}` })
+      // A work center runs one job order at a time
+      const jo2 = await createStartedJobOrder({
+        code: `JO-F2-${Date.now()}`,
+        workCenterId: new Types.ObjectId(),
+      })
       await qaService.create(buildInput(jo1._id.toString()), userId)
       await qaService.create(buildInput(jo2._id.toString()), userId)
 

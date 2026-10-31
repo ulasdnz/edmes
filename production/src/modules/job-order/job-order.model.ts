@@ -39,6 +39,11 @@ jobOrderSchema.index(
   { workCenterId: 1, createdAt: -1, _id: -1 },
   { name: 'workCenterId_1_createdAt_-1__id_-1_open', partialFilterExpression: { endTime: null } },
 )
+// One running job order per work center, also when two starts race past the service's checks
+jobOrderSchema.index(
+  { workCenterId: 1 },
+  { unique: true, partialFilterExpression: { startTime: { $type: 'date' }, endTime: null } },
+)
 
 jobOrderSchema.set('toObject', {
   transform: (_doc: unknown, ret: Record<string, unknown>) => {

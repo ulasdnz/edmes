@@ -1,7 +1,7 @@
 import { profileOperations } from '@mes/testing'
 import { Types } from 'mongoose'
 import { describe, expect, it, vi } from 'vitest'
-import { emitJobOrderUpdated } from '../../jobs/events.js'
+import { emitJobOrderStarted, emitJobOrderUpdated } from '../../jobs/events.js'
 import { Product } from '../product/product.model.js'
 import { ProductStandard } from '../product-standard/product-standard.model.js'
 import { ProductionPlan } from '../production-plan/production-plan.model.js'
@@ -290,6 +290,46 @@ describe('JobOrderService', () => {
       await expect(
         service.start(jo2._id.toString(), { startTime: new Date('2026-03-02') }, userId),
       ).rejects.toThrow('error.job_order_active_exists')
+    })
+
+    it('lets only one of two simultaneous starts on the same WC through', async () => {
+      const jo1 = await service.create(buildInput({ code: 'JO-RACE-1' }), userId)
+      const jo2 = await service.create(buildInput({ code: 'JO-RACE-2' }), userId)
+
+      const results = await Promise.allSettled([
+        service.start(jo1._id.toString(), {}, userId),
+        service.start(jo2._id.toString(), {}, userId),
+      ])
+
+      const rejected = results.filter(r => r.status === 'rejected')
+      expect(results.filter(r => r.status === 'fulfilled')).toHaveLength(1)
+      expect(rejected).toHaveLength(1)
+      expect(rejected[0].reason.message).toBe('error.job_order_active_exists')
+      const running = await JobOrder.countDocuments({
+        workCenterId,
+        startTime: { $ne: null },
+        endTime: null,
+      })
+      expect(running).toBe(1)
+    })
+
+    it('starts a job order once when two starts for it arrive together', async () => {
+      const jo = await service.create(buildInput(), userId)
+      vi.mocked(emitJobOrderStarted).mockClear()
+
+      const results = await Promise.allSettled([
+        service.start(jo._id.toString(), { startTime: new Date('2026-03-01T06:00:00Z') }, userId),
+        service.start(jo._id.toString(), { startTime: new Date('2026-03-01T07:00:00Z') }, userId),
+      ])
+
+      const fulfilled = results.filter(r => r.status === 'fulfilled')
+      const rejected = results.filter(r => r.status === 'rejected')
+      expect(fulfilled).toHaveLength(1)
+      expect(rejected).toHaveLength(1)
+      expect(rejected[0].reason.message).toBe('error.job_order_already_started')
+      const stored = await JobOrder.findById(jo._id).lean()
+      expect(stored?.startTime).toEqual(fulfilled[0].value.startTime)
+      expect(emitJobOrderStarted).toHaveBeenCalledTimes(1)
     })
 
     it('rejects when no applicable standard', async () => {
@@ -941,17 +981,18 @@ describe('JobOrderService list indexes', () => {
 
   // Running job orders are a handful among years of ended ones
   it('pages running job orders from an index of the open ones', async () => {
-    const workCenters = await seedHistory(3)
+    // A work center runs one job order at a time
+    const workCenters = await seedHistory(1)
     const visible = workCenters.slice(0, 3).map(String)
 
     const { result, operations } = await profileOperations(JobOrder.collection.collectionName, () =>
       service.list({ page: 1, limit: 20, runtimeState: 'running' }, visible),
     )
 
-    expect(result.data).toHaveLength(9)
+    expect(result.data).toHaveLength(3)
     const find = operations.find(op => op.op === 'query')
     expect(find?.hasSortStage).toBeFalsy()
-    expect(find?.keysExamined).toBeLessThanOrEqual(3 * 4)
+    expect(find?.keysExamined).toBeLessThanOrEqual(3 * 2)
   })
 
   it('pages every job order from the creation index and counts them without reading them', async () => {

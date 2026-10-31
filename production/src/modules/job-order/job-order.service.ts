@@ -39,6 +39,10 @@ function safeCountDocuments(modelName: string, filter: Record<string, unknown>):
   }
 }
 
+function isDuplicateKeyError(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && (err as { code?: number }).code === 11000
+}
+
 async function validateParentChildConstraints(
   productionPlanId: string,
   productId: string,
@@ -237,12 +241,20 @@ export async function start(
   }).sort({ validFrom: -1 })
   if (!standard) throw new CustomError(400, 'error.job_order_no_standard')
 
-  const updated = await JobOrder.findOneAndUpdate(
-    { _id: id },
-    { $set: { startTime: actualStart, startedBy: userId, updatedBy: userId } },
-    { returnDocument: 'after', runValidators: true },
-  )
-  if (!updated) throw new CustomError(404, 'error.not_found')
+  // Two requests can both pass the checks above. The filter starts this order once, and the unique
+  // index on running orders keeps a second one off the work center.
+  let updated: IJobOrder | null
+  try {
+    updated = await JobOrder.findOneAndUpdate(
+      { _id: id, startTime: null },
+      { $set: { startTime: actualStart, startedBy: userId, updatedBy: userId } },
+      { returnDocument: 'after', runValidators: true },
+    )
+  } catch (err) {
+    if (isDuplicateKeyError(err)) throw new CustomError(409, 'error.job_order_active_exists')
+    throw err
+  }
+  if (!updated) throw new CustomError(409, 'error.job_order_already_started')
   emitJobOrderStarted(id, jo.workCenterId.toString())
   return updated
 }
