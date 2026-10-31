@@ -11,3 +11,20 @@ updates:
     groups:
       actions:
         patterns: ['*']
+
+  # Moves the Node image the six service Dockerfiles pin, tag and digest, in one pull request a month
+  - package-ecosystem: docker
+    directories:
+      - /user
+      - /work-center
+      - /production
+      - /performance
+      - /telemetry
+      - /realtime
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    groups:
+      base-images:
+        patterns: ['*']

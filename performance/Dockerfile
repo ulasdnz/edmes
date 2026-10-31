@@ -1,7 +1,8 @@
 # ---------------------------------------
 # Stage 1: Build & Deploy
 # ---------------------------------------
-FROM node:26-alpine AS builder
+# The exact image by digest, so every build starts from the same one; Dependabot moves both
+FROM node:26.13.0-alpine@sha256:c6ad9e9c1d80f6eb607c26b4b0a132ff7a2344fad1c78ea3baa2a7d4c8de6d94 AS builder
 RUN apk add --no-cache libc6-compat git openssh-client && \
     git config --global url."https://github.com/".insteadOf "git@github.com:" && \
     git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
@@ -46,7 +47,7 @@ RUN cp -r performance/locales /prod/performance/locales
 # ---------------------------------------
 # Stage 2: Runner (Production Image)
 # ---------------------------------------
-FROM node:26-alpine AS runner
+FROM node:26.13.0-alpine@sha256:c6ad9e9c1d80f6eb607c26b4b0a132ff7a2344fad1c78ea3baa2a7d4c8de6d94 AS runner
 RUN apk add --no-cache dumb-init
 
 WORKDIR /app
