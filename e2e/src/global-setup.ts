@@ -3,6 +3,8 @@ import { createWriteStream, existsSync } from 'node:fs'
 import { mkdir, readdir, readFile, rm } from 'node:fs/promises'
 import { dirname, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+// Only the image helper: the package's main entry would load test dependencies e2e does not have
+import { composeImage } from '@mes/testing/images'
 import { GenericContainer, type StartedTestContainer, Wait } from 'testcontainers'
 import type { TestProject } from 'vitest/node'
 
@@ -110,15 +112,15 @@ export default async function setup(project: TestProject) {
   console.log(`Service logs: ${relative(ROOT, runDir)}`)
 
   const [mongo, redis, broker] = await Promise.all([
-    new GenericContainer('mongo:7')
+    new GenericContainer(composeImage('mongodb'))
       .withExposedPorts(27017)
       .withWaitStrategy(Wait.forLogMessage(/Waiting for connections/))
       .start(),
-    new GenericContainer('redis:7-alpine')
+    new GenericContainer(composeImage('redis'))
       .withExposedPorts(6379)
       .withWaitStrategy(Wait.forLogMessage(/Ready to accept connections/))
       .start(),
-    new GenericContainer('eclipse-mosquitto:2')
+    new GenericContainer(composeImage('mosquitto'))
       .withExposedPorts(1883)
       .withCopyContentToContainer([
         {

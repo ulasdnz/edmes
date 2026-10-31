@@ -1,10 +1,11 @@
 import { MongoDBContainer, type StartedMongoDBContainer } from '@testcontainers/mongodb'
 import mongoose from 'mongoose'
 import { afterAll, afterEach, beforeAll } from 'vitest'
+import { MONGO_IMAGE } from './images.js'
 
 let mongoContainer: StartedMongoDBContainer
 
-export function setupMongoTestContainer(image = 'mongo:7', timeoutMs = 120_000): void {
+export function setupMongoTestContainer(image = MONGO_IMAGE, timeoutMs = 120_000): void {
   beforeAll(async () => {
     mongoContainer = await new MongoDBContainer(image).start()
 

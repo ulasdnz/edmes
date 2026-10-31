@@ -1,3 +1,4 @@
+import { MONGO_IMAGE } from '@mes/testing'
 import { MongoDBContainer } from '@testcontainers/mongodb'
 import { Redis } from 'ioredis'
 import mongoose from 'mongoose'
@@ -11,7 +12,7 @@ describe('Testcontainers smoke gate', () => {
   let conn: mongoose.Connection
 
   beforeAll(async () => {
-    mongoContainer = await new MongoDBContainer('mongo:7').start()
+    mongoContainer = await new MongoDBContainer(MONGO_IMAGE).start()
     let uri = mongoContainer.getConnectionString()
     if (!uri.includes('directConnection=true')) {
       uri += uri.includes('?') ? '&directConnection=true' : '?directConnection=true'

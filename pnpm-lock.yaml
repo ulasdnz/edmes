@@ -33,6 +33,9 @@ importers:
 
   e2e:
     devDependencies:
+      '@mes/testing':
+        specifier: workspace:*
+        version: link:../packages/testing
       '@types/node':
         specifier: ^26.6.5
         version: 26.6.5

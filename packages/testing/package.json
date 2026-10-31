@@ -9,6 +9,10 @@
     ".": {
       "types": "./src/index.ts",
       "import": "./src/index.ts"
+    },
+    "./images": {
+      "types": "./src/images.ts",
+      "import": "./src/images.ts"
     }
   },
   "scripts": {},

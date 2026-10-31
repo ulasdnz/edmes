@@ -1,3 +1,4 @@
+import { MONGO_IMAGE } from '@mes/testing'
 import { MongoDBContainer, type StartedMongoDBContainer } from '@testcontainers/mongodb'
 import mongoose from 'mongoose'
 import { afterAll, afterEach, beforeAll, beforeEach } from 'vitest'
@@ -14,7 +15,7 @@ const ensureTestIndexes = async () => {
 }
 
 beforeAll(async () => {
-  mongoContainer = await new MongoDBContainer('mongo:7').start()
+  mongoContainer = await new MongoDBContainer(MONGO_IMAGE).start()
   let uri = mongoContainer.getConnectionString()
   if (!uri.includes('directConnection=true')) {
     uri += uri.includes('?') ? '&directConnection=true' : '?directConnection=true'

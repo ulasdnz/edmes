@@ -72,7 +72,7 @@ testing → source-only (no build, vitest transpiles directly)
 ### Infrastructure
 
 - **API Gateway**: Traefik (routing, rate limiting, compression)
-- **Database**: MongoDB 7 (Mongoose 9)
+- **Database**: MongoDB 9 (Mongoose 9)
 - **Cache & Events**: Redis 7 (ioredis for cache, Redis Streams for cross-service events)
 - **Observability**: Grafana + Loki + Alloy (centralized logging, <1GB RAM total)
 - **i18n**: i18next with filesystem backend, HTTP middleware for per-request locale
@@ -210,7 +210,7 @@ Types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`
 
 - **Unit tests**: Vitest + `testcontainers` (real MongoDB in Docker via `@testcontainers/mongodb`). Files: `src/**/*.{test,spec}.ts`. Setup in each service's `src/test/setup.ts` or via the shared `setupMongoTestContainer` helper in `@mes/testing`.
 - **Contract tests**: Vitest + `testcontainers`. Config: `vitest.contract.config.ts`.
-- **Why testcontainers (not `mongodb-memory-server`)**: MongoDB has no official Alpine binaries, so `mongodb-memory-server` cannot pull a binary in our Alpine-based Docker images without manual `MONGOMS_SYSTEM_BINARY` workarounds. Testcontainers uses the real `mongo:7` image for both unit and contract tests, which keeps test infrastructure identical to production and CI.
+- **Why testcontainers (not `mongodb-memory-server`)**: MongoDB has no official Alpine binaries, so `mongodb-memory-server` cannot pull a binary in our Alpine-based Docker images without manual `MONGOMS_SYSTEM_BINARY` workarounds. Testcontainers runs the MongoDB image `docker-compose.yml` pins, read through `MONGO_IMAGE` in `@mes/testing`, for unit, contract and e2e tests, which keeps test infrastructure identical to production and CI.
 - `@mes/testing` provides shared utilities (source-only, no build needed).
 
 ### Test Philosophy (CRITICAL — READ THIS FIRST)
