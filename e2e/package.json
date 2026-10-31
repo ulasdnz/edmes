@@ -9,7 +9,7 @@
     "test:e2e": "vitest run"
   },
   "devDependencies": {
-    "@types/node": "^24.19.2",
+    "@types/node": "^26.6.5",
     "mqtt": "^5.12.1",
     "testcontainers": "^11.14.0",
     "typescript": "^5.9.3",

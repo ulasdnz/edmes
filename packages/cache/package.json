@@ -18,14 +18,14 @@
     "test": "vitest run"
   },
   "engines": {
-    "node": ">=24.0.0"
+    "node": ">=26.0.0"
   },
   "peerDependencies": {
     "ioredis": "^5.0.0",
     "winston": "^3.0.0"
   },
   "devDependencies": {
-    "@types/node": "^24.19.2",
+    "@types/node": "^26.6.5",
     "ioredis": "^5.0.0",
     "typescript": "^5.5.0",
     "vitest": "^4.1.12",

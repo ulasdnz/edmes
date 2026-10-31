@@ -18,7 +18,7 @@
     "test": "vitest run"
   },
   "engines": {
-    "node": ">=24.0.0"
+    "node": ">=26.0.0"
   },
   "dependencies": {
     "@mes/cache": "workspace:*",
@@ -31,7 +31,7 @@
   "devDependencies": {
     "@types/express": "^5.0.0",
     "@types/jsonwebtoken": "^9.0.7",
-    "@types/node": "^24.19.2",
+    "@types/node": "^26.6.5",
     "express": "^5.3.0",
     "typescript": "^5.5.0",
     "vitest": "^4.1.12"
