@@ -17,7 +17,7 @@ export const initI18n = async () => {
       supportedLngs: ['en', 'tr'],
       load: 'languageOnly',
       backend: {
-        loadPath: path.resolve(__dirname, '../../utils/lang/{{lng}}.json'),
+        loadPath: path.resolve(__dirname, '../../../locales/{{lng}}/translation.json'),
       },
       detection: {
         order: ['header', 'querystring', 'cookie'],

@@ -37,8 +37,6 @@ COPY work-center/ ./work-center/
 # This pulls in only the referenced workspace packages instead of the root graph.
 RUN pnpm --filter work-center-service exec tsc -b tsconfig.json
 
-# Copy i18n JSON translation files to dist since tsc does not bundle them
-RUN mkdir -p work-center/dist/utils/lang && cp -r work-center/src/utils/lang/* work-center/dist/utils/lang/
 
 # Deploy the versions pnpm-lock.yaml pins (including workspace dependencies)
 # into a clean "/prod/work-center" folder. This completely isolates the service.

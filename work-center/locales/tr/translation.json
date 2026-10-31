@@ -1,4 +1,9 @@
 {
+  "auth": {
+    "unauthenticated": "Bu kaynağa erişmek için lütfen giriş yapın.",
+    "insufficient_permissions": "Bu kaynağa erişmek için yetkiniz yetersiz.",
+    "unavailable": "Oturum şu anda doğrulanamıyor. Lütfen biraz sonra tekrar deneyin."
+  },
   "work_center": {
     "not_found": "Is merkezi bulunamadi",
     "code_in_use": "Is merkezi kodu zaten kullanimda",

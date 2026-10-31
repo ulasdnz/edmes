@@ -32,7 +32,6 @@ COPY telemetry/ ./telemetry/
 # that are intentionally not copied into this image.
 RUN pnpm --filter telemetry-service exec tsc -b tsconfig.json
 
-RUN mkdir -p telemetry/dist/utils/lang && cp -r telemetry/src/utils/lang/* telemetry/dist/utils/lang/
 
 RUN pnpm --filter=telemetry-service --prod deploy /prod/telemetry
 

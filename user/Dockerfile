@@ -37,8 +37,6 @@ COPY user/ ./user/
 # This avoids unrelated root-level project references during image builds.
 RUN pnpm --filter user-service exec tsc -b tsconfig.json
 
-# Copy i18n JSON translation files to dist since tsc does not bundle them
-RUN mkdir -p user/dist/utils/lang && cp -r user/src/utils/lang/* user/dist/utils/lang/
 
 # Deploy the versions pnpm-lock.yaml pins (including workspace dependencies)
 # into a clean "/prod/user" folder. This completely isolates the service.

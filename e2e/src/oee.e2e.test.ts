@@ -1,6 +1,7 @@
 import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { describe, expect, inject, it } from 'vitest'
+import type { ServiceName } from './global-setup.js'
 import { Api, eventually, loginAsAdmin } from './support/api.js'
 import { publishSamples } from './support/plc.js'
 
@@ -425,6 +426,37 @@ describe('OEE across telemetry, work-center, production and performance', () => 
     await expect(
       api.post('production', '/api/v1/uoms', { ...unit, name: 'E2E chassis', code: 'ŞASİ' }),
     ).rejects.toThrow('answered 400')
+  })
+
+  // The shared auth middleware raises the same error in every service, and each service translates
+  // it with its own files; a missing translation reaches the client as the raw key.
+  it('answers a request without a token in the language asked for, in every service', async () => {
+    const protectedPaths: [ServiceName, string][] = [
+      ['user', '/api/v1/users'],
+      ['work-center', '/api/v1/work-centers'],
+      ['production', '/api/v1/uoms'],
+      ['performance', '/api/v1/reasons'],
+      ['telemetry', '/api/v1/tags'],
+    ]
+    const messages = {
+      en: 'Please log in to access this resource.',
+      tr: 'Bu kaynağa erişmek için lütfen giriş yapın.',
+    }
+
+    for (const [service, path] of protectedPaths) {
+      for (const [language, message] of Object.entries(messages)) {
+        const res = await fetch(`${inject('urls')[service]}${path}`, {
+          headers: { 'accept-language': language },
+        })
+        const { error } = (await res.json()) as { error: unknown }
+        expect({ service, language, status: res.status, error }).toEqual({
+          service,
+          language,
+          status: 401,
+          error: { code: 'auth.unauthenticated', message },
+        })
+      }
+    }
   })
 
   // A service can fail in the background (a crashed stream consumer, a failed startup job)

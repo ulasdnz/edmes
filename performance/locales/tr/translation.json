@@ -1,4 +1,9 @@
 {
+  "auth": {
+    "unauthenticated": "Bu kaynağa erişmek için lütfen giriş yapın.",
+    "insufficient_permissions": "Bu kaynağa erişmek için yetkiniz yetersiz.",
+    "unavailable": "Oturum şu anda doğrulanamıyor. Lütfen biraz sonra tekrar deneyin."
+  },
   "success": {
     "create": "Başarıyla oluşturuldu",
     "update": "Başarıyla güncellendi",
