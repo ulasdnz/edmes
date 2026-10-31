@@ -1,13 +1,13 @@
 # ---------------------------------------
 # Stage 1: Build & Deploy
 # ---------------------------------------
-FROM node:20-alpine AS builder
+FROM node:24-alpine AS builder
 RUN apk add --no-cache libc6-compat git openssh-client && \
     git config --global url."https://github.com/".insteadOf "git@github.com:" && \
     git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
 
 # Ensure pnpm is available (must match packageManager in package.json)
-RUN corepack enable && corepack prepare pnpm@10.32.1 --activate
+RUN corepack enable && corepack prepare pnpm@10.34.8 --activate
 
 WORKDIR /app
 
@@ -46,7 +46,7 @@ RUN cp -r performance/locales /prod/performance/locales
 # ---------------------------------------
 # Stage 2: Runner (Production Image)
 # ---------------------------------------
-FROM node:20-alpine AS runner
+FROM node:24-alpine AS runner
 RUN apk add --no-cache dumb-init
 
 WORKDIR /app
