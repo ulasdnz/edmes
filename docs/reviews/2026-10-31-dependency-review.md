@@ -91,7 +91,9 @@ Erişilebilirlik sütunu kodda gördüğüm kanıta dayanıyor; "çıkarım" diy
 | ioredis | 5.10.0 / 5.9.3 | Advisory yok | — | Ertele |
 | Biome | 2.4.6 | Advisory yok; yeni sürüm biçim kurallarını değiştirip bütün depoyu yeniden formatlayabilir | — | Ertele |
 | TypeScript 7, Vitest 5, testcontainers 12, ioredis 6, zod-openapi 6, i18next 26, uuid 14, dotenv 18, commitlint 21, lint-staged 17 | — | Ana sürüm geçişleri | — | Ertele (ayrı değerlendirme) |
-| Node 26 | — | 28 Ekim 2026'da LTS oldu | — | Ertele (6–12 ay sonra yeniden bakılmalı) |
+| Node 26 | — | 28 Ekim 2026'da LTS oldu; destek Nisan 2029'a kadar (24'ünki Nisan 2028) | `node:26-alpine`, CI `26`, devcontainer `5-26-bookworm` | Önce ertelendi, aynı gün uygulandı (aşağıdaki not) |
+
+**Node 26 notu (aynı gün):** İlk karar yeni LTS'in oturmasını beklemekti. Ürün henüz sahada olmadığı ve yerel geliştirme 26'ya geçtiği için değişti: ilk müşteri kurulumunda 26 zaten aylardır LTS olacak, desteği de bir yıl daha uzun. Tek kırıcı değişiklik, Node 25'ten beri Corepack'in dağıtılmaması; Dockerfile'lar pnpm'i artık `npm install -g` ile kuruyor. 25.0.0 ve 26.0.0'ın semver-major değişiklikleri bağımlılıklara karşı tarandı: `writeHeader` yalnız socket.io'nun kullanılmayan uWebSockets yolunda geçiyor, `_stream_*` modüllerini kullanan bağımlılık yok, `module.register` uyarısı hiçbir çalıştırmada çıkmadı.
 
 ## Uygulanan değişiklikler
 
@@ -181,6 +183,7 @@ Sıfır audit sonucu ve geçen testler "hatasız" garantisi değildir. Erişileb
 4. **`minimumReleaseAge: 10080`'i kalıcı yapmak** (`pnpm-workspace.yaml`). Bu incelemede yalnız komut satırından kullanıldı; kalıcı hali Dependabot cooldown'u ile aynı ilkeyi yerel kurulumlara da getirir.
 5. **Docker base imajlarını tam sürüme sabitlemek** ve Dependabot'a `docker` ekosistemini eklemek. Şu an `node:24-alpine`, her build'de o anki 24.x'i çekiyor.
 6. **Yerel Node'u güncellemek.** Yerel 24.14.1, Ekim 2026 güvenlik yamasından (24.22.1) önceki bir sürüm.
+   **Sonuç:** Yerel Node 26.13.0'a geçti; imajlar, CI ve devcontainer de Node 26'ya taşındı.
 7. **CI'a `pnpm audit --prod` adımı eklemek** (opsiyonel). Üretim ağacı sıfırda tutulsun diye.
 8. **realtime'da `cors: { origin: '*' }`** (`realtime/src/gateway/socket.ts:49`). JWT ile birlikte kabul edilebilir, ama gözden geçirilmeli.
 9. **İmajlar kilit dosyasıyla kurulmuyor** (BullMQ'yu kaldırırken bulundu). Dockerfile'lardaki `pnpm deploy --legacy`, pnpm 10'da paylaşılan kilidi kullanmıyor; servisin bağımlılıklarını build anında yeniden çözüyor. Node 26 provası için build edilen user imajında `ioredis` 5.11.1 ve `qs` 6.17.1 var; kilitte 5.10.0 ve 6.16.1. Yani testlerden geçen sürümlerle üretime giden sürümler ayrışabiliyor, ve bu incelemedeki audit ile 7 günlük bekleme kuralı imajlara yansımıyor. Ayrı bir iş olarak ele alınmalı.
