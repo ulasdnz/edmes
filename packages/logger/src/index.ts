@@ -30,16 +30,10 @@ const consoleFormat = winston.format.combine(
       ),
     )
 
-    const {
-      level,
-      message,
-      timestamp,
-      traceId,
-      event,
-      stack,
-      service,
-      ...rest
-    } = { ...info, ...splatMeta }
+    const { level, message, timestamp, traceId, event, stack, service, ...rest } = {
+      ...info,
+      ...splatMeta,
+    }
 
     const logMessage = stack || message || 'No message provided'
     const eventTag = event ? ` [${event}]` : ''

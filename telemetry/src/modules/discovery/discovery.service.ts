@@ -1,10 +1,13 @@
-import { discoveryGetAll, discoveryGetByDevice } from './discovery.cache.js'
 import Tag from '../tag/tag.model.js'
+import { discoveryGetAll, discoveryGetByDevice } from './discovery.cache.js'
 
 const keyOf = (deviceKey: string, nodeId: string) => `${deviceKey}::${nodeId}`
 
 const filterAvailableNodes = async <
-  T extends { deviceKey: string; nodes: Array<{ nodeId: string; name: string; dataType?: string }> },
+  T extends {
+    deviceKey: string
+    nodes: Array<{ nodeId: string; name: string; dataType?: string }>
+  },
 >(
   manifests: T[],
 ): Promise<T[]> => {
@@ -26,7 +29,9 @@ const filterAvailableNodes = async <
   return manifests
     .map(manifest => ({
       ...manifest,
-      nodes: manifest.nodes.filter(node => !usedBindings.has(keyOf(manifest.deviceKey, node.nodeId))),
+      nodes: manifest.nodes.filter(
+        node => !usedBindings.has(keyOf(manifest.deviceKey, node.nodeId)),
+      ),
     }))
     .filter(manifest => manifest.nodes.length > 0)
 }
@@ -43,8 +48,10 @@ export const getDiscoveryManifestByDevice = async (deviceKey: string, availableO
   if (!availableOnly) return manifest
 
   const [filteredManifest] = await filterAvailableNodes([manifest])
-  return filteredManifest ?? {
-    ...manifest,
-    nodes: [],
-  }
+  return (
+    filteredManifest ?? {
+      ...manifest,
+      nodes: [],
+    }
+  )
 }

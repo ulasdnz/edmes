@@ -1,10 +1,12 @@
 import { z } from 'zod'
 import { objectIdSchema } from '../../utils/validators.js'
 
-export const checkInSchema = z.object({
-  operatorId: objectIdSchema,
-  shiftId: objectIdSchema.optional(),
-}).strict()
+export const checkInSchema = z
+  .object({
+    operatorId: objectIdSchema,
+    shiftId: objectIdSchema.optional(),
+  })
+  .strict()
 
 export const operatorWorkCenterIdParamSchema = z.object({
   workCenterId: objectIdSchema,

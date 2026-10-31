@@ -4,11 +4,11 @@ import { writeCommand, writeValue } from './tag-value.controller.js'
 
 const { findByIdMock, edgeDeviceFindOneMock, ingestValueMock, predecessorLoadMock } = vi.hoisted(
   () => ({
-  findByIdMock: vi.fn(),
-  edgeDeviceFindOneMock: vi.fn(),
-  ingestValueMock: vi.fn(),
-  predecessorLoadMock: vi.fn(),
-}),
+    findByIdMock: vi.fn(),
+    edgeDeviceFindOneMock: vi.fn(),
+    ingestValueMock: vi.fn(),
+    predecessorLoadMock: vi.fn(),
+  }),
 )
 
 vi.mock('./tag.model.js', () => ({

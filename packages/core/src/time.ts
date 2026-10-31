@@ -1,7 +1,6 @@
 import { z } from 'zod'
 
-export const UTC_ZONED_DATETIME_REGEX =
-  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/
+export const UTC_ZONED_DATETIME_REGEX = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/
 
 export const isUtcZonedDateTimeString = (value: string): boolean => {
   if (!UTC_ZONED_DATETIME_REGEX.test(value)) return false
