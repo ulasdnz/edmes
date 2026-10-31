@@ -23,3 +23,7 @@ onlyBuiltDependencies:
 # symlinked while their peers resolve alike in every project; a `file:` workspace entry in the
 # lockfile means one was copied, and its local changes then need `pnpm install`.
 injectWorkspacePackages: true
+
+# A version becomes installable a week after its release (minutes), time for a compromised one to
+# be caught; the same wait Dependabot applies. An urgent fix goes in minimumReleaseAgeExclude.
+minimumReleaseAge: 10080
