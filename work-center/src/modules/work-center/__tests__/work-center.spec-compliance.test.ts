@@ -498,6 +498,17 @@ describe('Work Center Spec Compliance Review', () => {
     expect(saved?.metricComposition).toBeNull()
   })
 
+  it('rejects a micro stop threshold, which only the performance policy holds', async () => {
+    const machine = await createInternalWorkCenter(buildPhysicalWorkCenter())
+
+    const res = await request(app)
+      .patch(`/internal/v1/work-centers/${machine}`)
+      .set(INTERNAL_TOKEN_HEADER, process.env.INTERNAL_API_TOKEN as string)
+      .send({ microStopThresholdMs: 60_000 })
+
+    expect(res.status).toBe(400)
+  })
+
   it('rejects overlapping shifts in calendar weekly pattern', async () => {
     const morning = await Shift.create({
       name: 'Morning',

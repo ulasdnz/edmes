@@ -27,7 +27,7 @@ import {
 
 // ── Type enforcement helpers ─────────────────────────────────────────────────
 
-const PHYSICAL_ONLY_FIELDS = new Set(['productivityMode', 'tagBindings', 'microStopThresholdMs'])
+const PHYSICAL_ONLY_FIELDS = new Set(['productivityMode', 'tagBindings'])
 
 const VIRTUAL_ONLY_FIELDS = new Set(['metricComposition', 'partialMetricComposition'])
 

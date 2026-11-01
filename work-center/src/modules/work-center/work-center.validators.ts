@@ -117,7 +117,6 @@ const physicalCreateSchema = z
     type: z.literal('physical'),
     productivityMode: z.enum(['count_based', 'speed_based']),
     tagBindings: tagBindingsSchema,
-    microStopThresholdMs: z.number().int().min(0).optional(),
   })
   .refine(data => hasOneProductivityTag(data), {
     message: 'work_center.exactly_one_productivity_tag_required',
@@ -148,7 +147,6 @@ const physicalReplaceSchema = z
     shiftIds: shiftIdsSchema.optional(),
     productivityMode: z.enum(['count_based', 'speed_based']),
     tagBindings: tagBindingsSchema,
-    microStopThresholdMs: z.number().int().min(0).optional(),
   })
   .strict()
   .refine(data => hasOneProductivityTag(data), {
@@ -185,7 +183,6 @@ export const patchWorkCenterSchema = z
     // Physical fields
     productivityMode: z.enum(['count_based', 'speed_based']).optional(),
     tagBindings: tagBindingsSchema.optional(),
-    microStopThresholdMs: z.number().int().min(0).optional(),
     // Virtual fields
     metricComposition: metricCompositionSchema.nullable().optional(),
     partialMetricComposition: partialMetricCompositionSchema.optional(),

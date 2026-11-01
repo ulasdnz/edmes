@@ -101,10 +101,6 @@ const workCenterSchema = new Schema(
       type: tagBindingsSchema,
       default: null,
     },
-    microStopThresholdMs: {
-      type: Number,
-      default: 0,
-    },
 
     // ── Virtual-only fields ──────────────────────────────────────────────────
     metricComposition: {
