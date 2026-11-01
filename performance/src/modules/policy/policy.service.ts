@@ -2,7 +2,7 @@ import { CustomError } from '@mes/core'
 import { Types } from 'mongoose'
 import { cacheDel, cacheWrap } from '../../lib/cache.js'
 import { type IPerformanceRuntimePolicy, PerformanceRuntimePolicy } from './policy.model.js'
-import type { PolicyUpdateInput } from './policy.validators.js'
+import type { PolicyUpdateInput, PolicyWorkCenterUpdateInput } from './policy.validators.js'
 
 const CACHE_TTL_SECONDS = 5 * 60
 const FACTORY_KEY = 'policy:factory'
@@ -39,20 +39,22 @@ export async function getFactory(): Promise<IPerformanceRuntimePolicy> {
   return cached
 }
 
-export async function getForWorkCenter(workCenterId: string): Promise<IPerformanceRuntimePolicy> {
-  const cached = await cacheWrap<IPerformanceRuntimePolicy>(
+// A work center's row holds only the fields set for it. It is cached apart from the factory, so a
+// factory change reaches every work center at once.
+async function getWorkCenterRow(workCenterId: string): Promise<Partial<IPerformanceRuntimePolicy>> {
+  return cacheWrap<Partial<IPerformanceRuntimePolicy>>(
     wcKey(workCenterId),
     CACHE_TTL_SECONDS,
-    async () => {
-      const wcDoc = await PerformanceRuntimePolicy.findOne({
+    async () =>
+      (await PerformanceRuntimePolicy.findOne({
         workCenterId: new Types.ObjectId(workCenterId),
-      }).lean<IPerformanceRuntimePolicy>()
-      if (wcDoc) return wcDoc
-
-      return getFactory()
-    },
+      }).lean<IPerformanceRuntimePolicy>()) ?? {},
   )
-  return cached
+}
+
+export async function getForWorkCenter(workCenterId: string): Promise<IPerformanceRuntimePolicy> {
+  const [factory, row] = await Promise.all([getFactory(), getWorkCenterRow(workCenterId)])
+  return { ...factory, ...row }
 }
 
 export async function resolveForWorkCenter(
@@ -80,21 +82,25 @@ export async function upsertFactory(
 
 export async function upsertForWorkCenter(
   workCenterId: string,
-  patch: PolicyUpdateInput,
+  patch: PolicyWorkCenterUpdateInput,
   userId: string,
 ): Promise<IPerformanceRuntimePolicy> {
   const wcObjectId = new Types.ObjectId(workCenterId)
+  // The row stores only the fields set for the work center; the rest come from the factory
+  const set: Record<string, unknown> = { updatedBy: new Types.ObjectId(userId) }
+  const unset: Record<string, ''> = {}
+  for (const [field, value] of Object.entries(patch)) {
+    if (value === null) unset[field] = ''
+    else set[field] = value
+  }
   const doc = await PerformanceRuntimePolicy.findOneAndUpdate(
     { workCenterId: wcObjectId },
-    {
-      $set: { ...patch, updatedBy: new Types.ObjectId(userId) },
-      $setOnInsert: { workCenterId: wcObjectId },
-    },
-    { upsert: true, returnDocument: 'after', runValidators: true, setDefaultsOnInsert: true },
+    { $set: set, $unset: unset, $setOnInsert: { workCenterId: wcObjectId } },
+    { upsert: true, returnDocument: 'after', runValidators: true, setDefaultsOnInsert: false },
   )
   if (!doc) throw new CustomError(500, 'error.upsert_failed')
   await invalidate(workCenterId)
-  return doc
+  return getForWorkCenter(workCenterId)
 }
 
 export async function removeForWorkCenter(workCenterId: string): Promise<void> {

@@ -1,10 +1,23 @@
 import { Types } from 'mongoose'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { cacheDel, cacheWrap } = vi.hoisted(() => ({
-  cacheDel: vi.fn(async () => {}),
-  cacheWrap: vi.fn(async (_key: string, _ttl: number, loader: () => Promise<unknown>) => loader()),
-}))
+const { cache, cacheDel, cacheWrap } = vi.hoisted(() => {
+  // Keeps a value as JSON until its key is deleted, as the Redis cache does
+  const cache = new Map<string, string>()
+  return {
+    cache,
+    cacheDel: vi.fn(async (key: string) => {
+      cache.delete(key)
+    }),
+    cacheWrap: vi.fn(async (key: string, _ttl: number, loader: () => Promise<unknown>) => {
+      const hit = cache.get(key)
+      if (hit !== undefined) return JSON.parse(hit)
+      const value = await loader()
+      if (value !== null && value !== undefined) cache.set(key, JSON.stringify(value))
+      return value
+    }),
+  }
+})
 
 vi.mock('../../lib/cache.js', () => ({
   cacheDel,
@@ -19,11 +32,15 @@ vi.mock('../../lib/cache.js', () => ({
 
 import { PerformanceRuntimePolicy } from './policy.model.js'
 import * as service from './policy.service.js'
-import { policyUpdateSchema } from './policy.validators.js'
+import { policyUpdateSchema, policyWorkCenterUpdateSchema } from './policy.validators.js'
 
 const userId = new Types.ObjectId().toString()
 
 describe('PolicyService', () => {
+  beforeEach(() => {
+    cache.clear()
+  })
+
   describe('getFactory', () => {
     it('returns defaults when no factory record exists', async () => {
       const policy = await service.getFactory()
@@ -55,6 +72,53 @@ describe('PolicyService', () => {
       await service.upsertForWorkCenter(wcId, { microStopThresholdMs: 30_000 }, userId)
       const policy = await service.getForWorkCenter(wcId)
       expect(policy.microStopThresholdMs).toBe(30_000)
+    })
+
+    it('keeps the factory value of a field the work center does not set', async () => {
+      await service.upsertFactory({ runModeDebounceMs: 5000 }, userId)
+      const wcId = new Types.ObjectId().toString()
+      await service.upsertForWorkCenter(wcId, { microStopThresholdMs: 60_000 }, userId)
+
+      const policy = await service.getForWorkCenter(wcId)
+
+      expect(policy.microStopThresholdMs).toBe(60_000)
+      expect(policy.runModeDebounceMs).toBe(5000)
+    })
+
+    it('follows a factory change in a field the work center does not set', async () => {
+      const wcId = new Types.ObjectId().toString()
+      await service.upsertForWorkCenter(wcId, { microStopThresholdMs: 60_000 }, userId)
+      await service.getForWorkCenter(wcId)
+
+      await service.upsertFactory({ runModeDebounceMs: 8000 }, userId)
+
+      expect((await service.getForWorkCenter(wcId)).runModeDebounceMs).toBe(8000)
+    })
+
+    it('shows a factory change at once to a work center read before it', async () => {
+      const wcId = new Types.ObjectId().toString()
+      await service.getForWorkCenter(wcId)
+
+      await service.upsertFactory({ runModeDebounceMs: 8000 }, userId)
+
+      expect((await service.getForWorkCenter(wcId)).runModeDebounceMs).toBe(8000)
+    })
+
+    it('hands a field back to the factory when the work center sets it to null', async () => {
+      await service.upsertFactory({ runModeDebounceMs: 5000 }, userId)
+      const wcId = new Types.ObjectId().toString()
+      await service.upsertForWorkCenter(wcId, { runModeDebounceMs: 3000 }, userId)
+
+      await service.upsertForWorkCenter(wcId, { runModeDebounceMs: null }, userId)
+
+      expect((await service.getForWorkCenter(wcId)).runModeDebounceMs).toBe(5000)
+    })
+  })
+
+  describe('validators', () => {
+    it('takes null for a work center field and refuses it for the factory', () => {
+      expect(policyWorkCenterUpdateSchema.safeParse({ runModeDebounceMs: null }).success).toBe(true)
+      expect(policyUpdateSchema.safeParse({ runModeDebounceMs: null }).success).toBe(false)
     })
   })
 
