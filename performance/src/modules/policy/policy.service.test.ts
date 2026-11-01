@@ -122,6 +122,78 @@ describe('PolicyService', () => {
     })
   })
 
+  // A stop shorter than the debounce is never recorded, so a debounce that reaches the micro stop
+  // threshold leaves no stop to classify as a micro stop
+  describe('debounce and micro stop threshold', () => {
+    const brokenRule = { statusCode: 400, message: 'error.debounce_not_below_micro_stop' }
+
+    it('refuses a work center debounce that reaches its micro stop threshold', async () => {
+      const wcId = new Types.ObjectId().toString()
+
+      await expect(
+        service.upsertForWorkCenter(wcId, { runModeDebounceMs: 120_000 }, userId),
+      ).rejects.toMatchObject(brokenRule)
+      expect(
+        await PerformanceRuntimePolicy.countDocuments({ workCenterId: new Types.ObjectId(wcId) }),
+      ).toBe(0)
+    })
+
+    it('refuses a threshold not above the debounce the work center inherits', async () => {
+      await service.upsertFactory({ runModeDebounceMs: 30_000 }, userId)
+      const wcId = new Types.ObjectId().toString()
+
+      await expect(
+        service.upsertForWorkCenter(wcId, { microStopThresholdMs: 30_000 }, userId),
+      ).rejects.toMatchObject(brokenRule)
+    })
+
+    it('checks a field handed back to the factory against the factory value', async () => {
+      await service.upsertFactory({ microStopThresholdMs: 60_000 }, userId)
+      const wcId = new Types.ObjectId().toString()
+      await service.upsertForWorkCenter(
+        wcId,
+        { runModeDebounceMs: 100_000, microStopThresholdMs: 150_000 },
+        userId,
+      )
+
+      await expect(
+        service.upsertForWorkCenter(wcId, { microStopThresholdMs: null }, userId),
+      ).rejects.toMatchObject(brokenRule)
+    })
+
+    it('takes any debounce once a work center turns micro stops off', async () => {
+      const wcId = new Types.ObjectId().toString()
+
+      const policy = await service.upsertForWorkCenter(
+        wcId,
+        { runModeDebounceMs: 300_000, microStopThresholdMs: 0 },
+        userId,
+      )
+
+      expect(policy.runModeDebounceMs).toBe(300_000)
+    })
+
+    it('refuses a factory debounce that reaches the factory threshold', async () => {
+      await expect(
+        service.upsertFactory({ runModeDebounceMs: 120_000 }, userId),
+      ).rejects.toMatchObject(brokenRule)
+    })
+
+    it('refuses a factory change that breaks a work center inheriting from it', async () => {
+      const wcId = new Types.ObjectId().toString()
+      await service.upsertForWorkCenter(wcId, { microStopThresholdMs: 30_000 }, userId)
+
+      await expect(
+        service.upsertFactory({ runModeDebounceMs: 30_000 }, userId),
+      ).rejects.toMatchObject({
+        statusCode: 400,
+        message: 'error.debounce_not_below_micro_stop_on_work_centers',
+        details: { workCenterIds: [wcId] },
+      })
+      expect((await service.getFactory()).runModeDebounceMs).toBe(0)
+    })
+  })
+
   describe('upsertFactory', () => {
     it('creates and then updates factory row', async () => {
       const created = await service.upsertFactory({ runModeDebounceMs: 0 }, userId)

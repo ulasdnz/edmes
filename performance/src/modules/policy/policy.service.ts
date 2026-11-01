@@ -63,10 +63,61 @@ export async function resolveForWorkCenter(
   return getForWorkCenter(workCenterId)
 }
 
+// A stop shorter than the debounce is never recorded, so a debounce that reaches the micro stop
+// threshold leaves no stop to classify as a micro stop. A threshold of 0 turns micro stops off.
+function keepsMicroStops(debounceMs: number, microStopThresholdMs: number): boolean {
+  return microStopThresholdMs === 0 || debounceMs < microStopThresholdMs
+}
+
+async function assertFactoryKeepsMicroStops(patch: PolicyUpdateInput): Promise<void> {
+  const factory = await getFactory()
+  const debounceMs = patch.runModeDebounceMs ?? factory.runModeDebounceMs
+  const microStopThresholdMs = patch.microStopThresholdMs ?? factory.microStopThresholdMs
+  if (!keepsMicroStops(debounceMs, microStopThresholdMs)) {
+    throw new CustomError(400, 'error.debounce_not_below_micro_stop')
+  }
+
+  // Work centers that set one of the two and take the other from the factory
+  const inheriting = await PerformanceRuntimePolicy.find({
+    workCenterId: { $ne: null },
+    $or: [{ runModeDebounceMs: { $exists: false } }, { microStopThresholdMs: { $exists: false } }],
+  })
+    .select({ workCenterId: 1, runModeDebounceMs: 1, microStopThresholdMs: 1 })
+    .lean<Partial<IPerformanceRuntimePolicy>[]>()
+  const broken = inheriting.filter(
+    row =>
+      !keepsMicroStops(
+        row.runModeDebounceMs ?? debounceMs,
+        row.microStopThresholdMs ?? microStopThresholdMs,
+      ),
+  )
+  if (broken.length > 0) {
+    throw new CustomError(400, 'error.debounce_not_below_micro_stop_on_work_centers', {
+      workCenterIds: broken.map(row => String(row.workCenterId)),
+    })
+  }
+}
+
+async function assertWorkCenterKeepsMicroStops(
+  workCenterId: string,
+  patch: PolicyWorkCenterUpdateInput,
+): Promise<void> {
+  const [factory, row] = await Promise.all([getFactory(), getWorkCenterRow(workCenterId)])
+  // A field set to null goes back to the factory value
+  const effective = (field: 'runModeDebounceMs' | 'microStopThresholdMs'): number =>
+    patch[field] === null ? factory[field] : (patch[field] ?? row[field] ?? factory[field])
+  if (!keepsMicroStops(effective('runModeDebounceMs'), effective('microStopThresholdMs'))) {
+    throw new CustomError(400, 'error.debounce_not_below_micro_stop')
+  }
+}
+
 export async function upsertFactory(
   patch: PolicyUpdateInput,
   userId: string,
 ): Promise<IPerformanceRuntimePolicy> {
+  if (patch.runModeDebounceMs !== undefined || patch.microStopThresholdMs !== undefined) {
+    await assertFactoryKeepsMicroStops(patch)
+  }
   const doc = await PerformanceRuntimePolicy.findOneAndUpdate(
     { workCenterId: null },
     {
@@ -85,6 +136,9 @@ export async function upsertForWorkCenter(
   patch: PolicyWorkCenterUpdateInput,
   userId: string,
 ): Promise<IPerformanceRuntimePolicy> {
+  if (patch.runModeDebounceMs !== undefined || patch.microStopThresholdMs !== undefined) {
+    await assertWorkCenterKeepsMicroStops(workCenterId, patch)
+  }
   const wcObjectId = new Types.ObjectId(workCenterId)
   // The row stores only the fields set for the work center; the rest come from the factory
   const set: Record<string, unknown> = { updatedBy: new Types.ObjectId(userId) }
