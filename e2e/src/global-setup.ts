@@ -1,6 +1,8 @@
 import { type ChildProcess, spawn } from 'node:child_process'
 import { createWriteStream, existsSync } from 'node:fs'
 import { mkdir, readdir, readFile, rm } from 'node:fs/promises'
+import { createServer } from 'node:http'
+import type { AddressInfo } from 'node:net'
 import { dirname, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 // Only the image helper: the package's main entry would load test dependencies e2e does not have
@@ -9,7 +11,8 @@ import { GenericContainer, type StartedTestContainer, Wait } from 'testcontainer
 import type { TestProject } from 'vitest/node'
 
 // Starts MongoDB, Redis and an MQTT broker in containers and the built services as plain Node
-// processes, the way they run in production. Tests reach the services only over HTTP and MQTT.
+// processes, the way they run in production. Tests reach the services only over HTTP and MQTT,
+// and ask the control server to stop or start one.
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 // Every run logs into a folder of its own, so a failed run's logs survive the runs after it.
@@ -36,6 +39,7 @@ declare module 'vitest' {
     internalToken: string
     admin: { email: string; password: string }
     logDir: string
+    control: string
   }
 }
 
@@ -45,6 +49,8 @@ type Service = {
   logFile: string
   // Settles with the exit code or signal once the process is gone and its log file is complete
   closed: Promise<string>
+  // A test stopped it through the control server, so its exit is no crash
+  stopped: boolean
 }
 
 const serviceUrl = (name: ServiceName) => `http://127.0.0.1:${PORTS[name]}`
@@ -72,7 +78,8 @@ function startService(name: ServiceName, runDir: string, env: NodeJS.ProcessEnv)
   const entry = resolve(ROOT, name, 'dist/app.js')
   if (!existsSync(entry)) throw new Error(`${entry} is missing; run pnpm build first`)
   const logFile = resolve(runDir, `${name}.log`)
-  const log = createWriteStream(logFile)
+  // A restarted service adds to the log of its earlier run
+  const log = createWriteStream(logFile, { flags: 'a' })
   const child = spawn(process.execPath, [entry], {
     cwd: resolve(ROOT, name),
     env,
@@ -87,7 +94,7 @@ function startService(name: ServiceName, runDir: string, env: NodeJS.ProcessEnv)
       log.end(() => settle(signal ? `signal ${signal}` : `code ${code}`))
     })
   })
-  return { name, child, logFile, closed }
+  return { name, child, logFile, closed, stopped: false }
 }
 
 async function waitUntilReady({ name, child, logFile, closed }: Service) {
@@ -111,6 +118,12 @@ export default async function setup(project: TestProject) {
   await pruneOldRuns()
   console.log(`Service logs: ${relative(ROOT, runDir)}`)
 
+  // The repository's broker config, so e2e runs the queue and persistence settings production does.
+  // Only the authentication goes: e2e has no password file.
+  const brokerConfig = (await readFile(resolve(ROOT, 'infra/mosquitto/mosquitto.conf'), 'utf8'))
+    .replace('allow_anonymous false', 'allow_anonymous true')
+    .replace(/^password_file .*\r?\n/m, '')
+
   const [mongo, redis, broker] = await Promise.all([
     new GenericContainer(composeImage('mongodb'))
       .withExposedPorts(27017)
@@ -123,10 +136,7 @@ export default async function setup(project: TestProject) {
     new GenericContainer(composeImage('mosquitto'))
       .withExposedPorts(1883)
       .withCopyContentToContainer([
-        {
-          content: 'listener 1883\nallow_anonymous true\n',
-          target: '/mosquitto/config/mosquitto.conf',
-        },
+        { content: brokerConfig, target: '/mosquitto/config/mosquitto.conf' },
       ])
       .withWaitStrategy(Wait.forLogMessage(/running/))
       .start(),
@@ -156,39 +166,81 @@ export default async function setup(project: TestProject) {
     SYSTEM_ADMIN_PASSWORD: ADMIN.password,
   }
 
-  const services = (Object.keys(PORTS) as ServiceName[]).map(name =>
+  const names = Object.keys(PORTS) as ServiceName[]
+  const launch = (name: ServiceName) =>
     startService(name, runDir, {
       ...env,
       PORT: String(PORTS[name]),
       MONGO_URI: `mongodb://${mongo.getHost()}:${mongo.getMappedPort(27017)}/e2e-${name}`,
-    }),
-  )
+    })
+  // The process each service runs now: a restart through the control server replaces it
+  const services = new Map<ServiceName, Service>(names.map(name => [name, launch(name)]))
 
   let stopping = false
+  const reportCrash = (service: Service) => {
+    void service.closed.then(exit => {
+      if (stopping || service.stopped) return
+      console.error(
+        `${service.name} exited with ${exit} while the tests ran, see ${service.logFile}`,
+      )
+    })
+  }
+
+  const stopForTest = async (service: Service) => {
+    if (hasExited(service.child)) throw new Error(`${service.name} is not running`)
+    service.stopped = true
+    service.child.kill()
+    await service.closed
+  }
+
+  // The restarted service listens on the address it had before
+  const startForTest = async (previous: Service) => {
+    if (!previous.stopped) throw new Error(`${previous.name} was not stopped`)
+    const service = launch(previous.name)
+    services.set(service.name, service)
+    await waitUntilReady(service)
+    reportCrash(service)
+  }
+
+  // Test files run in other processes and cannot reach the services, so they ask this server on
+  // loopback to stop and start them.
+  const control = createServer(async (req, res) => {
+    const [, name, action] = /^\/services\/([^/]+)\/(start|stop)$/.exec(req.url ?? '') ?? []
+    const service = services.get(name as ServiceName)
+    if (req.method !== 'POST' || !service) {
+      res.writeHead(404).end()
+      return
+    }
+    try {
+      if (action === 'stop') await stopForTest(service)
+      else await startForTest(service)
+      res.writeHead(204).end()
+    } catch (err) {
+      res.writeHead(500).end(err instanceof Error ? err.message : String(err))
+    }
+  })
+
   const stop = async () => {
     stopping = true
-    for (const { child } of services) child.kill()
+    control.close()
+    const current = [...services.values()]
+    for (const { child } of current) child.kill()
     // The services shut down while MongoDB and Redis are still up, and leave complete logs
-    await Promise.all(services.map(service => service.closed))
+    await Promise.all(current.map(service => service.closed))
     await Promise.all(containers.map(container => container.stop()))
   }
 
   try {
-    await Promise.all(services.map(waitUntilReady))
+    await Promise.all([...services.values()].map(waitUntilReady))
+    await new Promise<void>(listening => control.listen(0, '127.0.0.1', listening))
   } catch (err) {
     await stop()
     throw err
   }
 
   // From here on a service that exits has crashed: say so at once, and fail the run at teardown.
-  for (const { name, logFile, closed } of services) {
-    void closed.then(exit => {
-      if (stopping) return
-      console.error(`${name} exited with ${exit} while the tests ran, see ${logFile}`)
-    })
-  }
+  for (const service of services.values()) reportCrash(service)
 
-  const names = Object.keys(PORTS) as ServiceName[]
   project.provide(
     'urls',
     Object.fromEntries(names.map(name => [name, serviceUrl(name)])) as Record<ServiceName, string>,
@@ -197,9 +249,12 @@ export default async function setup(project: TestProject) {
   project.provide('internalToken', INTERNAL_TOKEN)
   project.provide('admin', ADMIN)
   project.provide('logDir', runDir)
+  project.provide('control', `http://127.0.0.1:${(control.address() as AddressInfo).port}`)
 
   return async () => {
-    const crashed = services.filter(({ child }) => hasExited(child))
+    const crashed = [...services.values()].filter(
+      service => hasExited(service.child) && !service.stopped,
+    )
     await stop()
     if (crashed.length === 0) return
     const reports = await Promise.all(
