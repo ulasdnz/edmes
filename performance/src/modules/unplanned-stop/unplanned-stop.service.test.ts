@@ -1,6 +1,6 @@
 import { profileOperations } from '@mes/testing'
 import { Types } from 'mongoose'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { cacheDel, cacheWrap } = vi.hoisted(() => ({
   cacheDel: vi.fn(async () => {}),
@@ -18,7 +18,9 @@ vi.mock('../../lib/cache.js', () => ({
   sharedCacheDel: vi.fn(),
 }))
 
+import * as events from '../../jobs/events.js'
 import { PlannedStop } from '../planned-stop/planned-stop.model.js'
+import * as policyService from '../policy/policy.service.js'
 import { bootstrapSystemReasons, MICRO_STOP_CODE } from '../reason/reason.bootstrap.js'
 import { Reason } from '../reason/reason.model.js'
 import { UnplannedStop } from './unplanned-stop.model.js'
@@ -52,9 +54,31 @@ async function seedReason(
   return reason
 }
 
+function watchStopEvents() {
+  return {
+    opened: vi.spyOn(events, 'emitUnplannedStopOpened'),
+    closed: vi.spyOn(events, 'emitUnplannedStopClosed'),
+    updated: vi.spyOn(events, 'emitUnplannedStopUpdated'),
+  }
+}
+
+async function microStopReasonId(): Promise<string> {
+  const reason = await Reason.findOne({ code: MICRO_STOP_CODE, isSystemDefault: true }).lean()
+  if (!reason) throw new Error('MICRO_STOP reason was not bootstrapped')
+  return reason._id.toString()
+}
+
+function stopsOf(workCenterId: string) {
+  return UnplannedStop.find({ workCenterId: new Types.ObjectId(workCenterId) }).lean()
+}
+
 describe('UnplannedStopService', () => {
   beforeEach(async () => {
     await bootstrapSystemReasons()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 
   describe('openFromRunMode', () => {
@@ -77,6 +101,187 @@ describe('UnplannedStopService', () => {
         workCenterId: new Types.ObjectId(wcId),
       })
       expect(count).toBe(1)
+    })
+
+    it('returns the recorded stop when a run-mode stop with the same start is opened again', async () => {
+      const wcId = new Types.ObjectId().toString()
+      const startAt = new Date('2026-06-15T10:00:00.000Z')
+      const recorded = await service.recordClosedFromRunMode(
+        wcId,
+        startAt,
+        new Date('2026-06-15T10:05:00.000Z'),
+      )
+      const stopEvents = watchStopEvents()
+
+      const again = await service.openFromRunMode(wcId, startAt)
+
+      expect(again._id.toString()).toBe(recorded._id.toString())
+      expect(again.endAt?.toISOString()).toBe('2026-06-15T10:05:00.000Z')
+      expect(await stopsOf(wcId)).toHaveLength(1)
+      expect(stopEvents.opened).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('recordClosedFromRunMode', () => {
+    it('inserts the stop already closed and publishes the opened event, then the closed event', async () => {
+      const wcId = new Types.ObjectId().toString()
+      const startAt = new Date('2026-06-15T10:00:00.000Z')
+      const endAt = new Date('2026-06-15T10:05:00.000Z')
+      const stopEvents = watchStopEvents()
+
+      const { result: recorded, operations } = await profileOperations(
+        UnplannedStop.collection.collectionName,
+        () => service.recordClosedFromRunMode(wcId, startAt, endAt),
+      )
+
+      const writes = operations.filter(op => op.op !== 'query')
+      expect(writes.map(op => op.op)).toEqual(['insert'])
+      expect(writes[0].command.documents[0].endAt).toEqual(endAt)
+      const stops = await stopsOf(wcId)
+      expect(stops).toHaveLength(1)
+      expect(stops[0]._id.toString()).toBe(recorded._id.toString())
+      expect(stops[0].source).toBe('run_mode')
+      expect(stops[0].startAt.toISOString()).toBe(startAt.toISOString())
+      expect(stops[0].endAt?.toISOString()).toBe(endAt.toISOString())
+      expect(stopEvents.opened).toHaveBeenCalledExactlyOnceWith(recorded._id.toString(), wcId)
+      expect(stopEvents.closed).toHaveBeenCalledExactlyOnceWith(recorded._id.toString(), wcId)
+      expect(stopEvents.opened.mock.invocationCallOrder[0]).toBeLessThan(
+        stopEvents.closed.mock.invocationCallOrder[0],
+      )
+    })
+
+    it('records a closed run-mode stop once when it is written twice', async () => {
+      const wcId = new Types.ObjectId().toString()
+      const startAt = new Date('2026-06-15T10:00:00.000Z')
+      const endAt = new Date('2026-06-15T10:05:00.000Z')
+      const stopEvents = watchStopEvents()
+
+      const first = await service.recordClosedFromRunMode(wcId, startAt, endAt)
+      const second = await service.recordClosedFromRunMode(wcId, startAt, endAt)
+
+      expect(second._id.toString()).toBe(first._id.toString())
+      expect(await stopsOf(wcId)).toHaveLength(1)
+      expect(stopEvents.opened).toHaveBeenCalledTimes(1)
+      expect(stopEvents.closed).toHaveBeenCalledTimes(1)
+    })
+
+    it('records a closed run-mode stop once when two writers race', async () => {
+      const wcId = new Types.ObjectId().toString()
+      const startAt = new Date('2026-06-15T10:00:00.000Z')
+      const endAt = new Date('2026-06-15T10:05:00.000Z')
+
+      const [first, second] = await Promise.all([
+        service.recordClosedFromRunMode(wcId, startAt, endAt),
+        service.recordClosedFromRunMode(wcId, startAt, endAt),
+      ])
+
+      expect(second._id.toString()).toBe(first._id.toString())
+      expect(await stopsOf(wcId)).toHaveLength(1)
+    })
+
+    it('returns the stop with the same start when the work center has other run-mode stops', async () => {
+      const wcId = new Types.ObjectId().toString()
+      await service.recordClosedFromRunMode(
+        wcId,
+        new Date('2026-06-15T09:00:00.000Z'),
+        new Date('2026-06-15T09:05:00.000Z'),
+      )
+      const startAt = new Date('2026-06-15T10:00:00.000Z')
+      const endAt = new Date('2026-06-15T10:05:00.000Z')
+      const wanted = await service.recordClosedFromRunMode(wcId, startAt, endAt)
+
+      const recordedAgain = await service.recordClosedFromRunMode(wcId, startAt, endAt)
+      const openedAgain = await service.openFromRunMode(wcId, startAt)
+
+      expect(recordedAgain._id.toString()).toBe(wanted._id.toString())
+      expect(openedAgain._id.toString()).toBe(wanted._id.toString())
+      expect(await stopsOf(wcId)).toHaveLength(2)
+    })
+
+    it('marks a recorded stop no longer than the micro stop threshold as a micro stop', async () => {
+      const wcId = new Types.ObjectId().toString()
+      const startAt = new Date('2026-06-15T10:00:00.000Z')
+
+      const recorded = await service.recordClosedFromRunMode(
+        wcId,
+        startAt,
+        new Date(startAt.getTime() + 90_000),
+      )
+
+      const [stored] = await stopsOf(wcId)
+      expect(recorded.reasonId?.toString()).toBe(await microStopReasonId())
+      expect(stored.reasonId?.toString()).toBe(await microStopReasonId())
+    })
+
+    it('marks a recorded stop lasting exactly the micro stop threshold as a micro stop', async () => {
+      const wcId = new Types.ObjectId().toString()
+      const startAt = new Date('2026-06-15T10:00:00.000Z')
+
+      await service.recordClosedFromRunMode(wcId, startAt, new Date(startAt.getTime() + 120_000))
+
+      const [stored] = await stopsOf(wcId)
+      expect(stored.reasonId?.toString()).toBe(await microStopReasonId())
+    })
+
+    it('does not mark a recorded stop longer than the micro stop threshold as a micro stop', async () => {
+      const wcId = new Types.ObjectId().toString()
+      const startAt = new Date('2026-06-15T10:00:00.000Z')
+
+      const recorded = await service.recordClosedFromRunMode(
+        wcId,
+        startAt,
+        new Date(startAt.getTime() + 120_001),
+      )
+
+      const [stored] = await stopsOf(wcId)
+      expect(recorded.reasonId).toBeNull()
+      expect(stored.reasonId).toBeNull()
+    })
+
+    it("applies the work center's micro stop threshold", async () => {
+      const wcId = new Types.ObjectId().toString()
+      const startAt = new Date('2026-06-15T10:00:00.000Z')
+      await policyService.upsertForWorkCenter(wcId, { microStopThresholdMs: 30_000 }, userId)
+
+      await service.recordClosedFromRunMode(wcId, startAt, new Date(startAt.getTime() + 90_000))
+
+      const [stored] = await stopsOf(wcId)
+      expect(stored.reasonId).toBeNull()
+    })
+
+    it('leaves an open manual stop open when it records a closed run-mode stop', async () => {
+      const wcId = new Types.ObjectId().toString()
+      const manual = await service.createManual(
+        { workCenterId: wcId, startAt: new Date('2026-06-15T09:50:00.000Z') },
+        userId,
+      )
+      const manualBefore = await UnplannedStop.findById(manual._id).lean()
+      const stopEvents = watchStopEvents()
+
+      const recorded = await service.recordClosedFromRunMode(
+        wcId,
+        new Date('2026-06-15T10:00:00.000Z'),
+        new Date('2026-06-15T10:05:00.000Z'),
+      )
+
+      expect(recorded._id.toString()).not.toBe(manual._id.toString())
+      expect(recorded.endAt?.toISOString()).toBe('2026-06-15T10:05:00.000Z')
+      expect(await UnplannedStop.findById(manual._id).lean()).toEqual(manualBefore)
+      expect(manualBefore?.endAt).toBeNull()
+      expect(await stopsOf(wcId)).toHaveLength(2)
+      expect(stopEvents.closed).toHaveBeenCalledExactlyOnceWith(recorded._id.toString(), wcId)
+    })
+
+    it('records a run-mode stop that starts when a manual stop started', async () => {
+      const wcId = new Types.ObjectId().toString()
+      const startAt = new Date('2026-06-15T10:00:00.000Z')
+      const endAt = new Date('2026-06-15T10:05:00.000Z')
+      await service.createManual({ workCenterId: wcId, startAt, endAt }, userId)
+
+      const recorded = await service.recordClosedFromRunMode(wcId, startAt, endAt)
+
+      expect(recorded.source).toBe('run_mode')
+      expect(await stopsOf(wcId)).toHaveLength(2)
     })
   })
 
@@ -129,6 +334,162 @@ describe('UnplannedStopService', () => {
     })
   })
 
+  describe('closeOnRunning', () => {
+    it('deletes an untouched run-mode stop that ends shorter than the debounce', async () => {
+      const wcId = new Types.ObjectId().toString()
+      await service.openFromRunMode(wcId, new Date('2026-06-15T10:00:00.000Z'))
+
+      const result = await service.closeOnRunning(
+        wcId,
+        new Date('2026-06-15T10:00:20.000Z'),
+        60_000,
+      )
+
+      expect(result).toBeNull()
+      expect(await stopsOf(wcId)).toHaveLength(0)
+    })
+
+    it('publishes unplanned_stop.updated when it deletes a stop, as a manual delete does', async () => {
+      const wcId = new Types.ObjectId().toString()
+      const stop = await service.openFromRunMode(wcId, new Date('2026-06-15T10:00:00.000Z'))
+      const manualWcId = new Types.ObjectId().toString()
+      const manual = await service.createManual(
+        { workCenterId: manualWcId, startAt: new Date('2026-06-15T10:00:00.000Z') },
+        userId,
+      )
+      const stopEvents = watchStopEvents()
+
+      await service.closeOnRunning(wcId, new Date('2026-06-15T10:00:20.000Z'), 60_000)
+      await service.remove(manual._id.toString(), userId)
+
+      expect(stopEvents.updated).toHaveBeenCalledTimes(2)
+      expect(stopEvents.updated).toHaveBeenNthCalledWith(1, stop._id.toString(), wcId)
+      expect(stopEvents.updated).toHaveBeenNthCalledWith(2, manual._id.toString(), manualWcId)
+      expect(stopEvents.closed).not.toHaveBeenCalled()
+    })
+
+    it('does not delete a short run-mode stop that is already closed', async () => {
+      const wcId = new Types.ObjectId().toString()
+      const closedStop = await service.recordClosedFromRunMode(
+        wcId,
+        new Date('2026-06-15T10:00:00.000Z'),
+        new Date('2026-06-15T10:00:10.000Z'),
+      )
+
+      const result = await service.closeOnRunning(
+        wcId,
+        new Date('2026-06-15T10:00:20.000Z'),
+        60_000,
+      )
+
+      expect(result).toBeNull()
+      const stops = await stopsOf(wcId)
+      expect(stops.map(s => s._id.toString())).toEqual([closedStop._id.toString()])
+      expect(stops[0].endAt?.toISOString()).toBe('2026-06-15T10:00:10.000Z')
+    })
+
+    it('leaves the open stop of another work center alone', async () => {
+      const wcId = new Types.ObjectId().toString()
+      const otherWcId = new Types.ObjectId().toString()
+      const other = await service.openFromRunMode(otherWcId, new Date('2026-06-15T10:00:00.000Z'))
+
+      const result = await service.closeOnRunning(
+        wcId,
+        new Date('2026-06-15T10:00:20.000Z'),
+        60_000,
+      )
+
+      expect(result).toBeNull()
+      const otherStops = await stopsOf(otherWcId)
+      expect(otherStops.map(s => s._id.toString())).toEqual([other._id.toString()])
+      expect(otherStops[0].endAt).toBeNull()
+    })
+
+    it('closes and keeps a short run-mode stop a user has changed', async () => {
+      const wcId = new Types.ObjectId().toString()
+      const stop = await service.openFromRunMode(wcId, new Date('2026-06-15T10:00:00.000Z'))
+      const reason = await seedReason()
+      await service.patch(stop._id.toString(), { reasonId: reason._id.toString() }, userId)
+
+      const result = await service.closeOnRunning(
+        wcId,
+        new Date('2026-06-15T10:00:20.000Z'),
+        60_000,
+      )
+
+      expect(result?._id.toString()).toBe(stop._id.toString())
+      const stops = await stopsOf(wcId)
+      expect(stops).toHaveLength(1)
+      expect(stops[0].endAt?.toISOString()).toBe('2026-06-15T10:00:20.000Z')
+      expect(stops[0].updatedBy?.toString()).toBe(userId)
+      expect(stops[0].reasonId?.toString()).toBe(reason._id.toString())
+    })
+
+    it('closes a manual stop on a running signal whatever its length', async () => {
+      const startAt = new Date('2026-06-15T10:00:00.000Z')
+      for (const durationMs of [20_000, 10 * 60_000]) {
+        const wcId = new Types.ObjectId().toString()
+        const manual = await service.createManual({ workCenterId: wcId, startAt }, userId)
+        expect(manual.updatedBy).toBeNull()
+        const endAt = new Date(startAt.getTime() + durationMs)
+
+        const result = await service.closeOnRunning(wcId, endAt, 60_000)
+
+        expect(result?._id.toString()).toBe(manual._id.toString())
+        const stops = await stopsOf(wcId)
+        expect(stops).toHaveLength(1)
+        expect(stops[0].endAt?.toISOString()).toBe(endAt.toISOString())
+      }
+    })
+
+    it('closes and keeps a run-mode stop lasting exactly the debounce', async () => {
+      const wcId = new Types.ObjectId().toString()
+      const stop = await service.openFromRunMode(wcId, new Date('2026-06-15T10:00:00.000Z'))
+      const stopEvents = watchStopEvents()
+
+      const result = await service.closeOnRunning(
+        wcId,
+        new Date('2026-06-15T10:01:00.000Z'),
+        60_000,
+      )
+
+      expect(result?._id.toString()).toBe(stop._id.toString())
+      const stops = await stopsOf(wcId)
+      expect(stops).toHaveLength(1)
+      expect(stops[0].endAt?.toISOString()).toBe('2026-06-15T10:01:00.000Z')
+      expect(stopEvents.closed).toHaveBeenCalledExactlyOnceWith(stop._id.toString(), wcId)
+      expect(stopEvents.updated).not.toHaveBeenCalled()
+    })
+
+    it('closes and keeps an untouched run-mode stop when the debounce is 0', async () => {
+      const wcId = new Types.ObjectId().toString()
+      const stop = await service.openFromRunMode(wcId, new Date('2026-06-15T10:00:00.000Z'))
+
+      const result = await service.closeOnRunning(wcId, new Date('2026-06-15T10:00:20.000Z'), 0)
+
+      expect(result?._id.toString()).toBe(stop._id.toString())
+      const stops = await stopsOf(wcId)
+      expect(stops).toHaveLength(1)
+      expect(stops[0].endAt?.toISOString()).toBe('2026-06-15T10:00:20.000Z')
+      expect(stops[0].reasonId?.toString()).toBe(await microStopReasonId())
+    })
+
+    it('returns null and publishes nothing when no stop is open', async () => {
+      const wcId = new Types.ObjectId().toString()
+      const stopEvents = watchStopEvents()
+
+      const result = await service.closeOnRunning(
+        wcId,
+        new Date('2026-06-15T10:00:20.000Z'),
+        60_000,
+      )
+
+      expect(result).toBeNull()
+      expect(stopEvents.closed).not.toHaveBeenCalled()
+      expect(stopEvents.updated).not.toHaveBeenCalled()
+    })
+  })
+
   describe('close (manual by user)', () => {
     it('rejects double-close with 409', async () => {
       const wcId = new Types.ObjectId().toString()
@@ -171,6 +532,28 @@ describe('UnplannedStopService', () => {
         userId,
       )
       expect(closed.reasonId?.toString()).toBe(opReason._id.toString())
+    })
+  })
+
+  describe('remove', () => {
+    it('deletes the stop and publishes unplanned_stop.updated', async () => {
+      const wcId = new Types.ObjectId().toString()
+      const stop = await service.openFromRunMode(wcId, new Date('2026-06-15T10:00:00.000Z'))
+      const stopEvents = watchStopEvents()
+
+      await service.remove(stop._id.toString(), userId)
+
+      expect(await stopsOf(wcId)).toHaveLength(0)
+      expect(stopEvents.updated).toHaveBeenCalledExactlyOnceWith(stop._id.toString(), wcId)
+    })
+
+    it('rejects with 404 when the stop does not exist', async () => {
+      const stopEvents = watchStopEvents()
+
+      await expect(service.remove(new Types.ObjectId().toString(), userId)).rejects.toMatchObject({
+        statusCode: 404,
+      })
+      expect(stopEvents.updated).not.toHaveBeenCalled()
     })
   })
 

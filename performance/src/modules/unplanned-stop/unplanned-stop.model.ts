@@ -30,6 +30,11 @@ unplannedStopSchema.index(
   { workCenterId: 1 },
   { unique: true, partialFilterExpression: { endAt: null } },
 )
+// A run-mode stop is written once, however many writers reach for the same start
+unplannedStopSchema.index(
+  { workCenterId: 1, startAt: 1 },
+  { unique: true, partialFilterExpression: { source: 'run_mode' } },
+)
 unplannedStopSchema.index({ workCenterId: 1, startAt: 1, endAt: 1 })
 unplannedStopSchema.index({ reasonId: 1 })
 // Lists page newest first, within the caller's work centers or across all of them
