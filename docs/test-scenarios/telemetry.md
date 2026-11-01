@@ -630,3 +630,61 @@
 
 ### edge cases
 - Redis Pub/Sub publish fails → ingestion NOT affected (fire-and-forget, error swallowed)
+
+---
+
+> Added 2026-11-01 for the run-mode outage work | Spec: docs/superpowers/specs/2026-11-01-run-mode-outage-design.md | Plan: docs/superpowers/plans/2026-11-01-run-mode-outage.md
+> The header at the top of this file names the original telemetry spec and plan. The groups below this note come from the run-mode outage spec and plan, and their `plan-task` numbers refer to that plan. They carry spec scenarios 13 and 14 (scenarios 1-12 and the review focus lines are in performance.md). Same rule as above: immutable after implementation starts.
+
+---
+
+## Outage.plantTransitionsKept
+> target: e2e/src/outage.e2e.test.ts
+> plan-task: 10
+> scenario: 13
+> see-also: Outage.designLoad (plan Task 11: the same flow at the design load, run by hand)
+
+### happy path
+- [CRITICAL] a modelled plant keeps publishing over MQTT (the plan uses 200 messages/s with 20 run-mode transitions over a 20 s outage) while telemetry is stopped and started again → all 20 transitions are in telemetry's history for the run-mode tag, each with the time the machine gave it, and none is missing or altered
+
+---
+
+## Outage.designLoad
+> target: e2e/src/capacity/broker-capacity.capacity.test.ts
+> plan-task: 11
+> spec: Testing, Capacity measurement (run by hand with `pnpm test:capacity`, not in CI); the same flow as the scenario carried by Outage.plantTransitionsKept, at the design load
+
+### happy path
+- [CRITICAL] the plant publishes 500 messages/s of about 150 bytes through a 30-minute telemetry outage and the broker runs the repository config without a queue ceiling and without a container memory limit → every run-mode transition published during the outage is in telemetry's history with its own time (transitions lost = 0)
+- telemetry works off the backlog while the plant still publishes 500 messages/s (it ingests faster than 500 messages/s) → the backlog empties and the time it took is reported
+
+---
+
+## Mqtt.droppedMessages
+> target: telemetry/src/lib/mqtt.broker.test.ts
+> plan-task: 9
+> scenario: 14
+
+### happy path
+- [HIGH] against a real Mosquitto container with a low queue ceiling (the plan uses `max_queued_messages 5`): telemetry's session is disconnected, 20 QoS 1 messages are published, telemetry reconnects → exactly one `mqtt.broker.messages_dropped` is logged at error level with `dropped` of at least 15 (the broker's `$SYS/broker/publish/messages/dropped` counter minus the value telemetry saw last)
+
+### constraints
+- [HIGH] a dropped-message counter above the baseline → one `mqtt.broker.messages_dropped` error log whose `dropped` is the difference
+- a counter equal to the baseline (including the value just logged, received again with the next `$SYS` update) → no log
+- [HIGH] a counter below the baseline (the broker restarted and reset it) → no log, and the baseline moves to the new value so a later increase is measured from it
+- [HIGH] the baseline is kept in telemetry's Redis under `mqtt:dropped-baseline` → after a telemetry restart, drops that happened in between are still reported as the difference to the stored value
+
+---
+
+## TelemetryConfig.mqttSession
+> target: telemetry/src/lib/mqtt.broker.test.ts
+> plan-task: 9
+> spec: Broker buffering, Settings (`MQTT_CLIENT_ID`, `MQTT_SESSION_EXPIRY_SECONDS`)
+
+### happy path
+- `MQTT_CLIENT_ID` and `MQTT_SESSION_EXPIRY_SECONDS` not set → telemetry connects with client id `aimes-telemetry` (no process id in it) and a session expiry of 1800 s
+- both set → telemetry connects with the configured client id and session expiry
+
+### constraints
+- [HIGH] `MQTT_CLIENT_ID` empty → the configuration is rejected
+- [HIGH] `MQTT_SESSION_EXPIRY_SECONDS` zero, negative or not an integer → the configuration is rejected
