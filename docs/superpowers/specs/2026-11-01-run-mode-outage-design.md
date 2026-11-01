@@ -39,6 +39,8 @@ the first stopped signal and keeps the right times even when signals arrive late
 - No stop is lost because a service could not answer for a while.
 - A stop recorded late carries the machine's own start and end times.
 - A stop is never created from missing information. "Cannot answer" never means "stopped".
+- A telemetry outage of up to 30 minutes at the design load loses no MQTT message, and the measured
+  capacity is written down.
 
 ## Non-goals
 
@@ -60,8 +62,9 @@ machine ──MQTT (QoS 1, persistent session)──▶ telemetry ──events.t
 - Every stored sample carries the device's timestamp (`msg.time`), not the time it reached a service.
 - `GET /internal/v1/historian/:tagId/latest` returns the last stored change.
 - When telemetry restarts, the broker delivers the QoS 1 messages it queued for telemetry's session, and
-  telemetry stores and publishes them with their own timestamps. This needs a stable MQTT client id; see
-  [Telemetry MQTT client id](#telemetry-mqtt-client-id).
+  telemetry stores and publishes them with their own timestamps. That holds only within the broker's
+  limits for the session, which today are far below what this design needs; see
+  [Broker buffering](#broker-buffering).
 
 ## Decision rules
 
@@ -177,21 +180,79 @@ the same rule as `closeIfOpen` and publishes the opened and then the closed even
 - Redis writes its AOF every second. A Redis crash can lose a candidate written in the last second.
 - An operator may open a manual stop during an outage that overlaps the run-mode stop recorded late.
   The OEE already clips overlapping stops and reports `overlapping_stop_records_clipped`.
+- A broker crash loses the messages it received since its last autosave.
+- A telemetry outage longer than the target, or a load above the design load, fills the queue ceiling
+  and the broker drops messages. This is detected and alerted (see
+  [When an outage runs longer](#when-an-outage-runs-longer)), not prevented.
 
-## Telemetry MQTT client id
+## Broker buffering
 
-Telemetry connects with `clientId: aimes-telemetry-${process.pid}`, `clean: false` and QoS 1. The broker
-keeps queued messages per client id. When a restart changes the process id:
+While telemetry is down, the broker is the only place a machine signal can wait. Today it holds far
+too little:
 
-- the queue stays with the old client id and the late signals never arrive, which defeats the persistent
-  session the telemetry spec asks for;
-- the broker keeps queuing for the old session, so every restart leaves another orphaned session behind.
+- Telemetry connects with `clientId: aimes-telemetry-${process.pid}`. The broker keeps queued messages
+  per client id, so when a restart changes the process id the queue stays with the old id and is lost,
+  which defeats the persistent session the telemetry spec asks for. In Docker the process id under
+  `dumb-init` stays the same in practice, but nothing guarantees it.
+- The session expires 300 s after telemetry disconnects (`sessionExpiryInterval: 300`), and its queued
+  messages with it. An orphaned session left by an old process id is gone after 5 minutes too, so the
+  cost of a changing id is the lost queue, not a growing pile of sessions.
+- `infra/mosquitto/mosquitto.conf` sets no queue limit, so Mosquitto's default applies: at most 1000
+  queued messages per client. The plant publishes hundreds of messages per second (telemetry spec), so
+  the queue fills within seconds and later messages are dropped.
+- The broker container is limited to 128 MB of memory and 0.25 CPU.
 
-In Docker the process id under `dumb-init` stays the same in practice, which hides this, but nothing
-guarantees it. The client id comes from config instead (`MQTT_CLIENT_ID`), with the stable default
-`aimes-telemetry`.
+### Target
 
-## Data changes
+A telemetry outage of up to **30 minutes** loses no MQTT message at the design load.
+
+### Load model
+
+There is no field data yet, so the design load is an explicit assumption, documented with the results;
+a customer's own rate replaces it by repeating the measurement:
+
+| Parameter | Design value |
+|---|---|
+| Message rate | 500 messages/s, for example 50 machines × 10 tags × 1 Hz |
+| Message size | about 150 bytes including the topic |
+| Run-mode transitions | a few per machine per hour |
+| Outage | 30 minutes, about 900,000 queued messages |
+
+### Settings
+
+- **Telemetry:** `MQTT_CLIENT_ID`, default `aimes-telemetry`, and `MQTT_SESSION_EXPIRY_SECONDS`, default
+  `1800`.
+- **Broker** (`infra/mosquitto/mosquitto.conf`): `max_queued_messages 0`, so the message count is no
+  longer the limit, and `max_queued_bytes` as the hard ceiling for the queue. Its value is the measured
+  queue size of a 30-minute outage at the design load, plus 25%.
+- **Broker container:** memory and CPU limits sized from the same measurement: the queue ceiling, plus
+  the broker's own usage, plus a margin, so that a full queue never gets the broker killed.
+- **`autosave_interval`**, which bounds what a broker crash loses, is chosen from the measured cost of
+  writing a full queue to disk.
+
+### Proof
+
+- **In CI (e2e):** a modelled plant publishes while telemetry is stopped and started again. Every
+  run-mode transition published during the outage ends up in telemetry's history with the machine's own
+  time. The e2e broker runs the repository's `mosquitto.conf` with only authentication changed, so the
+  test exercises the production settings. The harness runs services as separate processes, so the
+  process id changes on restart and the stable client id is proven as well.
+- **By hand (`pnpm test:capacity`):** the same plant at the design load with a 30-minute outage. It
+  records the broker's peak memory, its message store size, the persistence file size, and how long
+  telemetry takes to work off the backlog once it is back; telemetry has to ingest faster than the
+  500 messages/s still arriving. The results go into `docs/operations/mqtt-broker-capacity.md` as a
+  table, with the method, the assumptions and the commands to repeat it for another rate.
+
+### When an outage runs longer
+
+Once the ceiling is reached the broker drops new messages, and that must not go unseen. When telemetry
+connects it reads the broker's dropped-message counter (`$SYS/broker/publish/messages/dropped`),
+compares it with the value it saw last, and logs `mqtt.broker.messages_dropped` at error level with the
+difference. A file-provisioned Grafana alert rule fires on that event. The broker restarting resets the
+counter; telemetry then takes the new value as its baseline. Stops across such an outage still follow
+the decision rules, with whatever signals survived.
+
+## Data and configuration changes
 
 - **Redis**
   - `runmode:candidate:{workCenterId}:{runModeTagId}` gains `attempts` and `nextAttemptAt`; its TTL
@@ -201,7 +262,11 @@ guarantees it. The client id comes from config instead (`MQTT_CLIENT_ID`), with 
 - **MongoDB:** unique index on unplanned stops `{ workCenterId: 1, startAt: 1 }` with the partial filter
   `{ source: 'run_mode' }`. The product is not released, so there is no migration; a local database that
   already holds two run-mode stops with the same start must be cleaned before the index can build.
-- **Config:** `MQTT_CLIENT_ID` for telemetry, default `aimes-telemetry`.
+- **Telemetry config:** `MQTT_CLIENT_ID`, default `aimes-telemetry`; `MQTT_SESSION_EXPIRY_SECONDS`,
+  default `1800`.
+- **Broker:** `max_queued_messages 0`, `max_queued_bytes` and `autosave_interval` in
+  `infra/mosquitto/mosquitto.conf`, and the broker's memory and CPU limits in `docker-compose.yml`, all
+  set from the capacity measurement.
 
 ## Components
 
@@ -214,9 +279,13 @@ guarantees it. The client id comes from config instead (`MQTT_CLIENT_ID`), with 
 | `performance/src/modules/unplanned-stop/` | Insert a closed run-mode stop, unique index, duplicate counts as recorded |
 | `performance/src/jobs/subscribers.ts` | Read work-center before changing the map, full refresh with retries |
 | `performance/src/lib/internal-api/run-mode-monitors.client.ts` | Throw when work-center cannot answer |
-| `telemetry/src/lib/mqtt.ts`, telemetry config | Client id from `MQTT_CLIENT_ID` |
+| `telemetry/src/lib/mqtt.ts`, telemetry config | Client id and session expiry from config; dropped-message check on connect |
+| `infra/mosquitto/mosquitto.conf`, `docker-compose.yml` | Queue ceiling, autosave interval, broker memory and CPU limits |
+| `infra/grafana/provisioning/alerting/` | Alert rule on `mqtt.broker.messages_dropped` |
 | `packages/testing` | Redis test container helper using the image docker-compose.yml runs |
-| `e2e/src/global-setup.ts` | Stop and start a service during a test |
+| `e2e/src/global-setup.ts` | Stop and start a service during a test; run the repository's broker config |
+| `e2e`, `pnpm test:capacity` | The 30-minute capacity measurement, run by hand |
+| `docs/operations/mqtt-broker-capacity.md` | Measured table, method and assumptions |
 
 ## Testing
 
@@ -255,6 +324,16 @@ production passes the real time.
     and telemetry is started again. Performance's API shows the stop `[T0, T1]` with the machine's own
     times. Services run as separate processes in the e2e harness, so the process id changes on restart
     and this scenario also proves the stable client id.
+13. A modelled plant keeps publishing while telemetry is stopped and started again: every run-mode
+    transition published during the outage is in telemetry's history with the machine's own time.
+14. With a deliberately low queue ceiling the broker drops messages during an outage: when telemetry
+    reconnects it logs `mqtt.broker.messages_dropped` with the number dropped.
+
+### Capacity measurement (by hand)
+
+`pnpm test:capacity` runs scenario 13 at the design load with a 30-minute outage and writes the
+measured table described in [Broker buffering](#broker-buffering) to
+`docs/operations/mqtt-broker-capacity.md`. It takes over half an hour, so CI does not run it.
 
 Before implementation, these scenarios are extracted to `docs/test-scenarios/performance.md`.
 
@@ -267,6 +346,9 @@ Before implementation, these scenarios are extracted to `docs/test-scenarios/per
 - **Pending decisions in MongoDB.** Keep the candidate and the after-planned check in the run-mode
   processing state document. Redis already persists them with AOF and the stream redelivers unfinished
   samples, so the gain is small; it would mostly move the same logic elsewhere.
+- **Documenting the broker's limits instead of raising them.** A known gap would stay open, and the
+  sizing does not need customer data: it needs an explicit load model and a measurement, both of which
+  this design provides.
 
 ## What this design does not do
 
