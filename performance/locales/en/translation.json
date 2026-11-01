@@ -28,7 +28,7 @@
     "telemetry_unreachable": "The telemetry service cannot be reached right now. Please try again shortly.",
     "work_center_unreachable": "The work center service cannot be reached right now. Please try again shortly.",
     "debounce_not_below_micro_stop": "The run-mode debounce must be shorter than the micro stop threshold. Set the threshold to 0 to turn micro stops off.",
-    "debounce_not_below_micro_stop_on_work_centers": "This debounce reaches the micro stop threshold of work centers that set their own threshold. Change those work centers first."
+    "debounce_not_below_micro_stop_on_work_centers": "This debounce reaches the micro stop threshold of work centers that set their own threshold: {{workCenters}}. Change those work centers first."
   },
   "diagnostic": {
     "no_job_order_in_range": "No job order found in the requested time range",

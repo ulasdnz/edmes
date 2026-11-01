@@ -42,7 +42,7 @@ export const createErrorHandler =
     let statusCode = 500
 
     let messageKey = 'error.unexpected'
-    let messageParams: Record<string, string> = {}
+    let messageParams: Record<string, unknown> = {}
 
     let details: ErrorDetail[] | undefined
     let stack: string | undefined
@@ -71,11 +71,13 @@ export const createErrorHandler =
       isOperational = true
       statusCode = normalizeStatusCode(err.statusCode)
       messageKey = err.message
+      messageParams = err.details ?? {}
       details = extractPasswordViolations(err.details)
     } else if (isStatusCodeError(err)) {
       isOperational = true
       statusCode = normalizeStatusCode(err.statusCode)
       messageKey = err.message || messageKey
+      messageParams = err.details ?? {}
       const extractedDetails = extractPasswordViolations(err.details)
       if (extractedDetails) {
         details = extractedDetails
@@ -100,7 +102,10 @@ export const createErrorHandler =
       path: req.route ? `${req.baseUrl}${req.route.path}` : req.path,
     }
 
-    let logMessage = tLog(messageKey, messageParams) as string
+    // The message goes out as JSON text, so a value keeps its characters; escaping them for HTML is
+    // the job of whatever renders the message
+    const interpolation = { escapeValue: false }
+    let logMessage = tLog(messageKey, { ...messageParams, interpolation }) as string
 
     if (details) {
       const mappedDetails = details
@@ -114,7 +119,7 @@ export const createErrorHandler =
     }
 
     const t = req.t ?? identity
-    const responseMessage = t(messageKey, messageParams) as string
+    const responseMessage = t(messageKey, { ...messageParams, interpolation }) as string
 
     const responseDetails = details?.map(e => ({
       field: e.field,

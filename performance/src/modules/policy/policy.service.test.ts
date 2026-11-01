@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { CustomError } from '@mes/core'
 import { Types } from 'mongoose'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -30,6 +32,15 @@ vi.mock('../../lib/cache.js', () => ({
   sharedCacheDel: vi.fn(),
 }))
 
+const { getWorkCenter } = vi.hoisted(() => ({
+  getWorkCenter: vi.fn(async (_id: string): Promise<{ code?: string } | null> => null),
+}))
+
+vi.mock('../../lib/internal-api/work-center.client.js', () => ({
+  getById: getWorkCenter,
+  invalidate: vi.fn(),
+}))
+
 import { PerformanceRuntimePolicy } from './policy.model.js'
 import * as service from './policy.service.js'
 import { policyUpdateSchema, policyWorkCenterUpdateSchema } from './policy.validators.js'
@@ -39,6 +50,8 @@ const userId = new Types.ObjectId().toString()
 describe('PolicyService', () => {
   beforeEach(() => {
     cache.clear()
+    getWorkCenter.mockReset()
+    getWorkCenter.mockResolvedValue(null)
   })
 
   describe('getFactory', () => {
@@ -182,15 +195,36 @@ describe('PolicyService', () => {
     it('refuses a factory change that breaks a work center inheriting from it', async () => {
       const wcId = new Types.ObjectId().toString()
       await service.upsertForWorkCenter(wcId, { microStopThresholdMs: 30_000 }, userId)
+      getWorkCenter.mockResolvedValueOnce({ code: 'PRS/01' })
 
       await expect(
         service.upsertFactory({ runModeDebounceMs: 30_000 }, userId),
       ).rejects.toMatchObject({
         statusCode: 400,
         message: 'error.debounce_not_below_micro_stop_on_work_centers',
-        details: { workCenterIds: [wcId] },
+        details: { workCenterIds: [wcId], workCenters: 'PRS/01' },
       })
       expect((await service.getFactory()).runModeDebounceMs).toBe(0)
+    })
+
+    it('names a work center it cannot read by its id', async () => {
+      const wcId = new Types.ObjectId().toString()
+      await service.upsertForWorkCenter(wcId, { microStopThresholdMs: 30_000 }, userId)
+      getWorkCenter.mockRejectedValueOnce(new CustomError(503, 'error.work_center_unreachable'))
+
+      await expect(
+        service.upsertFactory({ runModeDebounceMs: 30_000 }, userId),
+      ).rejects.toMatchObject({ details: { workCenters: wcId } })
+    })
+
+    it('puts the work centers into both translations of the message', () => {
+      for (const language of ['en', 'tr']) {
+        const file = new URL(`../../../locales/${language}/translation.json`, import.meta.url)
+        const translation = JSON.parse(readFileSync(file, 'utf8'))
+        expect(translation.error.debounce_not_below_micro_stop_on_work_centers).toContain(
+          '{{workCenters}}',
+        )
+      }
     })
   })
 

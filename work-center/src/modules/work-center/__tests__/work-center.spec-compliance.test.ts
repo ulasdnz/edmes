@@ -509,6 +509,21 @@ describe('Work Center Spec Compliance Review', () => {
     expect(res.status).toBe(400)
   })
 
+  it('names the field a virtual work center cannot take', async () => {
+    const block = await createInternalWorkCenter(buildVirtualWorkCenter())
+
+    const res = await request(app)
+      .patch(`/internal/v1/work-centers/${block}`)
+      .set(INTERNAL_TOKEN_HEADER, process.env.INTERNAL_API_TOKEN as string)
+      .set('accept-language', 'en')
+      .send({ productivityMode: 'count_based' })
+
+    expect(res.status).toBe(400)
+    expect(res.body.error.message).toBe(
+      "Field 'productivityMode' is not applicable to virtual work centers",
+    )
+  })
+
   it('rejects overlapping shifts in calendar weekly pattern', async () => {
     const morning = await Shift.create({
       name: 'Morning',

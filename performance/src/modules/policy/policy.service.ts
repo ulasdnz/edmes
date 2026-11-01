@@ -1,6 +1,7 @@
 import { CustomError } from '@mes/core'
 import { Types } from 'mongoose'
 import { cacheDel, cacheWrap } from '../../lib/cache.js'
+import * as workCenterClient from '../../lib/internal-api/work-center.client.js'
 import { type IPerformanceRuntimePolicy, PerformanceRuntimePolicy } from './policy.model.js'
 import type { PolicyUpdateInput, PolicyWorkCenterUpdateInput } from './policy.validators.js'
 
@@ -92,10 +93,25 @@ async function assertFactoryKeepsMicroStops(patch: PolicyUpdateInput): Promise<v
       ),
   )
   if (broken.length > 0) {
+    const workCenterIds = broken.map(row => String(row.workCenterId))
     throw new CustomError(400, 'error.debounce_not_below_micro_stop_on_work_centers', {
-      workCenterIds: broken.map(row => String(row.workCenterId)),
+      workCenterIds,
+      workCenters: await describeWorkCenters(workCenterIds),
     })
   }
+}
+
+// Codes name work centers to people; the id stands in for one that cannot be read
+async function describeWorkCenters(workCenterIds: string[]): Promise<string> {
+  const codes = await Promise.all(
+    workCenterIds.map(id =>
+      workCenterClient.getById(id).then(
+        wc => wc?.code ?? id,
+        () => id,
+      ),
+    ),
+  )
+  return codes.join(', ')
 }
 
 async function assertWorkCenterKeepsMicroStops(

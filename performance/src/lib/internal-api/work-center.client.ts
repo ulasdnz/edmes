@@ -6,6 +6,7 @@ import { logger } from '../logger.js'
 
 export interface WorkCenterSnapshot {
   _id: string
+  code?: string
   type: string
   productivityMode?: string
   status?: string

@@ -28,7 +28,7 @@
     "telemetry_unreachable": "Telemetri servisine şu anda ulaşılamıyor. Lütfen biraz sonra tekrar deneyin.",
     "work_center_unreachable": "İş merkezi servisine şu anda ulaşılamıyor. Lütfen biraz sonra tekrar deneyin.",
     "debounce_not_below_micro_stop": "Run-mode debounce süresi mikro duruş eşiğinden kısa olmalıdır. Mikro duruşları kapatmak için eşiği 0 yapın.",
-    "debounce_not_below_micro_stop_on_work_centers": "Bu debounce süresi, kendi mikro duruş eşiğini tanımlamış iş merkezlerinin eşiğine ulaşıyor. Önce bu iş merkezlerinin ayarlarını değiştirin."
+    "debounce_not_below_micro_stop_on_work_centers": "Bu debounce süresi, kendi mikro duruş eşiğini tanımlamış şu iş merkezlerinin eşiğine ulaşıyor: {{workCenters}}. Önce bu iş merkezlerinin ayarlarını değiştirin."
   },
   "diagnostic": {
     "no_job_order_in_range": "İstenen zaman aralığında iş emri bulunamadı",
