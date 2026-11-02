@@ -487,6 +487,38 @@ describe('The check decides the stops the planned stop covered after its end (ru
     expect(await stopsOf(machine)).toEqual([runModeStop('10:33:00', '10:38:00')])
   })
 
+  it('ends such a stop at the start of the next planned stop while the machine still stands', async () => {
+    const machine = await machineWithDebounce(0)
+    await closedLateAfter(machine, [
+      [0, '10:02:00'],
+      [1, '10:30:00'],
+      [0, '10:35:00'],
+    ])
+    // A changeover starts right after the late close
+    await activePlannedStop(machine, '10:40:00', '10:50:00')
+
+    await tick('10:40:01')
+
+    // Its start would have closed the stop, had it been open then
+    expect(await stopsOf(machine)).toEqual([runModeStop('10:35:00', '10:40:00')])
+  })
+
+  it('ends such a stop at the start of the next planned stop when the machine ran after it', async () => {
+    const machine = await machineWithDebounce(0)
+    await closedLateAfter(machine, [
+      [0, '10:02:00'],
+      [1, '10:30:00'],
+      [0, '10:35:00'],
+    ])
+    await activePlannedStop(machine, '10:40:00', '10:50:00')
+    // The machine runs during the changeover
+    await deliver(machine, recorded(machine, 1, '10:45:00'))
+
+    await tick('10:46:00')
+
+    expect(await stopsOf(machine)).toEqual([runModeStop('10:35:00', '10:40:00')])
+  })
+
   it('takes a stop that ends the first page of a long history as ended where the machine ran', async () => {
     const machine = await machineWithDebounce(60_000)
     monitoredByWorkCenter(machine)
