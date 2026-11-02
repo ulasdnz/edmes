@@ -292,6 +292,20 @@ Covers the debounce candidate and the check after a planned stop.
 Each work center is retried on its own until it succeeds. It runs in the background so it does not hold
 up startup. Telemetry being down at boot only delays it.
 
+- A work center with a cursor replays telemetry's history since it through rule 6's paging loop. A
+  replay that reaches its page limit goes on from the cursor its samples advanced until it reaches
+  the attempt's time; one that advanced nothing fails and waits for its next attempt.
+- A work center without a cursor starts from telemetry's latest sample. A stopped one goes through
+  rule 1. A running one only sets the cursor, under the tag's lock and only forward, so a newer sample
+  the event path processed while telemetry was asked keeps its place.
+- The retries follow the schedule of pending decisions. Logs mark changes, not attempts:
+  `run_mode.reconciler.failed` (warn) at a work center's first failure, with the cause, and
+  `run_mode.reconciler.recovered` (info, with `attempts`, the failed ones) once it succeeds after
+  failing. Its telemetry requests log no line of their own at warn.
+- Shutdown stops it before the data connections close: retries still waiting are cancelled, requests
+  in flight are aborted, and a replay stops before its next sample once the one being written is
+  written.
+
 ### A late stop is written closed in one write
 
 A recorded stop `[T0, T1]` is inserted already closed. Opening and then closing it could close another
@@ -415,8 +429,8 @@ the decision rules, with whatever signals survived.
 | `performance/src/modules/run-mode/run-mode.processor.ts` | Rules 1, 2 and 6, deleting a stop shorter than D, the replay loop rule 6 and the reconciler share, `now` parameter; a planned stop that has closed since covers a late signal; rule 4 at the close, the check's end at the next planned stop's start and its handover |
 | `performance/src/modules/run-mode/run-mode.decisions.ts` | Pending decision records in Redis: keys, first-write-wins candidates, the earliest pending check in one step, compare-and-set on `since` for deferrals, decisions and the handover with a TTL of its own, the retry schedule, the 24-hour drop under the tag's lock with the handover of a check |
 | `performance/src/modules/run-mode/run-mode.debounce-tick.ts` | Rule 3, after-planned checks, retry schedule, 24-hour limit |
-| `performance/src/modules/run-mode/run-mode.reconciler.ts` | Retry per work center in the background; replays through the shared loop |
-| `performance/src/lib/internal-api/run-mode-telemetry.client.ts` | State-durations segments in the shape telemetry answers (`state`, `start`, `end`) |
+| `performance/src/modules/run-mode/run-mode.reconciler.ts` | Retry per work center in the background, stopped at shutdown; replays through the shared loop, past its page limit; the cursor of a running latest sample only moves forward, under the tag's lock |
+| `performance/src/lib/internal-api/run-mode-telemetry.client.ts` | State-durations segments in the shape telemetry answers (`state`, `start`, `end`); a caller's signal aborts a request before its timeout |
 | `performance/src/modules/planned-stop/planned-stop.service.ts` | Rule 4: the run-mode tag from work-center or the cursor; leave a check when the run mode cannot be read; a failed check does not fail the close |
 | `performance/src/modules/unplanned-stop/` | Insert a closed run-mode stop, unique index, duplicate counts as recorded; no close ends a stop before it starts |
 | `performance/src/jobs/subscribers.ts` | Read work-center before changing the map, full refresh with retries; pass `previousOccurredAt` on |

@@ -307,17 +307,23 @@ While a planned stop over 10:00 to 11:00 is active, every sample is processed an
 ---
 
 ## RunMode.bootReconciliation
-> target: performance/src/modules/run-mode/run-mode.reconciler.test.ts
+> target: performance/src/modules/run-mode/__contract__/run-mode-reconciler.contract.test.ts
 > plan-task: 7
 > spec: Errors and retries, Boot reconciliation; second half of the scenario carried by TagMap.startupWhileWorkCenterDown
 
 ### constraints
 - [HIGH] telemetry cannot answer for a work center → `reconcileWorkCenter` throws (the failure is not swallowed)
+- `reconcileWorkCenter` logs no warn or error line of its own: its telemetry requests (the replay's pages and `latest`) log their failures at debug, and the caller that retries it logs the failure
 
 ### edge cases
 - [HIGH] telemetry is down at boot → `startBootReconciliation` retries that work center on the retry schedule until telemetry answers, and the work center is then reconciled
 - [HIGH] telemetry is down at boot → `startBootReconciliation()` returns without waiting for telemetry, so startup is not held up
 - each monitored work center is retried on its own: one whose reconciliation keeps failing does not delay another that succeeds on its first attempt
+- [HIGH] a work center whose reconciliation fails before it succeeds → its only warn line is one `run_mode.reconciler.failed` at its first failure, with the cause, and one `run_mode.reconciler.recovered` (info, with `attempts`, the failed attempts) follows its success
+- [HIGH] no cursor, telemetry's latest sample is running, and the event path processes a newer sample before telemetry answers → the cursor stays at the newer sample (it only moves forward, under the tag's lock)
+- [HIGH] the replay reaches its page limit before `now` → the reconciliation goes on from the cursor the replayed samples advanced until it reaches `now`, and every stop of the history is recorded
+- a replay that reaches its page limit without moving the cursor (only a telemetry fault does that) → `reconcileWorkCenter` throws instead of asking for the same pages again
+- [HIGH] `stopBootReconciliation` → a retry still waiting never starts, and the stop does not wait for its time; a request in flight is aborted and its late answer writes nothing; a replay stops before its next sample, and the stop resolves once the sample being written is written
 
 ---
 
