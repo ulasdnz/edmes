@@ -5,6 +5,7 @@ import express, { type Request, type Response } from 'express'
 import { Types } from 'mongoose'
 import { afterAll, afterEach, beforeAll, beforeEach, type MockInstance, vi } from 'vitest'
 import { __test__ as subscribers } from '../../../jobs/subscribers.js'
+import { stopRefresh, __test__ as tagMap } from '../../../jobs/tag-map.js'
 import { logger } from '../../../lib/logger.js'
 import { closeRedis, initRedis } from '../../../lib/redis.js'
 import { testRedis } from '../../../test/contract-setup.js'
@@ -165,12 +166,14 @@ afterAll(async () => {
 
 beforeEach(async () => {
   resetStubs()
-  subscribers.runModeTagToWorkCenter.clear()
+  tagMap.workCenterByTag.clear()
   // contract-setup wipes MongoDB and flushes Redis after every test
   await bootstrapSystemReasons()
 })
 
-afterEach(() => {
+afterEach(async () => {
+  // No refresh or reconciliation of the tag map goes on into the next test
+  await stopRefresh()
   for (const res of held) res.destroy()
   held.clear()
 })
@@ -225,7 +228,7 @@ export function recorded(machine: Machine, value: number, time: string): Recorde
 
 // The stream hands a recorded value to performance's subscriber, which knows the machine's tag
 export function deliver(machine: Machine, event: RecordedValue): Promise<void> {
-  subscribers.runModeTagToWorkCenter.set(machine.runModeTagId, machine.workCenterId)
+  tagMap.workCenterByTag.set(machine.runModeTagId, machine.workCenterId)
   return subscribers.streams['events.telemetry']['tag.value.recorded'](event)
 }
 
@@ -342,8 +345,9 @@ export const closePlannedStop = (plannedStopId: Types.ObjectId, time: string) =>
   )
 
 // Every line the service logs at warn and error, and its info lines about pending decisions, the
-// tick that decides them and the boot reconciliation, in order, with the level of each line. The
-// lines are kept out of the output: a test asserts the lines it expects instead of printing them
+// tick that decides them, the boot reconciliation and the tag map, in order, with the level of each
+// line. The lines are kept out of the output: a test asserts the lines it expects instead of printing
+// them
 export function watchDecisionLogs() {
   const spies = (['info', 'warn', 'error'] as const).map(level => {
     const spy: MockInstance = vi.spyOn(logger, level).mockImplementation(() => logger)
@@ -362,7 +366,7 @@ export function watchDecisionLogs() {
         .filter(
           ({ level, meta }) =>
             level !== 'info' ||
-            /^run_mode\.(decision|debounce_tick|reconciler)\./.test(String(meta?.event)),
+            /^run_mode\.(decision|debounce_tick|reconciler|tag_map)\./.test(String(meta?.event)),
         )
         .sort((a, b) => a.order - b.order)
         .map(({ level, meta }) => [level, meta]),

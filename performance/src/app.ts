@@ -1,6 +1,7 @@
 import { config } from './config/index.js'
 import { initLoaders } from './core/loaders/index.js'
 import { shutdownSubscribers } from './jobs/subscribers.js'
+import { stopRefresh } from './jobs/tag-map.js'
 import { logger } from './lib/logger.js'
 import { closeRedis } from './lib/redis.js'
 import { isShuttingDown, setShuttingDown } from './lib/shutdown.js'
@@ -41,6 +42,7 @@ const startServer = async (): Promise<void> => {
           stopDebounceTick()
           await stopPlannedStopScheduler()
           await stopBootReconciliation()
+          await stopRefresh()
           await Promise.all([disconnectDB(), closeRedis(), shutdownSubscribers()])
           logger.info('Data connections closed', { event: 'server.shutdown.completed' })
           process.exit(0)

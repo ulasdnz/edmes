@@ -96,8 +96,11 @@ export async function reconcileWorkCenter(
 
 // Retries one work center on the retry schedule until it succeeds, apart from the others, so one that
 // keeps failing holds up no other. Logs mark changes, not attempts: the first failure, with its
-// cause, and the success after it
-async function reconcileUntilDone(target: MonitoredWorkCenter, signal: AbortSignal): Promise<void> {
+// cause, and the success after it. Boot reconciliation and the tag map both reconcile this way
+export async function reconcileUntilDone(
+  target: MonitoredWorkCenter,
+  signal: AbortSignal,
+): Promise<void> {
   let failures = 0
   while (!signal.aborted) {
     try {
