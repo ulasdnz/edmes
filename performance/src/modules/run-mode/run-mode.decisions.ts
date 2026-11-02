@@ -1,5 +1,6 @@
 import { logger } from '../../lib/logger.js'
 import { redisClient } from '../../lib/redis.js'
+import { withTagLock } from './run-mode.lock.js'
 
 export interface PendingDecision {
   kind: 'debounce' | 'after_planned'
@@ -173,8 +174,7 @@ const logFields = (target: DecisionTarget, decision: PendingDecision) => ({
 
 // The decision the tick asks telemetry about now: its D has run out, which only the clock can tell
 // because the absence of a signal proves nothing, and the wait after its last failed attempt is
-// over. One still undecided after 24 hours is dropped instead, and hands its key on to the record
-// successor gives, in the same step, as a decided one does
+// over. One still undecided after 24 hours is dropped instead, once its next attempt has come
 export async function readDueDecision(
   kind: DecisionKind,
   target: DecisionTarget,
@@ -185,20 +185,41 @@ export async function readDueDecision(
   const decision = await readDecision(kind, target.workCenterId, target.runModeTagId)
   if (!decision) return null
 
+  const retryAt = decision.nextAttemptAt === null ? 0 : new Date(decision.nextAttemptAt).getTime()
+  if (now.getTime() < retryAt) return null
+
   const since = new Date(decision.since).getTime()
   if (now.getTime() - since > DECISION_LIMIT_MS) {
-    if (await replaceIfSameSince(target, decision, await successor(decision))) {
-      logger.error('Run-mode decision dropped undecided after 24 hours; a stop may be lost', {
-        event: 'run_mode.decision.abandoned',
-        ...logFields(target, decision),
-        attempts: decision.attempts,
-      })
-    }
+    await withTagLock(target, () => dropDecision(target, decision, now, successor))
     return null
   }
+  return now.getTime() >= since + decision.debounceMs ? decision : null
+}
 
-  const retryAt = decision.nextAttemptAt === null ? 0 : new Date(decision.nextAttemptAt).getTime()
-  return now.getTime() >= Math.max(since + decision.debounceMs, retryAt) ? decision : null
+// Drops a decision undecided after 24 hours, under the tag's lock like every change of its state. A
+// check hands its key on to the record successor gives, in the same step, as a decided one does: a
+// planned stop that closed meanwhile cannot slip its check in between. When the successor cannot be
+// read, the drop waits for its next attempt
+async function dropDecision(
+  target: DecisionTarget,
+  decision: PendingDecision,
+  now: Date,
+  successor: (dropped: PendingDecision) => Promise<PendingDecision | undefined>,
+): Promise<void> {
+  let next: PendingDecision | undefined
+  try {
+    next = await successor(decision)
+  } catch (err) {
+    await deferDecision(target, decision, now, err)
+    return
+  }
+  if (await replaceIfSameSince(target, decision, next)) {
+    logger.error('Run-mode decision dropped undecided after 24 hours; a stop may be lost', {
+      event: 'run_mode.decision.abandoned',
+      ...logFields(target, decision),
+      attempts: decision.attempts,
+    })
+  }
 }
 
 // The decision could not be made, because telemetry could not answer or MongoDB or Redis failed:

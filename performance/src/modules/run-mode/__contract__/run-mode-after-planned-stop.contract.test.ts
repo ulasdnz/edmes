@@ -1,6 +1,6 @@
 import '../../../test/contract-setup.js'
 
-import { Types } from 'mongoose'
+import mongoose, { Types } from 'mongoose'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { testRedis } from '../../../test/contract-setup.js'
 import { PlannedStop } from '../../planned-stop/planned-stop.model.js'
@@ -886,6 +886,131 @@ describe('A check dropped after 24 hours hands the key on (rule 4)', () => {
         },
       ],
     ])
+  })
+
+  // MongoDB answers every read of planned stops with an error until fn is done: they are served by a
+  // view whose pipeline fails
+  async function whileMongoRefusesPlannedStopReads<T>(fn: () => Promise<T>): Promise<T> {
+    const db = mongoose.connection.db
+    if (!db) throw new Error('MongoDB is not connected')
+    const name = PlannedStop.collection.collectionName
+    await db.renameCollection(name, `${name}_held`)
+    await db.createCollection(name, {
+      viewOn: `${name}_held`,
+      pipeline: [{ $addFields: { refused: { $toInt: 'not a number' } } }],
+    })
+    try {
+      return await fn()
+    } finally {
+      await db.dropCollection(name)
+      await db.renameCollection(`${name}_held`, name)
+    }
+  }
+
+  it('waits for its next attempt when the next planned stop cannot be read, and then hands the key on', async () => {
+    const machine = await machineWithDebounce(60_000)
+    monitoredByWorkCenter(machine)
+    stubs.latest.mode = 'fail'
+    recorded(machine, 1, '09:00:00')
+    const first = await activePlannedStop(machine, '10:00:00', '10:30:00')
+    await closeAt(first, '10:30:00')
+    const second = await activePlannedStop(machine, '11:30:00', '12:00:00')
+    await closeAt(second, '12:00:00')
+    const dayLater = at('10:30:00').getTime() + 24 * 3_600_000
+
+    await whileMongoRefusesPlannedStopReads(async () => {
+      await runDecisionTick(new Date(dayLater + 1000))
+      // Its next attempt has not come: the drop is not tried, and nothing is logged
+      await runDecisionTick(new Date(dayLater + 1500))
+    })
+
+    expect(await storedCheck(machine)).toEqual({
+      ...afterPlannedSince('10:30:00'),
+      attempts: 1,
+      nextAttemptAt: new Date(dayLater + 2000).toISOString(),
+    })
+
+    await runDecisionTick(new Date(dayLater + 2000))
+
+    expect(await storedCheck(machine)).toEqual(afterPlannedSince('12:00:00'))
+    expect(logs.lines()).toEqual([
+      ['warn', expect.objectContaining({ event: 'internal_api.telemetry.fetch_failed' })],
+      ['warn', expect.objectContaining({ event: 'internal_api.telemetry.fetch_failed' })],
+      [
+        'warn',
+        {
+          event: 'run_mode.decision.deferred',
+          kind: 'after_planned',
+          workCenterId: machine.workCenterId,
+          runModeTagId: machine.runModeTagId,
+          since: at('10:30:00').toISOString(),
+          nextAttemptAt: new Date(dayLater + 2000).toISOString(),
+          error: expect.stringContaining('not a number'),
+        },
+      ],
+      [
+        'error',
+        {
+          event: 'run_mode.decision.abandoned',
+          kind: 'after_planned',
+          workCenterId: machine.workCenterId,
+          runModeTagId: machine.runModeTagId,
+          since: at('10:30:00').toISOString(),
+          attempts: 1,
+        },
+      ],
+    ])
+  })
+
+  // Runs meanwhile between the moment the drop of an expired check has read which planned stop
+  // closed next and the moment it swaps the key: a spy that calls through to that one read
+  function afterReadingTheNextPlannedStop(meanwhile: () => Promise<void>) {
+    const findOne = PlannedStop.findOne.bind(PlannedStop) as (...args: unknown[]) => {
+      exec: () => Promise<unknown>
+    }
+    let ran = false
+    return vi.spyOn(PlannedStop, 'findOne').mockImplementation(((
+      filter?: { status?: unknown; actualEndAt?: { $gt?: unknown } },
+      ...rest: unknown[]
+    ) => {
+      const query = findOne(filter, ...rest)
+      if (!ran && filter?.status === 'closed' && filter.actualEndAt?.$gt) {
+        ran = true
+        const exec = query.exec.bind(query)
+        query.exec = async () => {
+          const answer = await exec()
+          await meanwhile()
+          return answer
+        }
+      }
+      return query
+    }) as never)
+  }
+
+  it('loses no check that a planned stop closing meanwhile leaves', async () => {
+    const machine = await machineWithDebounce(60_000)
+    monitoredByWorkCenter(machine)
+    stubs.latest.mode = 'fail'
+    recorded(machine, 1, '09:00:00')
+    const first = await activePlannedStop(machine, '10:00:00', '10:30:00')
+    await closeAt(first, '10:30:00')
+    const second = await activePlannedStop(machine, '11:30:00', '12:00:00')
+    // The second planned stop closes while telemetry is down, after the drop has read that no planned
+    // stop closed after 10:30 and before it swaps the key. Its check is refused while the earlier one
+    // is stored, so it must wait for the drop to finish
+    let closing: Promise<unknown> = Promise.resolve()
+    const spy = afterReadingTheNextPlannedStop(async () => {
+      closing = closeAt(second, '12:00:00')
+      await Promise.race([closing, new Promise(resolve => setTimeout(resolve, 1000))])
+    })
+    try {
+      await runDecisionTick(new Date(at('10:30:00').getTime() + 24 * 3_600_000 + 1000))
+      await closing
+    } finally {
+      spy.mockRestore()
+    }
+
+    expect(await storedCheck(machine)).toEqual(afterPlannedSince('12:00:00'))
   })
 })
 

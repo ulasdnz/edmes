@@ -202,6 +202,7 @@ happens under one lock per `(workCenterId, runModeTagId)`, in the performance pr
 - rule 2's decision;
 - the cursor update, with its guard checked again, so the cursor only moves forward;
 - the tick's decide-and-write;
+- the drop of a record undecided after 24 hours, with the handover of a check (rule 4);
 - the planned stop's close: its stop at E, or its check (rule 4).
 
 Telemetry is never asked under the lock. The tick asks first. A replay (rule 6) also asks first, and
@@ -269,7 +270,9 @@ Covers the debounce candidate and the check after a planned stop.
   once, when it works again. The tick keeps ticking meanwhile.
 - A record still undecided after 24 hours is dropped with an error log
   (`run_mode.decision.abandoned`), because a stop may have been lost. A dropped check hands its key
-  on to the next planned stop that closed after its E (rule 4). A 25-hour Redis TTL only clears
+  on to the next planned stop that closed after its E (rule 4), under the tag's lock, so a planned
+  stop that closes meanwhile cannot lose its check in between. When that planned stop cannot be
+  read, the drop waits for its next attempt on the same schedule. A 25-hour Redis TTL only clears
   orphaned keys.
 
 ### Tag map
