@@ -592,6 +592,37 @@ describe('One check holds the earliest pending end and hands over to the next pl
   })
 })
 
+// ── Rule 4: another planned stop that covers the end ─────────────────────────
+
+describe('The check records nothing at an end that another planned stop covers (rule 4)', () => {
+  it('records nothing at E inside the next planned stop, and decides the end of that one in turn', async () => {
+    const machine = await machineWithDebounce(60_000)
+    await deliver(machine, recorded(machine, 1, '09:00:00'))
+    // The first planned stop, planned until 10:20, ran until 10:30, into the window of the second,
+    // planned from 10:25 and started late, at 10:40
+    await closedPlannedStop(machine, ['10:00:00', '10:20:00'], ['10:00:00', '10:30:00'])
+    await closedPlannedStop(machine, ['10:25:00', '10:50:00'], ['10:40:00', '10:50:00'])
+
+    // The machine's stop at 10:05 reaches performance only now, as does its run at 10:55
+    await deliver(machine, recorded(machine, 0, '10:05:00'))
+    await deliver(machine, recorded(machine, 1, '10:55:00'))
+
+    expect(await storedCheck(machine)).toEqual(afterPlannedSince('10:30:00'))
+
+    await tick('10:56:00')
+
+    // From 10:30 the machine stood in the second planned stop's window, as the close at 10:30
+    // would have found it
+    expect(await stopsOf(machine)).toEqual([])
+    expect(await storedCheck(machine)).toEqual(afterPlannedSince('10:50:00'))
+
+    await tick('10:56:01')
+
+    expect(await stopsOf(machine)).toEqual([runModeStop('10:50:00', '10:55:00')])
+    expect(await storedCheck(machine)).toBeNull()
+  })
+})
+
 // ── Rule 5: the tick decides a check only while it waits on the same end ─────
 
 describe('The tick decides a check only while it waits on the same end (rule 5)', () => {

@@ -151,6 +151,10 @@ and leaves nothing.
   - stopped at E: the stop `[E, first running signal]` is recorded, or opened at E if the machine is
     still stopped. The next planned stop that started after E ends the stop at its start, as that
     start would have closed it had it been open;
+  - stopped at E while another planned stop covers E, in rule 1's meaning: nothing, as the close
+    leaves no stop when another planned stop covers E. That holds for every check, whoever left it:
+    the close, a late signal of rule 1, or the handover below. The planned stop that ended at E no
+    longer covers it;
   - running at E: nothing.
 
   As today, no debounce applies to this check. If telemetry does not know the tag, the check is dropped

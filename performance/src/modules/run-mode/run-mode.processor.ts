@@ -341,7 +341,11 @@ export async function confirmAfterPlannedCheck(
       // The segment that starts at E holds the state at E; a history that starts later cannot
       // tell it
       const [atEnd, ...later] = history.segments
-      if (atEnd && new Date(atEnd.start).getTime() === endedAt.getTime() && atEnd.state < 1) {
+      const stoppedAtEnd =
+        atEnd && new Date(atEnd.start).getTime() === endedAt.getTime() && atEnd.state < 1
+      // Another planned stop that covers E takes the time after E, as the close finds it when it
+      // leaves no stop; the one that ended at E covers it no longer
+      if (stoppedAtEnd && !(await plannedStopCovering(target.workCenterId, endedAt))) {
         const running = later.find(segment => segment.state >= 1)
         let endAt = running ? new Date(running.start) : null
         // The next planned stop's start would have closed the stop, had it been open then

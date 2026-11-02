@@ -206,6 +206,7 @@
 - [CRITICAL] the same planned stops while the machine stood from 10:05 until 11:00 → the ticks record [10:30, 10:40] (the start of the second planned stop ends it) and [10:50, 11:00]
 - [HIGH] the first planned stop closes at 10:30 while telemetry answers without the machine's 0@10:05 (the broker still holds it), so the close leaves nothing; the second closes at 10:50 while telemetry cannot answer and leaves the check since 10:50; then the backlog 0@10:05, 1@10:35, 0@10:45, 1@10:55 is processed → 0@10:05 replaces the pending check with the check since 10:30 (0@10:45 cannot replace it with the later 10:50), and the ticks record [10:30, 10:35] and [10:50, 10:55]
 - [HIGH] the check since 10:30 has waited 23 hours (2 of its 25 hours of TTL left) when it is decided → the check since 10:50 it hands over has a TTL of 25 hours of its own (above 89 900 s)
+- [HIGH] a planned stop planned until 10:20 ran until E = 10:30, into the window of a second planned stop planned from 10:25, started at 10:40 and closed at 10:50; the late 0@10:05 leaves the check since 10:30 and 1@10:55 follows → the tick at 10:56 records nothing at 10:30 (the second planned stop covers it, as the close would have found) and hands the key to the check since 10:50; the tick at 10:56:01 records [10:50, 10:55]
 
 ---
 
