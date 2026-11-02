@@ -157,8 +157,9 @@ export async function readDueDecision(
   return now.getTime() >= Math.max(since + decision.debounceMs, retryAt) ? decision : null
 }
 
-// Telemetry could not answer: the question is asked again on the retry schedule. Only the first
-// failure is logged, and a decision another writer made meanwhile stays made
+// The decision could not be made, because telemetry could not answer or MongoDB or Redis failed:
+// it is made again on the retry schedule. Only the first failure is logged, with its cause, and a
+// decision another writer made meanwhile stays made
 export async function deferDecision(
   target: DecisionTarget,
   decision: PendingDecision,
@@ -173,11 +174,13 @@ export async function deferDecision(
     nextAttemptAt,
   })
   if (!deferred || decision.attempts > 0) return
-  logger.warn('Run-mode decision deferred until telemetry answers', {
+  logger.warn('Run-mode decision deferred to its next attempt', {
     event: 'run_mode.decision.deferred',
     ...logFields(target, decision),
     nextAttemptAt,
     error: error instanceof Error ? error.message : error,
+    // Why telemetry could not answer: the HTTP status, the fetch error or the timeout
+    ...(error instanceof Error && typeof error.cause === 'string' ? { cause: error.cause } : {}),
   })
 }
 

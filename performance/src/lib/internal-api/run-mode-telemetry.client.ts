@@ -1,4 +1,4 @@
-import { request } from './telemetry-request.client.js'
+import { type RequestOptions, request } from './telemetry-request.client.js'
 
 // The run-mode decisions and the stream consumer wait on these requests, so a telemetry that
 // accepts the connection and never answers counts as unreachable after this long, instead of
@@ -18,10 +18,15 @@ export interface StateDurationSegment {
   durationMs: number
 }
 
-export async function getLatest(tagId: string): Promise<LatestSample | null> {
-  return request<LatestSample>(`/internal/v1/historian/${tagId}/latest`, {
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-  })
+export async function getLatest(
+  tagId: string,
+  options?: RequestOptions,
+): Promise<LatestSample | null> {
+  return request<LatestSample>(
+    `/internal/v1/historian/${tagId}/latest`,
+    { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
+    options,
+  )
 }
 
 export interface StateDurationsPage {
@@ -35,7 +40,7 @@ export async function getStateDurations(
   tagId: string,
   from: Date,
   to: Date,
-  opts?: { limit?: number; after?: Date },
+  opts?: { limit?: number; after?: Date } & RequestOptions,
 ): Promise<StateDurationsPage | null> {
   const params = new URLSearchParams()
   params.set('from', from.toISOString())
@@ -43,5 +48,9 @@ export async function getStateDurations(
   if (opts?.limit !== undefined) params.set('limit', String(opts.limit))
   if (opts?.after !== undefined) params.set('after', opts.after.toISOString())
   const url = `/internal/v1/historian/${tagId}/state-durations?${params.toString()}`
-  return request<StateDurationsPage>(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) })
+  return request<StateDurationsPage>(
+    url,
+    { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
+    { failureLogLevel: opts?.failureLogLevel },
+  )
 }

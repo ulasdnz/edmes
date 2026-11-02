@@ -1,10 +1,5 @@
 import { Types } from 'mongoose'
-import {
-  getLatest,
-  getStateDurations,
-  type LatestSample,
-  type StateDurationsPage,
-} from '../../lib/internal-api/run-mode-telemetry.client.js'
+import { getLatest, getStateDurations } from '../../lib/internal-api/run-mode-telemetry.client.js'
 import { getById as getWorkCenter } from '../../lib/internal-api/work-center.client.js'
 import { logger } from '../../lib/logger.js'
 import { PlannedStop } from '../planned-stop/planned-stop.model.js'
@@ -19,6 +14,7 @@ import {
   deleteDecision,
   dropDecisionOfUnknownTag,
   logDecisionResolved,
+  type PendingDecision,
   readDecision,
   readDueDecision,
   resolveDecision,
@@ -205,6 +201,25 @@ export interface ConfirmationTarget {
   runModeTagId: string
 }
 
+// A decision logs its failure itself, once and with the cause, so its requests log theirs at debug
+const DECISION_REQUEST = { failureLogLevel: 'debug' } as const
+
+// One attempt of the tick at a pending decision: telemetry is asked and its answer decides. Any
+// failure, of telemetry, MongoDB or Redis, defers the decision to its next attempt
+async function attemptDecision<T>(
+  target: ConfirmationTarget,
+  decision: PendingDecision,
+  now: Date,
+  ask: () => Promise<T>,
+  decide: (answer: T) => Promise<void>,
+): Promise<void> {
+  try {
+    await decide(await ask())
+  } catch (err) {
+    await deferDecision(target, decision, now, err)
+  }
+}
+
 // Rule 3: once D has run out, a candidate whose stopped sample is still the tag's latest one in
 // telemetry has stood since T0, and its stop opens at T0
 export async function confirmCandidate(
@@ -214,27 +229,29 @@ export async function confirmCandidate(
   const candidate = await readDueDecision('debounce', target, now)
   if (!candidate) return
 
-  let latest: LatestSample | null
-  try {
-    latest = await getLatest(target.runModeTagId)
-  } catch (err) {
-    await deferDecision(target, candidate, now, err)
-    return
-  }
-  if (!latest) {
-    await dropDecisionOfUnknownTag(target, candidate)
-    return
-  }
+  await attemptDecision(
+    target,
+    candidate,
+    now,
+    () => getLatest(target.runModeTagId, DECISION_REQUEST),
+    async latest => {
+      if (!latest) {
+        await dropDecisionOfUnknownTag(target, candidate)
+        return
+      }
 
-  const firstStoppedAt = new Date(candidate.since)
-  // A newer sample is one performance has not processed yet; rules 1 and 2 decide when it arrives
-  if (latest.value >= 1 || new Date(latest.occurredAt).getTime() !== firstStoppedAt.getTime()) {
-    return
-  }
-  if (!(await plannedStopCovers(target.workCenterId, firstStoppedAt))) {
-    await openUnplannedFromRunMode(target.workCenterId, firstStoppedAt, candidate.debounceMs)
-  }
-  await resolveDecision(target, candidate, now)
+      const firstStoppedAt = new Date(candidate.since)
+      // A newer sample is one performance has not processed yet; rules 1 and 2 decide when it
+      // arrives
+      if (latest.value >= 1 || new Date(latest.occurredAt).getTime() !== firstStoppedAt.getTime()) {
+        return
+      }
+      if (!(await plannedStopCovers(target.workCenterId, firstStoppedAt))) {
+        await openUnplannedFromRunMode(target.workCenterId, firstStoppedAt, candidate.debounceMs)
+      }
+      await resolveDecision(target, candidate, now)
+    },
+  )
 }
 
 // Rule 4: a planned stop that closed at E while the run mode could not be read left this check.
@@ -249,29 +266,31 @@ export async function confirmAfterPlannedCheck(
   const endedAt = new Date(check.since)
   // The history since E holds nothing until E has passed
   if (now.getTime() <= endedAt.getTime()) return
-  let history: StateDurationsPage | null
-  try {
-    history = await getStateDurations(target.runModeTagId, endedAt, now)
-  } catch (err) {
-    await deferDecision(target, check, now, err)
-    return
-  }
-  if (!history) {
-    await dropDecisionOfUnknownTag(target, check)
-    return
-  }
+  await attemptDecision(
+    target,
+    check,
+    now,
+    () => getStateDurations(target.runModeTagId, endedAt, now, DECISION_REQUEST),
+    async history => {
+      if (!history) {
+        await dropDecisionOfUnknownTag(target, check)
+        return
+      }
 
-  // The segment that starts at E holds the state at E; a history that starts later cannot tell it
-  const [atEnd, ...later] = history.segments
-  if (atEnd && new Date(atEnd.start).getTime() === endedAt.getTime() && atEnd.state < 1) {
-    const running = later.find(segment => segment.state >= 1)
-    if (running) {
-      await recordClosedFromRunMode(target.workCenterId, endedAt, new Date(running.start))
-    } else {
-      await openUnplannedFromRunMode(target.workCenterId, endedAt)
-    }
-  }
-  await resolveDecision(target, check, now)
+      // The segment that starts at E holds the state at E; a history that starts later cannot
+      // tell it
+      const [atEnd, ...later] = history.segments
+      if (atEnd && new Date(atEnd.start).getTime() === endedAt.getTime() && atEnd.state < 1) {
+        const running = later.find(segment => segment.state >= 1)
+        if (running) {
+          await recordClosedFromRunMode(target.workCenterId, endedAt, new Date(running.start))
+        } else {
+          await openUnplannedFromRunMode(target.workCenterId, endedAt)
+        }
+      }
+      await resolveDecision(target, check, now)
+    },
+  )
 }
 
 export interface MonitoredWorkCenter {

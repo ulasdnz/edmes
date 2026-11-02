@@ -156,6 +156,8 @@
 ### state transitions
 - [HIGH] telemetry keeps failing: the tick (which runs every second) asks again 1 s after the first failed attempt, then 2, 4, 8 and 16 s after the following failures, and every 30 s after that; the ticks in between skip the record without calling telemetry
 - [HIGH] a decision that waits through several failed attempts and is then made → exactly one `run_mode.decision.deferred` (warn, at the first failure) and one `run_mode.decision.resolved` (info, with `waitedMs`) are logged for it; the failed attempts in between add no log line
+- [HIGH] while a decision retries, every warn and error line is the decision's own: the tick's telemetry requests log no transport line at warn, and the deferred line names the cause in `cause` (the HTTP status, such as `HTTP 500`, the fetch error or the timeout)
+- [HIGH] MongoDB refuses the stop the tick opens for a due candidate → the decision is deferred on the same schedule and telemetry is asked again only when the next attempt is due; one `run_mode.decision.deferred` with MongoDB's error is logged, and once MongoDB writes again the stop opens at T0 and one `run_mode.decision.resolved` follows
 - an after-planned check whose history cannot be read follows the same retry schedule and logs the same two lines as a candidate
 - a candidate the tick deferred is decided by the running signal → one `run_mode.decision.resolved` (info, with `waitedMs`) follows the deferral
 
@@ -264,7 +266,7 @@
 > review-focus: 2
 
 ### edge cases
-- [HIGH] telemetry never answers a request → the request is cut off after 5 s and counts as "cannot answer": the record is deferred (`attempts` increased by one, `nextAttemptAt` set, one `run_mode.decision.deferred` logged) and no stop is created
+- [HIGH] telemetry never answers a request → the request is cut off after 5 s and counts as "cannot answer": the record is deferred (`attempts` increased by one, `nextAttemptAt` set, one `run_mode.decision.deferred` logged with the timeout as its `cause`) and no stop is created
 - [HIGH] candidates of two work centers are due and telemetry never answers for the first one's tag → the other work center's stop is opened no later than 5 s after the tick starts
 - [HIGH] telemetry never answers the state-durations request of a gap replay (rule 6) → the sample fails within 5 s and nothing is decided for it (no stop, the candidate as it was, the cursor where it was)
 
@@ -276,7 +278,7 @@
 > spec: Errors and retries (pending decisions); Crashes and restarts
 
 ### edge cases
-- [HIGH] Redis refuses to list the pending decisions (SCAN) while the tick runs → each failed tick logs `run_mode.debounce_tick.scan_failed` (warn), the process keeps running and the tick keeps ticking; once Redis answers, a due candidate is decided
+- [HIGH] Redis refuses to list the pending decisions (SCAN) for several ticks → one `run_mode.debounce_tick.scan_failed` (warn) is logged when the listing starts failing, the process keeps running and the tick keeps ticking; once Redis answers, one `run_mode.debounce_tick.scan_recovered` (info) is logged and a due candidate is decided
 
 ---
 
@@ -340,7 +342,7 @@ Samples reach performance as telemetry publishes them, with `previousOccurredAt`
 - [CRITICAL] the candidate's delete fails after [10:00, 10:05] was written, then 0@10:20 arrives with `previousOccurredAt` 10:05 → no second stop starts at 10:00 and a candidate since 10:20 is stored; 1@10:25 records [10:20, 10:25]
 - [HIGH] the tag's first stored sample (`previousOccurredAt` null), then a sample whose `previousOccurredAt` equals the cursor → telemetry is not asked and no `run_mode.sample.gap_replayed` is logged
 - [HIGH] a sample of a tag without a cursor, whose predecessor was stored before the tag reached the map → telemetry is not asked
-- [HIGH] telemetry cannot answer during the replay → the sample fails and nothing is decided for it (no stop, the candidate as it was, the cursor where it was); once telemetry answers, the redelivered sample replays the gap and records [10:00, 10:05] and [10:10, 10:15]
+- [HIGH] telemetry cannot answer during the replay → the sample fails and nothing is decided for it (no stop, the candidate as it was, the cursor where it was), and the failed request logs `internal_api.telemetry.fetch_failed` at warn with its status; once telemetry answers, the redelivered sample replays the gap and records [10:00, 10:05] and [10:10, 10:15]
 - [HIGH] Redis refuses the write of the second replayed sample's candidate → the sample fails, the first replayed sample keeps its stop and the cursor it advanced (10:05); the redelivered sample replays the rest
 
 ---

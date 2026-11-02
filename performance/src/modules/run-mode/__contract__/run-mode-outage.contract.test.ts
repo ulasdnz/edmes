@@ -322,6 +322,20 @@ async function whileRedisIsUnreachable<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
+// MongoDB refuses every new unplanned stop with a server error until fn is done: a validator no
+// document passes
+async function whileMongoRefusesStops<T>(fn: () => Promise<T>): Promise<T> {
+  const db = mongoose.connection.db
+  if (!db) throw new Error('MongoDB is not connected')
+  const collMod = UnplannedStop.collection.collectionName
+  await db.command({ collMod, validator: { $expr: false } })
+  try {
+    return await fn()
+  } finally {
+    await db.command({ collMod, validator: {} })
+  }
+}
+
 // The decision tick, as production runs it every second, at a time of the server's clock
 const tick = (time: string) => runDecisionTick(at(time))
 
@@ -365,8 +379,8 @@ const closePlannedStop = (plannedStopId: Types.ObjectId, time: string) =>
     { $set: { status: 'closed', actualEndAt: at(time) } },
   )
 
-// What the service logs about pending decisions and the tick that decides them, in order, with the
-// level of each line
+// Every line the service logs at warn and error, and its info lines about pending decisions and the
+// tick that decides them, in order, with the level of each line
 function watchDecisionLogs() {
   const spies = (['info', 'warn', 'error'] as const).map(level => {
     const spy: MockInstance = vi.spyOn(logger, level)
@@ -382,7 +396,10 @@ function watchDecisionLogs() {
             order: spy.mock.invocationCallOrder[i],
           })),
         )
-        .filter(({ meta }) => /^run_mode\.(decision|debounce_tick)\./.test(String(meta?.event)))
+        .filter(
+          ({ level, meta }) =>
+            level !== 'info' || /^run_mode\.(decision|debounce_tick)\./.test(String(meta?.event)),
+        )
         .sort((a, b) => a.order - b.order)
         .map(({ level, meta }) => [level, meta]),
     restore: () => {
@@ -1032,6 +1049,14 @@ describe('Samples performance missed are replayed from telemetry first (rule 6)'
     expect(await stopsOf(machine)).toEqual([])
     expect(await storedCandidate(machine)).toEqual(candidateSince('10:00:00'))
     expect((await cursorOf(machine))?.lastProcessedOccurredAt).toEqual(at('10:00:00'))
+    // Unlike a pending decision's attempts, each failed replay logs the cause at warn
+    expect(warn.mock.calls.map(([, meta]) => meta)).toContainEqual({
+      event: 'internal_api.telemetry.fetch_failed',
+      path: expect.stringContaining(
+        `/internal/v1/historian/${machine.runModeTagId}/state-durations`,
+      ),
+      status: 500,
+    })
 
     stubs.stateDurations.mode = 'answer'
     await deliver(machine, running)
@@ -1452,6 +1477,7 @@ describe('A decision telemetry cannot answer waits on the retry schedule (scenar
           since: at('10:00:00').toISOString(),
           nextAttemptAt: at('10:01:01').toISOString(),
           error: 'error.telemetry_unreachable',
+          cause: 'HTTP 500',
         },
       ],
       [
@@ -1464,6 +1490,60 @@ describe('A decision telemetry cannot answer waits on the retry schedule (scenar
           since: at('10:00:00').toISOString(),
           attempts: 8,
           waitedMs: 121_000,
+        },
+      ],
+    ])
+  })
+
+  it('defers a decision MongoDB cannot write on the same schedule and asks telemetry only when it is due', async () => {
+    const machine = await machineWithDebounce(60_000)
+    await deliver(machine, recorded(machine, 0, '10:00:00'))
+
+    const attempts = await whileMongoRefusesStops(() =>
+      tickEverySecond(
+        at('10:01:00'),
+        20,
+        () => received.latest.length,
+        () => storedCandidate(machine),
+      ),
+    )
+
+    expect(attempts).toEqual([
+      { second: 0, attempts: 1, nextAttemptAt: at('10:01:01').toISOString() },
+      { second: 1, attempts: 2, nextAttemptAt: at('10:01:03').toISOString() },
+      { second: 3, attempts: 3, nextAttemptAt: at('10:01:07').toISOString() },
+      { second: 7, attempts: 4, nextAttemptAt: at('10:01:15').toISOString() },
+      { second: 15, attempts: 5, nextAttemptAt: at('10:01:31').toISOString() },
+    ])
+    expect(await stopsOf(machine)).toEqual([])
+
+    await tick('10:01:31')
+
+    expect(await stopsOf(machine)).toEqual([openRunModeStop('10:00:00')])
+    expect(await candidateKeys(machine)).toEqual([])
+    expect(logs.lines()).toEqual([
+      [
+        'warn',
+        {
+          event: 'run_mode.decision.deferred',
+          kind: 'debounce',
+          workCenterId: machine.workCenterId,
+          runModeTagId: machine.runModeTagId,
+          since: at('10:00:00').toISOString(),
+          nextAttemptAt: at('10:01:01').toISOString(),
+          error: 'Document failed validation',
+        },
+      ],
+      [
+        'info',
+        {
+          event: 'run_mode.decision.resolved',
+          kind: 'debounce',
+          workCenterId: machine.workCenterId,
+          runModeTagId: machine.runModeTagId,
+          since: at('10:00:00').toISOString(),
+          attempts: 5,
+          waitedMs: 31_000,
         },
       ],
     ])
@@ -1499,7 +1579,11 @@ describe('A decision telemetry cannot answer waits on the retry schedule (scenar
     expect(logs.lines()).toEqual([
       [
         'warn',
-        expect.objectContaining({ event: 'run_mode.decision.deferred', kind: 'after_planned' }),
+        expect.objectContaining({
+          event: 'run_mode.decision.deferred',
+          kind: 'after_planned',
+          cause: 'HTTP 500',
+        }),
       ],
       [
         'info',
@@ -1700,6 +1784,7 @@ describe('Telemetry that never answers (review focus 2)', () => {
           event: 'run_mode.decision.deferred',
           workCenterId: hanging.workCenterId,
           error: 'error.telemetry_unreachable',
+          cause: 'The operation was aborted due to timeout',
         }),
       ],
     ])
@@ -1769,47 +1854,62 @@ describe('A tag telemetry does not know (rules 3 and 4)', () => {
 // ── The tick while Redis cannot answer ───────────────────────────────────────
 
 describe('The tick when Redis cannot list the pending decisions', () => {
-  afterEach(() => {
-    stopDebounceTick()
+  let logs: ReturnType<typeof watchDecisionLogs>
+
+  beforeEach(() => {
+    logs = watchDecisionLogs()
   })
 
-  it('logs the failure, keeps ticking, and decides once Redis answers again', async () => {
-    const warn: MockInstance = vi.spyOn(logger, 'warn')
-    const scanFailures = () =>
-      warn.mock.calls.filter(([, meta]) => meta?.event === 'run_mode.debounce_tick.scan_failed')
-    try {
-      const machine = await machineWithDebounce(60_000)
-      // A stop two minutes old on the server's own clock, which the tick started below runs on
-      const firstStoppedAt = new Date(Math.floor(Date.now() / 1000) * 1000 - 120_000)
-      telemetryHistory.set(machine.runModeTagId, [{ occurredAt: firstStoppedAt, value: 0 }])
-      await writeDecision(machine.workCenterId, machine.runModeTagId, {
-        ...candidateSince('10:00:00'),
-        since: firstStoppedAt.toISOString(),
-      })
+  afterEach(() => {
+    stopDebounceTick()
+    logs.restore()
+  })
 
-      await whileRedisRefuses('scan', async () => {
-        startDebounceTick()
-        // Two ticks failed, so the first failure did not end the loop
-        await vi.waitFor(() => expect(scanFailures().length).toBeGreaterThanOrEqual(2), {
-          timeout: 5_000,
-        })
-      })
+  // The SCAN commands Redis has refused so far, as its command statistics count them
+  async function refusedScans(): Promise<number> {
+    const stats = await testRedis.info('commandstats')
+    return Number(/cmdstat_scan:.*rejected_calls=(\d+)/.exec(stats)?.[1] ?? 0)
+  }
 
-      expect(scanFailures()[0][1]).toEqual({
-        event: 'run_mode.debounce_tick.scan_failed',
-        error: expect.stringMatching(/NOPERM.*'scan' command/),
-      })
+  it('logs once when the listing starts failing and once when it works again, then decides', async () => {
+    const machine = await machineWithDebounce(60_000)
+    // A stop two minutes old on the server's own clock, which the tick started below runs on
+    const firstStoppedAt = new Date(Math.floor(Date.now() / 1000) * 1000 - 120_000)
+    telemetryHistory.set(machine.runModeTagId, [{ occurredAt: firstStoppedAt, value: 0 }])
+    await writeDecision(machine.workCenterId, machine.runModeTagId, {
+      ...candidateSince('10:00:00'),
+      since: firstStoppedAt.toISOString(),
+    })
+    const refusedBefore = await refusedScans()
+
+    await whileRedisRefuses('scan', async () => {
+      startDebounceTick()
+      // Three ticks could not list, so a failure neither ends the loop nor logs again
       await vi.waitFor(
-        async () => {
-          expect(await stopsOf(machine)).toEqual([
-            { source: 'run_mode', startAt: firstStoppedAt, endAt: null },
-          ])
-          expect(await candidateKeys(machine)).toEqual([])
-        },
-        { timeout: 5_000 },
+        async () => expect(await refusedScans()).toBeGreaterThanOrEqual(refusedBefore + 3),
+        { timeout: 6_000, interval: 100 },
       )
-    } finally {
-      warn.mockRestore()
-    }
+    })
+
+    await vi.waitFor(
+      async () => {
+        expect(await stopsOf(machine)).toEqual([
+          { source: 'run_mode', startAt: firstStoppedAt, endAt: null },
+        ])
+        expect(await candidateKeys(machine)).toEqual([])
+      },
+      { timeout: 5_000 },
+    )
+    expect(logs.lines()).toEqual([
+      ['info', { event: 'run_mode.debounce_tick.start', intervalMs: 1000 }],
+      [
+        'warn',
+        {
+          event: 'run_mode.debounce_tick.scan_failed',
+          error: expect.stringMatching(/NOPERM.*'scan' command/),
+        },
+      ],
+      ['info', { event: 'run_mode.debounce_tick.scan_recovered' }],
+    ])
   }, 20_000)
 })
