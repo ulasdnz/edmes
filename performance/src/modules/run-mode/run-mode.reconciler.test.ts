@@ -49,6 +49,27 @@ vi.mock('../../lib/internal-api/work-center.client.js', () => ({
   invalidate: vi.fn(async () => {}),
 }))
 
+// Pending decisions go through the raw Redis client; this stands in for it where no Redis runs.
+// The contract tests run the same code against a real Redis.
+const { redisStore, redisClient } = vi.hoisted(() => {
+  const store = new Map<string, string>()
+  return {
+    redisStore: store,
+    redisClient: {
+      get: async (key: string) => store.get(key) ?? null,
+      set: async (key: string, value: string, ..._options: unknown[]) => {
+        store.set(key, value)
+        return 'OK'
+      },
+      del: async (key: string) => (store.delete(key) ? 1 : 0),
+    },
+  }
+})
+vi.mock('../../lib/redis.js', async importOriginal => ({
+  ...(await importOriginal<typeof import('../../lib/redis.js')>()),
+  redisClient,
+}))
+
 import { bootstrapSystemReasons } from '../reason/reason.bootstrap.js'
 import { UnplannedStop } from '../unplanned-stop/unplanned-stop.model.js'
 import { reconcileOnBoot } from './run-mode.reconciler.js'
@@ -70,6 +91,7 @@ async function seedCursor(
 
 describe('run-mode.reconciler', () => {
   beforeEach(async () => {
+    redisStore.clear()
     getLatest.mockReset()
     getStateDurations.mockReset()
     getWorkCenter.mockReset()

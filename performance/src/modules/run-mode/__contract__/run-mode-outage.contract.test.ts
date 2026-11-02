@@ -1,10 +1,11 @@
 import '../../../test/contract-setup.js'
 
+import { once } from 'node:events'
 import type { Server } from 'node:http'
 import express, { type Request, type Response } from 'express'
 import { Types } from 'mongoose'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import { closeRedis, initRedis } from '../../../lib/redis.js'
+import { closeRedis, initRedis, redisClient } from '../../../lib/redis.js'
 import { testRedis } from '../../../test/contract-setup.js'
 import { PlannedStop } from '../../planned-stop/planned-stop.model.js'
 import * as policyService from '../../policy/policy.service.js'
@@ -174,6 +175,34 @@ function seedReason(usage: 'planned_stop' | 'unplanned_stop') {
     affectsOee: true,
     createdBy: new Types.ObjectId(userId),
   })
+}
+
+const cursorOf = (machine: Machine) =>
+  RunModeProcessingState.findOne({ workCenterId: new Types.ObjectId(machine.workCenterId) }).lean()
+
+// Redis answers one command with an error while it keeps serving the rest: the user the service
+// connects as loses the command until fn is done
+async function whileRedisRefuses<T>(command: string, fn: () => Promise<T>): Promise<T> {
+  await testRedis.call('ACL', 'SETUSER', 'default', `-${command}`)
+  try {
+    return await fn()
+  } finally {
+    await testRedis.call('ACL', 'SETUSER', 'default', `+${command}`)
+  }
+}
+
+// The service's own cache client loses its connection, as when Redis goes away, and gets it back
+async function whileRedisIsUnreachable<T>(fn: () => Promise<T>): Promise<T> {
+  const ended = once(redisClient, 'end')
+  redisClient.disconnect()
+  await ended
+  try {
+    return await fn()
+  } finally {
+    const ready = once(redisClient, 'ready')
+    await redisClient.connect()
+    await ready
+  }
 }
 
 // ── Scenario 2: the running signal decides a pending candidate ───────────────
@@ -418,5 +447,87 @@ describe('Pending decision records', () => {
     expect([1, 2, 3, 4, 5, 6, 7, 100].map(attempts => retryDelayMs(attempts))).toEqual([
       1000, 2000, 4000, 8000, 16_000, 30_000, 30_000, 30_000,
     ])
+  })
+})
+
+// ── A Redis error fails the sample ────────────────────────────────────────────
+
+// The stream consumer acknowledges a sample only when handleRunModeSample resolves. A decision that
+// Redis cannot read, write or delete must therefore fail the sample and leave it unprocessed (the
+// cursor stays), so the stream redelivers it, instead of losing the stop without a trace
+describe('A Redis error while a sample is handled fails the sample', () => {
+  it('fails a stopped sample when the candidate cannot be written, and the redelivered sample stores it', async () => {
+    const machine = await machineWithDebounce(60_000)
+
+    await whileRedisRefuses('set', async () => {
+      await expect(signal(machine, 0, '10:00:00')).rejects.toThrow(/NOPERM.*'set' command/)
+    })
+
+    expect(await candidateKeys(machine)).toEqual([])
+    expect(await cursorOf(machine)).toBeNull()
+
+    await signal(machine, 0, '10:00:00')
+
+    expect(await storedCandidate(machine)).toEqual({
+      kind: 'debounce',
+      since: '2026-06-15T10:00:00.000Z',
+      debounceMs: 60_000,
+      attempts: 0,
+      nextAttemptAt: null,
+    })
+  })
+
+  it('fails a running sample when the candidate cannot be read, and the redelivered sample records the stop', async () => {
+    const machine = await machineWithDebounce(60_000)
+    await signal(machine, 0, '10:00:00')
+
+    await whileRedisRefuses('get', async () => {
+      await expect(signal(machine, 1, '10:05:00')).rejects.toThrow(/NOPERM.*'get' command/)
+    })
+
+    expect(await stopsOf(machine)).toEqual([])
+    expect((await cursorOf(machine))?.lastProcessedOccurredAt).toEqual(at('10:00:00'))
+    expect(await candidateKeys(machine)).toEqual([candidateKey(machine)])
+
+    await signal(machine, 1, '10:05:00')
+
+    expect(await stopsOf(machine)).toEqual([runModeStop('10:00:00', '10:05:00')])
+    expect(await candidateKeys(machine)).toEqual([])
+  })
+
+  it('fails a running sample when the candidate cannot be deleted, and the redelivered sample leaves one stop and no candidate', async () => {
+    const machine = await machineWithDebounce(60_000)
+    await signal(machine, 0, '10:00:00')
+
+    await whileRedisRefuses('del', async () => {
+      await expect(signal(machine, 1, '10:05:00')).rejects.toThrow(/NOPERM.*'del' command/)
+    })
+
+    // The stop was written before the delete failed; the candidate is left and the sample unprocessed
+    expect((await cursorOf(machine))?.lastProcessedOccurredAt).toEqual(at('10:00:00'))
+    expect(await candidateKeys(machine)).toEqual([candidateKey(machine)])
+
+    await signal(machine, 1, '10:05:00')
+
+    expect(await stopsOf(machine)).toEqual([runModeStop('10:00:00', '10:05:00')])
+    expect(await candidateKeys(machine)).toEqual([])
+  })
+
+  it('fails a running sample while Redis is unreachable, and the redelivered sample records the stop', async () => {
+    const machine = await machineWithDebounce(60_000)
+    await signal(machine, 0, '10:00:00')
+
+    await whileRedisIsUnreachable(async () => {
+      await expect(signal(machine, 1, '10:05:00')).rejects.toThrow('Connection is closed')
+    })
+
+    expect(await stopsOf(machine)).toEqual([])
+    expect((await cursorOf(machine))?.lastProcessedOccurredAt).toEqual(at('10:00:00'))
+    expect(await candidateKeys(machine)).toEqual([candidateKey(machine)])
+
+    await signal(machine, 1, '10:05:00')
+
+    expect(await stopsOf(machine)).toEqual([runModeStop('10:00:00', '10:05:00')])
+    expect(await candidateKeys(machine)).toEqual([])
   })
 })

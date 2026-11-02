@@ -1,4 +1,4 @@
-import { cacheDel, cacheGet, cacheSet } from '../../lib/cache.js'
+import { redisClient } from '../../lib/redis.js'
 
 export interface PendingDecision {
   kind: 'debounce' | 'after_planned'
@@ -25,29 +25,33 @@ export const decisionKey = (
   runModeTagId: string,
 ): string => `${KEY_PREFIXES[kind]}${workCenterId}:${runModeTagId}`
 
-export function readDecision(
+// Decisions go through the raw client, not the cache helpers: those turn a Redis error into "not
+// found" or "skipped", and a decision lost that way is a stop lost. Here every error reaches the
+// caller, so the sample fails and the stream redelivers it
+export async function readDecision(
   kind: DecisionKind,
   workCenterId: string,
   runModeTagId: string,
 ): Promise<PendingDecision | null> {
-  return cacheGet<PendingDecision>(decisionKey(kind, workCenterId, runModeTagId))
+  const raw = await redisClient.get(decisionKey(kind, workCenterId, runModeTagId))
+  return raw === null ? null : (JSON.parse(raw) as PendingDecision)
 }
 
-export function writeDecision(
+export async function writeDecision(
   workCenterId: string,
   runModeTagId: string,
   decision: PendingDecision,
 ): Promise<void> {
   const key = decisionKey(decision.kind, workCenterId, runModeTagId)
-  return cacheSet(key, decision, DECISION_TTL_SECONDS)
+  await redisClient.set(key, JSON.stringify(decision), 'EX', DECISION_TTL_SECONDS)
 }
 
-export function deleteDecision(
+export async function deleteDecision(
   kind: DecisionKind,
   workCenterId: string,
   runModeTagId: string,
 ): Promise<void> {
-  return cacheDel(decisionKey(kind, workCenterId, runModeTagId))
+  await redisClient.del(decisionKey(kind, workCenterId, runModeTagId))
 }
 
 // The wait after the given number of failed attempts: 1, 2, 4, 8 and 16 s, then 30 s
