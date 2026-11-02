@@ -182,6 +182,23 @@
 
 ---
 
+## RunMode.runsAfterLateEnd
+> target: performance/src/modules/run-mode/__contract__/run-mode-after-planned-stop.contract.test.ts
+> plan-task: 6
+> spec: Decision rules 4 (the check decides the stopped runs the planned stop hid after its end)
+> see-also: RunMode.closeReadsRunMode (a late close whose samples after E performance has not processed yet: they decide themselves when they arrive)
+
+While a planned stop over 10:00 to 11:00 is active, every sample is processed and covered, also those after 10:30; an operator then closes it late, with the end it had, E = 10:30, and the close leaves the check since 10:30 (its latest sample came after E).
+
+### edge cases
+- [CRITICAL] D = 0, samples 0@10:02, 1@10:30, 0@10:35 → the tick at 10:40:01 records nothing at 10:30 (running at E) and opens the stop at 10:35, where the machine has stood since
+- [CRITICAL] the same with D = 60 s → the tick leaves the candidate since 10:35 and opens no stop; the next tick confirms it and opens the stop at 10:35
+- [HIGH] D = 60 s, samples 0@10:02, 1@10:30, 0@10:31, 1@10:31:30, 0@10:33, 1@10:38 → the tick records [10:33, 10:38] only: the 30 s stop from 10:31 is shorter than D
+- [HIGH] D = 0, a planned stop over 10:41 to 10:55 that has not started, samples 0@10:02, 1@10:30, 0@10:33, 1@10:38, 0@10:42 → the tick records [10:33, 10:38] and nothing for the stop since 10:42, which the other planned stop covers
+- [HIGH] D = 60 s, more samples after E than one page of history holds (500): stops and runs of a second each, a stop from 10:38:19 that the machine ended at 10:40:19 (the cursor) and closes the page, and 0@10:41:40 on the next page → the tick records [10:38:19, 10:40:19] (the page's last stop ended where the machine ran) and leaves no candidate; 0@10:41:40 comes after the cursor and leaves its own candidate when it is processed
+
+---
+
 ## RunMode.signalInClosedPlannedStop
 > target: performance/src/modules/run-mode/__contract__/run-mode-after-planned-stop.contract.test.ts
 > plan-task: 6

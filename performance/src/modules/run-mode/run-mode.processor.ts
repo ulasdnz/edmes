@@ -1,5 +1,9 @@
 import { Types } from 'mongoose'
-import { getLatest, getStateDurations } from '../../lib/internal-api/run-mode-telemetry.client.js'
+import {
+  getLatest,
+  getStateDurations,
+  type StateDurationsPage,
+} from '../../lib/internal-api/run-mode-telemetry.client.js'
 import { getById as getWorkCenter } from '../../lib/internal-api/work-center.client.js'
 import { logger } from '../../lib/logger.js'
 import { PlannedStop } from '../planned-stop/planned-stop.model.js'
@@ -362,10 +366,73 @@ export async function confirmAfterPlannedCheck(
           await openUnplannedFromRunMode(target.workCenterId, endedAt)
         }
       }
+      await decideRunsAfterEnd(target, endedAt, history)
       const next = await checkOfNextPlannedStop(target.workCenterId, endedAt)
       await resolveDecision(target, check, now, next)
     },
   )
+}
+
+// While the planned stop that ended at E was still active, its planned window covered the stopped
+// samples processed after E, and rule 1 left nothing for them: a planned stop closed late, with the
+// end it had. Each stopped run that starts after E, at or before the cursor and inside that window
+// gets what rules 1 and 2 give it now that the planned stop ended at E. A run the machine ended
+// records its stop when it outlasted the debounce; one it still stands in leaves its candidate, or
+// opens its stop when there is no debounce. Another planned stop that covers the run leaves it
+// alone, and the next planned stop's start ends it. Every write is idempotent, so a run the normal
+// path decided already is not decided twice
+async function decideRunsAfterEnd(
+  target: ConfirmationTarget,
+  endedAt: Date,
+  { segments, hasMore }: StateDurationsPage,
+): Promise<void> {
+  const [ended, cursor] = await Promise.all([
+    PlannedStop.findOne({
+      workCenterId: new Types.ObjectId(target.workCenterId),
+      status: 'closed',
+      actualEndAt: endedAt,
+    })
+      .select({ plannedStartAt: 1, plannedEndAt: 1 })
+      .lean(),
+    readCursor(target.workCenterId, target.runModeTagId),
+  ])
+  if (!ended || !cursor) return
+  const { runModeDebounceMs: debounceMs } = await resolveForWorkCenter(target.workCenterId)
+
+  for (const [i, segment] of segments.entries()) {
+    const startAt = new Date(segment.start).getTime()
+    // A run after the cursor is still to be processed, and the normal path decides it
+    if (startAt > cursor.lastProcessedOccurredAt.getTime()) return
+    if (startAt >= ended.plannedEndAt.getTime()) return
+    if (segment.state >= 1 || startAt <= endedAt.getTime()) continue
+    if (startAt < ended.plannedStartAt.getTime()) continue
+    // A stopped segment ends where the machine ran, unless it trails the whole history: then the
+    // machine still stands. A page with more after it holds no segment in progress
+    const stillStopped = i === segments.length - 1 && !hasMore
+    const runningAt = stillStopped ? null : new Date(segment.end)
+    // Shorter than the debounce: no stop, as rule 2 finds it
+    if (runningAt && runningAt.getTime() - startAt < debounceMs) continue
+    const stoppedAt = new Date(startAt)
+    if (await plannedStopCovering(target.workCenterId, stoppedAt)) continue
+
+    const nextStart = await nextPlannedStopStart(target.workCenterId, stoppedAt)
+    if (runningAt) {
+      const endAt = nextStart && nextStart.getTime() < runningAt.getTime() ? nextStart : runningAt
+      await recordClosedFromRunMode(target.workCenterId, stoppedAt, endAt)
+    } else if (nextStart && nextStart.getTime() - startAt >= debounceMs) {
+      await recordClosedFromRunMode(target.workCenterId, stoppedAt, nextStart)
+    } else if (debounceMs === 0) {
+      await openUnplannedFromRunMode(target.workCenterId, stoppedAt)
+    } else {
+      await writeDecisionIfAbsent(target.workCenterId, target.runModeTagId, {
+        kind: 'debounce',
+        since: stoppedAt.toISOString(),
+        debounceMs,
+        attempts: 0,
+        nextAttemptAt: null,
+      })
+    }
+  }
 }
 
 // The start of the work center's first planned stop that started after E

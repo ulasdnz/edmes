@@ -165,6 +165,19 @@ and leaves nothing.
 
   As today, no debounce applies to this check. If telemetry does not know the tag, the check is dropped
   with a warning log, as in rule 3.
+
+  The check then decides the stopped runs the planned stop that ended at E hid. While it was still
+  active, its planned window covered the stopped samples processed after E, so rule 1 left nothing
+  for them, as when an operator closes a planned stop late with the end it had. Each stopped run
+  that starts after E, at or before the tag's cursor and inside that planned window, gets what rules 1
+  and 2 give it now that the planned stop ended at E:
+  - a run the machine ended at e records `[s, e]` when e − s ≥ D;
+  - the run the machine still stands in leaves the candidate since s (`SET … NX`), as rule 1 does,
+    or opens the stop at s when D = 0.
+
+  Another planned stop that covers s leaves the run alone, and the next planned stop's start ends it,
+  as for the stop at E. Runs after the cursor stay with the normal path. Every write is idempotent, so
+  a run decided already is not decided twice.
 - One key holds one check, so a check write keeps the earliest pending E, in one Redis step: it writes
   when no check is stored or when the stored one waits on a later E. Planned stops such as changeovers
   can close twice within one outage, and a late signal of rule 1 can leave an earlier E than the

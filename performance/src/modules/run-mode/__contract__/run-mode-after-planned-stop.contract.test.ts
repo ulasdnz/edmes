@@ -8,6 +8,7 @@ import * as plannedStopService from '../../planned-stop/planned-stop.service.js'
 import { Reason } from '../../reason/reason.model.js'
 import * as unplannedStopService from '../../unplanned-stop/unplanned-stop.service.js'
 import { runDecisionTick } from '../run-mode.debounce-tick.js'
+import { RunModeProcessingState } from '../run-mode-processing-state.model.js'
 import {
   activePlannedStop,
   afterPlannedSince,
@@ -398,6 +399,129 @@ describe('The close leaves no stop at an end that another planned stop covers (r
       { source: 'manual', startAt: at('10:20:00'), endAt: at('10:45:00') },
     ])
     expect(await storedCheck(machine)).toBeNull()
+  })
+})
+
+// ── Rule 4: the stops the closed planned stop covered after its end ──────────
+
+describe('The check decides the stops the planned stop covered after its end (rule 4)', () => {
+  // While the planned stop over 10:00 to 11:00 was active it covered every sample processed, also
+  // those after 10:30; an operator then closes it late, with the end it had, E = 10:30
+  async function closedLateAfter(machine: Machine, samples: (readonly [number, string])[]) {
+    monitoredByWorkCenter(machine)
+    const planned = await activePlannedStop(machine, '10:00:00', '11:00:00')
+    for (const [value, time] of samples) await deliver(machine, recorded(machine, value, time))
+
+    expect(await stopsOf(machine)).toEqual([])
+
+    await closeAt(planned, '10:30:00')
+
+    expect(await storedCheck(machine)).toEqual(afterPlannedSince('10:30:00'))
+  }
+
+  it('opens the stop of a machine that stopped after E and still stands', async () => {
+    const machine = await machineWithDebounce(0)
+    await closedLateAfter(machine, [
+      [0, '10:02:00'],
+      [1, '10:30:00'],
+      [0, '10:35:00'],
+    ])
+
+    await tick('10:40:01')
+
+    // Running at E, so nothing at 10:30; down since 10:35
+    expect(await stopsOf(machine)).toEqual([openRunModeStop('10:35:00')])
+    expect(await storedCheck(machine)).toBeNull()
+  })
+
+  it('leaves the candidate of that stop under a debounce, and the tick confirms it', async () => {
+    const machine = await machineWithDebounce(60_000)
+    await closedLateAfter(machine, [
+      [0, '10:02:00'],
+      [1, '10:30:00'],
+      [0, '10:35:00'],
+    ])
+
+    await tick('10:40:01')
+
+    expect(await stopsOf(machine)).toEqual([])
+    expect(await storedCandidate(machine)).toEqual(candidateSince('10:35:00'))
+
+    await tick('10:40:02')
+
+    expect(await stopsOf(machine)).toEqual([openRunModeStop('10:35:00')])
+    expect(await storedCandidate(machine)).toBeNull()
+  })
+
+  it('records a stop after E that outlasted the debounce, and nothing for a shorter one', async () => {
+    const machine = await machineWithDebounce(60_000)
+    await closedLateAfter(machine, [
+      [0, '10:02:00'],
+      [1, '10:30:00'],
+      [0, '10:31:00'],
+      [1, '10:31:30'],
+      [0, '10:33:00'],
+      [1, '10:38:00'],
+    ])
+
+    await tick('10:40:01')
+
+    expect(await stopsOf(machine)).toEqual([runModeStop('10:33:00', '10:38:00')])
+    expect(await storedCandidate(machine)).toBeNull()
+  })
+
+  it('decides nothing for a stop after E that another planned stop covers', async () => {
+    const machine = await machineWithDebounce(0)
+    await plannedStopNotStarted(machine, '10:41:00', '10:55:00')
+    await closedLateAfter(machine, [
+      [0, '10:02:00'],
+      [1, '10:30:00'],
+      [0, '10:33:00'],
+      [1, '10:38:00'],
+      [0, '10:42:00'],
+    ])
+
+    await tick('10:45:01')
+
+    // The machine has stood since 10:42, inside the window of the planned stop over 10:41 to 10:55
+    expect(await stopsOf(machine)).toEqual([runModeStop('10:33:00', '10:38:00')])
+  })
+
+  it('takes a stop that ends the first page of a long history as ended where the machine ran', async () => {
+    const machine = await machineWithDebounce(60_000)
+    monitoredByWorkCenter(machine)
+    const planned = await activePlannedStop(machine, '10:00:00', '11:00:00')
+    // A clock time this many seconds after E = 10:30
+    const afterEnd = (seconds: number) =>
+      new Date(at('10:30:00').getTime() + seconds * 1000).toISOString().slice(11, 19)
+    // More samples after E than a page of history holds (500): stops and runs of a second each, a
+    // stop of two minutes from 10:38:19, and a stop at 10:41:40 on the next page
+    recorded(machine, 1, '09:00:00')
+    for (let second = 1; second <= 498; second++) {
+      recorded(machine, second % 2 === 1 ? 0 : 1, afterEnd(second))
+    }
+    recorded(machine, 0, afterEnd(499))
+    recorded(machine, 1, afterEnd(619))
+    const stoppedLater = recorded(machine, 0, afterEnd(700))
+    // Performance processed the samples up to 10:40:19 while the planned stop covered them
+    await RunModeProcessingState.create({
+      workCenterId: new Types.ObjectId(machine.workCenterId),
+      runModeTagId: new Types.ObjectId(machine.runModeTagId),
+      lastProcessedOccurredAt: at(afterEnd(619)),
+      lastProcessedValue: 1,
+    })
+
+    await closeAt(planned, '10:30:00')
+    await tick('10:45:00')
+
+    // The page ends with the stop from 10:38:19, which the machine ended at 10:40:19
+    expect(await stopsOf(machine)).toEqual([runModeStop(afterEnd(499), afterEnd(619))])
+    expect(await storedCandidate(machine)).toBeNull()
+
+    // The stop at 10:41:40 comes after the cursor, and its own rules decide it
+    await deliver(machine, stoppedLater)
+
+    expect(await storedCandidate(machine)).toEqual(candidateSince(afterEnd(700)))
   })
 })
 
