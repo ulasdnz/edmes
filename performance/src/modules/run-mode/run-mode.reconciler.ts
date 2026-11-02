@@ -6,6 +6,7 @@ import {
 } from '../../lib/internal-api/run-mode-telemetry.client.js'
 import { logger } from '../../lib/logger.js'
 import { retryDelayMs } from './run-mode.decisions.js'
+import { withTagLock } from './run-mode.lock.js'
 import {
   handleRunModeSample,
   listMonitoredFromCursors,
@@ -25,19 +26,25 @@ async function readCursor(target: MonitoredWorkCenter): Promise<Date | null> {
   return doc?.lastProcessedOccurredAt ?? null
 }
 
+// Under the tag's lock, like every cursor update, and only forward: a newer sample the event path
+// processed while telemetry was asked keeps its place
 async function initializeCursor(
   target: MonitoredWorkCenter,
   occurredAt: Date,
   value: number,
 ): Promise<void> {
-  await RunModeProcessingState.findOneAndUpdate(
-    {
-      workCenterId: new Types.ObjectId(target.workCenterId),
-      runModeTagId: new Types.ObjectId(target.runModeTagId),
-    },
-    { $set: { lastProcessedOccurredAt: occurredAt, lastProcessedValue: value } },
-    { upsert: true },
-  )
+  await withTagLock(target, async () => {
+    const cursor = await readCursor(target)
+    if (cursor && cursor.getTime() >= occurredAt.getTime()) return
+    await RunModeProcessingState.findOneAndUpdate(
+      {
+        workCenterId: new Types.ObjectId(target.workCenterId),
+        runModeTagId: new Types.ObjectId(target.runModeTagId),
+      },
+      { $set: { lastProcessedOccurredAt: occurredAt, lastProcessedValue: value } },
+      { upsert: true },
+    )
+  })
 }
 
 // Brings one work center up to `now` from telemetry: the samples stored after its cursor go through

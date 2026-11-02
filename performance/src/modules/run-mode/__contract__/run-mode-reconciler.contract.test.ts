@@ -178,6 +178,35 @@ describe('Boot reconciliation retries each work center until telemetry answers (
   })
 })
 
+// ── The reconciler and the event path on one cursor ──────────────────────────
+
+describe('Boot reconciliation and the event path on one tag', () => {
+  it('keeps the cursor of a newer sample the event path handled while the latest sample was asked', async () => {
+    const machine = await machineWithDebounce(60_000)
+    // Telemetry's latest sample when the reconciler asks: the machine runs
+    recorded(machine, 1, '10:00:00')
+    stubs.latest.mode = 'hang'
+
+    const reconciling = reconcileWorkCenter(machine, at('10:10:00'))
+    await vi.waitFor(() => expect(held.size).toBe(1))
+    // The machine stops, and the event path handles that sample before telemetry answers
+    await deliver(machine, recorded(machine, 0, '10:05:00'))
+    // The answer telemetry had when it was asked
+    releaseHeld(res =>
+      res.json({ data: { tagId: machine.runModeTagId, value: 1, occurredAt: at('10:00:00') } }),
+    )
+    await reconciling
+
+    expect(await cursorOf(machine)).toMatchObject({
+      lastProcessedOccurredAt: at('10:05:00'),
+      lastProcessedValue: 0,
+    })
+    expect(await storedCandidate(machine)).toEqual(candidateSince('10:05:00'))
+    expect(await stopsOf(machine)).toEqual([])
+    expect(logs.lines()).toEqual([])
+  })
+})
+
 // ── Shutdown ──────────────────────────────────────────────────────────────────
 
 describe('Boot reconciliation at shutdown', () => {
