@@ -64,6 +64,22 @@ async function closedPlannedStop(
   })
 }
 
+// A planned stop that was planned and never started
+async function plannedStopNotStarted(machine: Machine, from: string, to: string) {
+  const reason = await seedReason('planned_stop')
+  return PlannedStop.create({
+    workCenterId: new Types.ObjectId(machine.workCenterId),
+    reasonId: reason._id,
+    plannedOwnerId: new Types.ObjectId(userId),
+    source: 'manual',
+    startMode: 'manual',
+    status: 'planned',
+    plannedStartAt: at(from),
+    plannedEndAt: at(to),
+    createdBy: new Types.ObjectId(userId),
+  })
+}
+
 // An operator closes the planned stop through the service, at the given end
 const closeAt = (planned: { _id: Types.ObjectId }, time: string) =>
   plannedStopService.close(planned._id.toString(), { actualEndAt: at(time) }, userId)
@@ -462,6 +478,26 @@ describe('A stopped signal inside a planned stop that has since closed leaves th
 
     await tick('10:01:00')
 
+    expect(await stopsOf(machine)).toEqual([])
+    expect(await storedCheck(machine)).toBeNull()
+  })
+
+  it('leaves the check at the end of a closed planned stop that a planned one overlaps, and records nothing while that one covers E', async () => {
+    const machine = await machineWithDebounce(60_000)
+    await deliver(machine, recorded(machine, 1, '09:00:00'))
+    // Two planned windows overlap: one planned stop ran until 10:30, the other was never started
+    await closedPlannedStop(machine, ['10:00:00', '10:40:00'], ['10:00:00', '10:30:00'])
+    await plannedStopNotStarted(machine, '10:20:00', '10:50:00')
+
+    // The machine's stop at 10:25 reaches performance only now
+    await deliver(machine, recorded(machine, 0, '10:25:00'))
+
+    expect(await storedCandidate(machine)).toBeNull()
+    expect(await storedCheck(machine)).toEqual(afterPlannedSince('10:30:00'))
+
+    await tick('10:31:00')
+
+    // The planned stop that was never started covers E
     expect(await stopsOf(machine)).toEqual([])
     expect(await storedCheck(machine)).toBeNull()
   })

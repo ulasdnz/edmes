@@ -80,9 +80,11 @@ check is the one place that uses the clock, because the absence of a signal prov
 - A planned stop covers T0: no stop and no candidate (as today). A planned stop covers T when its
   planned window holds T and it had not closed by T: it is planned or active, or it closed after T.
   That is the answer the signal got when it happened, however late performance processes it, such as
-  from an outage backlog, a replay (rule 6) or a redelivery. When that planned stop has closed since,
-  the signal leaves the check after it at its end E (rule 4), which decides from the history whether
-  the machine still stood at E. Otherwise a late signal would open a stop inside the planned stop, and
+  from an outage backlog, a replay (rule 6) or a redelivery. When a planned stop that covered it has
+  closed since, the signal leaves the check after it at its end E (rule 4), which decides from the
+  history whether the machine still stood at E. That holds even while a planned or active planned
+  stop covers the signal too, as overlapping planned windows allow: the check's own coverage test at
+  E sorts out the overlap. Otherwise a late signal would open a stop inside the planned stop, and
   after a close that read a stale run mode nothing would open the stop at E.
 - D = 0: the stop opens at T0 at once (as today).
 - D > 0: a candidate `{ firstStoppedAt: T0, debounceMs: D }` is written, unless one is pending: the

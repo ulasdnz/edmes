@@ -36,10 +36,11 @@ export interface RunModeSample {
 }
 
 // A planned stop covered T when its planned window holds T and it had not closed by T: the answer
-// a sample at T got when it happened, however late it is processed. endedAt is null while that
-// planned stop is still planned or active, and its end once it has closed (the earliest, should
-// several have covered T): the check at that end then decides from the history whether the machine
-// still stood there
+// a sample at T got when it happened, however late it is processed. endedAt is the end of one that
+// has closed since (the earliest, should several have), even while a planned or active one covers T
+// too: the check at that end then decides from the history whether the machine still stood there,
+// and its own coverage test there sorts out the overlap. endedAt is null while only planned or
+// active ones cover T
 async function plannedStopCovering(
   workCenterId: string,
   at: Date,
@@ -57,8 +58,9 @@ async function plannedStopCovering(
     .sort({ actualEndAt: 1 })
     .lean()
   if (covering.length === 0) return null
-  if (covering.some(stop => stop.status !== 'closed')) return { endedAt: null }
-  return { endedAt: covering[0].actualEndAt ?? null }
+  // Sorted by end, so the first closed one ended earliest
+  const closed = covering.find(stop => stop.status === 'closed')
+  return { endedAt: closed?.actualEndAt ?? null }
 }
 
 async function updateCursor(sample: RunModeSample): Promise<void> {
