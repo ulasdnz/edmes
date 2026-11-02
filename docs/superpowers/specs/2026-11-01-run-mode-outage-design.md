@@ -151,7 +151,7 @@ and leaves nothing.
   close reads the tag's cursor before it asks, and opens the stop under the tag's lock only while the
   cursor has not moved. A running signal processed while it asked would otherwise leave a stop at E
   that no running signal closes. Otherwise the close leaves the check below instead.
-- It cannot be read, or work-center could not name the tag: a "check after planned stop" record
+- It cannot be read, or work-center could not answer: a "check after planned stop" record
   `{ since: E }` is left under its own key, apart from the debounce candidate. Once telemetry answers,
   the history since E (`state-durations`) decides:
   - stopped at E: the stop `[E, first running signal]` is recorded, or opened at E if the machine is
@@ -413,6 +413,7 @@ the decision rules, with whatever signals survived.
 | Component | Change |
 |---|---|
 | `performance/src/modules/run-mode/run-mode.processor.ts` | Rules 1, 2 and 6, deleting a stop shorter than D, the replay loop rule 6 and the reconciler share, `now` parameter; a planned stop that has closed since covers a late signal; rule 4 at the close, the check's end at the next planned stop's start and its handover |
+| `performance/src/modules/run-mode/run-mode.decisions.ts` | Pending decision records in Redis: keys, first-write-wins candidates, the earliest pending check in one step, compare-and-set on `since` for deferrals, decisions and the handover with a TTL of its own, the retry schedule, the 24-hour drop under the tag's lock with the handover of a check |
 | `performance/src/modules/run-mode/run-mode.debounce-tick.ts` | Rule 3, after-planned checks, retry schedule, 24-hour limit |
 | `performance/src/modules/run-mode/run-mode.reconciler.ts` | Retry per work center in the background; replays through the shared loop |
 | `performance/src/lib/internal-api/run-mode-telemetry.client.ts` | State-durations segments in the shape telemetry answers (`state`, `start`, `end`) |
@@ -461,9 +462,17 @@ production passes the real time.
    telemetry is down each get their end decided; a machine that stood through the second gets
    `[E1, start of the second]` and `[E2, first running signal]`. A running signal processed while the
    close asks telemetry leaves the check instead of a stop at E. A stopped signal processed after the
-   planned stop that covered it closed leaves the check at its end, whichever rule meets it.
+   planned stop that covered it closed leaves the check at its end, whichever rule meets it, also
+   when a planned stop that never started overlaps that one. A planned stop closed late, with an
+   earlier end, leaves the check when its latest sample came after E: the check records `[E, T1]`
+   when the machine stood at E and opens nothing at E when it ran then, and it decides the stops the
+   planned stop covered after E (a machine down since 10:35 gets its stop at 10:35, a short stop
+   below D gets none). At an end that another planned stop covers, neither the close nor the check
+   records anything, and the check still hands the key on.
 8. Retries come after 1, 2, 4 … 30 s; only the deferred and resolved lines are logged; after 24 hours the
-   record is dropped with an error log.
+   record is dropped with an error log, and a dropped check hands its key on to the next planned stop
+   that closed after its end, under the tag's lock: a planned stop that closes meanwhile keeps its
+   check, and a handover that cannot read the planned stops waits for its next attempt.
 9. Work-center is down on `work_center.updated`: the old mapping stays and signals keep being processed;
    once it is back the mapping is updated and the work center reconciled.
 10. Work-center is down at startup: the list is retried until it arrives, and work centers without a

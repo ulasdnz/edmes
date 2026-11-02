@@ -111,7 +111,7 @@
 ## RunMode.debounceOnlyForTheTicksStop
 > target: performance/src/modules/run-mode/__contract__/run-mode-outage.contract.test.ts
 > plan-task: 5
-> spec: Decision rules 2 and 4 (Ruling 15: only the stop the tick opened from a candidate is debounced)
+> spec: Decision rules 2 and 4 (only the stop the tick opened from a candidate is debounced; a stop opened without a debounce, at the end of a planned stop or with D = 0, closes however short)
 
 ### constraints
 - [CRITICAL] a planned stop from 10:00 closes at E = 10:30, the run mode can be read and the machine stands (D = 60 s) → a stop opens at E; running at E + 30 s → [E, E + 30 s] is closed and kept
@@ -151,7 +151,7 @@
 > target: performance/src/modules/run-mode/__contract__/run-mode-after-planned-stop.contract.test.ts
 > plan-task: 6
 > spec: Decision rules 4 (the check is left); first half of the scenario carried by RunMode.checkAfterPlannedStop
-> note: the plan named planned-stop.service.test.ts; the check is a Redis record behind the raw client (Ruling 10), so these tests run in the contract suite on real Redis and MongoDB (Task 6, item 8)
+> note: the plan named planned-stop.service.test.ts; the check is a Redis record written through the service's raw Redis client, which lets every Redis error reach the caller instead of turning it into "not stored", so these tests run in the contract suite on real Redis and MongoDB
 
 ### happy path
 - [CRITICAL] a planned stop closes at E and telemetry cannot be reached to read the run mode → the check `{ kind: 'after_planned', since: E (ISO 8601 UTC with Z), debounceMs: 0, attempts: 0, nextAttemptAt: null }` is stored under `runmode:after-planned:{workCenterId}:{runModeTagId}` with a TTL of 25 hours, and no stop is opened at that moment; the only warn line is the failed request's `internal_api.telemetry.fetch_failed` with its status
