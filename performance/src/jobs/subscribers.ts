@@ -84,7 +84,12 @@ const streams = {
       syncRunModeTag(data.workCenterId),
   },
   'events.telemetry': {
-    'tag.value.recorded': async (data: { tagId: string; value: number; occurredAt: string }) => {
+    'tag.value.recorded': async (data: {
+      tagId: string
+      value: number
+      occurredAt: string
+      previousOccurredAt: string | null
+    }) => {
       const workCenterId = runModeTagToWorkCenter.get(data.tagId)
       if (!workCenterId) return
       await handleRunModeSample({
@@ -92,6 +97,7 @@ const streams = {
         runModeTagId: data.tagId,
         value: data.value,
         occurredAt: new Date(data.occurredAt),
+        previousOccurredAt: data.previousOccurredAt ? new Date(data.previousOccurredAt) : null,
       })
     },
   },

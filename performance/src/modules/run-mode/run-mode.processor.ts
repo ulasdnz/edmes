@@ -1,5 +1,5 @@
 import { Types } from 'mongoose'
-import { getLatest } from '../../lib/internal-api/run-mode-telemetry.client.js'
+import { getLatest, getStateDurations } from '../../lib/internal-api/run-mode-telemetry.client.js'
 import { getById as getWorkCenter } from '../../lib/internal-api/work-center.client.js'
 import { logger } from '../../lib/logger.js'
 import { PlannedStop } from '../planned-stop/planned-stop.model.js'
@@ -9,7 +9,7 @@ import {
   openFromRunMode as openUnplannedFromRunMode,
   recordClosedFromRunMode,
 } from '../unplanned-stop/unplanned-stop.service.js'
-import { deleteDecision, readDecision, writeDecision } from './run-mode.decisions.js'
+import { deleteDecision, readDecision, writeDecisionIfAbsent } from './run-mode.decisions.js'
 import { RunModeProcessingState } from './run-mode-processing-state.model.js'
 
 export interface RunModeSample {
@@ -17,6 +17,9 @@ export interface RunModeSample {
   runModeTagId: string
   value: number
   occurredAt: Date
+  // The tag's sample telemetry stored before this one, null for its first, as tag.value.recorded
+  // carries it; a sample replayed from telemetry's history has none
+  previousOccurredAt?: Date | null
 }
 
 async function plannedStopCovers(workCenterId: string, at: Date): Promise<boolean> {
@@ -68,6 +71,15 @@ export async function handleRunModeSample(sample: RunModeSample): Promise<void> 
     return
   }
 
+  // Telemetry stored samples after the cursor that were never processed here; they come first
+  if (
+    cursor &&
+    sample.previousOccurredAt &&
+    sample.previousOccurredAt.getTime() > cursor.lastProcessedOccurredAt.getTime()
+  ) {
+    await replayGap(sample, cursor.lastProcessedOccurredAt)
+  }
+
   if (sample.value < 1) {
     await handleStopped(sample)
   } else {
@@ -75,6 +87,65 @@ export async function handleRunModeSample(sample: RunModeSample): Promise<void> 
   }
 
   await updateCursor(sample)
+}
+
+// A sample that failed and was overtaken before its redelivery, a dead letter, a failed publish or
+// a gap in the tag map leaves samples only telemetry's history still holds
+async function replayGap(sample: RunModeSample, from: Date): Promise<void> {
+  const { replayed, complete } = await replayStoredSamples(sample, from, sample.occurredAt)
+  logger.warn('Run-mode samples missed by performance were replayed from telemetry', {
+    event: 'run_mode.sample.gap_replayed',
+    workCenterId: sample.workCenterId,
+    runModeTagId: sample.runModeTagId,
+    from: from.toISOString(),
+    to: sample.occurredAt.toISOString(),
+    replayed,
+  })
+  // Deciding the sample now would skip the samples not replayed yet; its redelivery goes on
+  if (!complete) throw new Error('Run-mode replay reached its page limit before the sample')
+}
+
+export const MAX_REPLAY_PAGES = 100
+
+export interface ReplayResult {
+  replayed: number
+  // False when the page limit ended the replay before `to`
+  complete: boolean
+}
+
+// Replays the tag's samples telemetry stored after `from` and before `to`, in their order, through
+// the same rules as a delivered sample; each one advances the cursor. Every state-durations segment
+// starts at a stored sample, except the first, which starts at `from`. Pages bound the payload after
+// a long outage; the next page starts with the sample whose segment the page before left open.
+export async function replayStoredSamples(
+  target: MonitoredWorkCenter,
+  from: Date,
+  to: Date,
+): Promise<ReplayResult> {
+  let replayed = 0
+  let after: Date | undefined
+  for (let page = 0; page < MAX_REPLAY_PAGES; page++) {
+    const { segments, hasMore, nextCursor } = await getStateDurations(
+      target.runModeTagId,
+      from,
+      to,
+      { after },
+    )
+    for (const segment of segments) {
+      const occurredAt = new Date(segment.start)
+      if (occurredAt.getTime() <= from.getTime()) continue
+      await handleRunModeSample({
+        workCenterId: target.workCenterId,
+        runModeTagId: target.runModeTagId,
+        value: segment.state,
+        occurredAt,
+      })
+      replayed++
+    }
+    if (!hasMore || !nextCursor) return { replayed, complete: true }
+    after = new Date(nextCursor)
+  }
+  return { replayed, complete: false }
 }
 
 async function handleStopped(sample: RunModeSample): Promise<void> {
@@ -87,8 +158,7 @@ async function handleStopped(sample: RunModeSample): Promise<void> {
   }
 
   // A redelivered sample leaves the candidate as it was first written
-  if (await readDecision('debounce', sample.workCenterId, sample.runModeTagId)) return
-  await writeDecision(sample.workCenterId, sample.runModeTagId, {
+  await writeDecisionIfAbsent(sample.workCenterId, sample.runModeTagId, {
     kind: 'debounce',
     since: sample.occurredAt.toISOString(),
     debounceMs: policy.runModeDebounceMs,

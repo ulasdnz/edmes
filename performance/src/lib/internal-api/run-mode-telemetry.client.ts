@@ -7,9 +7,9 @@ export interface LatestSample {
 }
 
 export interface StateDurationSegment {
-  from: string
-  to: string
-  value: number
+  state: number
+  start: string
+  end: string
   durationMs: number
 }
 

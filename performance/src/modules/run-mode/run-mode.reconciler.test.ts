@@ -20,7 +20,8 @@ vi.mock('../../lib/cache.js', () => ({
   sharedCacheDel: vi.fn(),
 }))
 
-type Segment = { from: string; to: string; value: number; durationMs: number }
+// The segment shape telemetry's state-durations answers with
+type Segment = { state: number; start: string; end: string; durationMs: number }
 type Page = { segments: Segment[]; hasMore: boolean; nextCursor: string | null }
 const emptyPage = (): Page => ({ segments: [], hasMore: false, nextCursor: null })
 
@@ -29,7 +30,7 @@ const { getLatest, getStateDurations } = vi.hoisted(() => ({
   getStateDurations: vi.fn(
     async () =>
       ({ segments: [], hasMore: false, nextCursor: null }) as {
-        segments: Array<{ from: string; to: string; value: number; durationMs: number }>
+        segments: Array<{ state: number; start: string; end: string; durationMs: number }>
         hasMore: boolean
         nextCursor: string | null
       },
@@ -57,7 +58,8 @@ const { redisStore, redisClient } = vi.hoisted(() => {
     redisStore: store,
     redisClient: {
       get: async (key: string) => store.get(key) ?? null,
-      set: async (key: string, value: string, ..._options: unknown[]) => {
+      set: async (key: string, value: string, ...options: unknown[]) => {
+        if (options.includes('NX') && store.has(key)) return null
         store.set(key, value)
         return 'OK'
       },
@@ -117,16 +119,16 @@ describe('run-mode.reconciler', () => {
       segments: [
         // Segment at/before cursor — must be ignored.
         {
-          from: '2026-06-15T10:00:00.000Z',
-          to: '2026-06-15T10:05:00.000Z',
-          value: 0,
+          state: 0,
+          start: '2026-06-15T10:00:00.000Z',
+          end: '2026-06-15T10:05:00.000Z',
           durationMs: 300_000,
         },
         // Segment after cursor — must be processed.
         {
-          from: '2026-06-15T10:10:00.000Z',
-          to: '2026-06-15T10:15:00.000Z',
-          value: 0,
+          state: 0,
+          start: '2026-06-15T10:10:00.000Z',
+          end: '2026-06-15T10:15:00.000Z',
           durationMs: 300_000,
         },
       ],
@@ -151,9 +153,9 @@ describe('run-mode.reconciler', () => {
     getStateDurations.mockResolvedValue({
       segments: [
         {
-          from: '2026-06-15T10:10:00.000Z',
-          to: '2026-06-15T10:11:00.000Z',
-          value: 0,
+          state: 0,
+          start: '2026-06-15T10:10:00.000Z',
+          end: '2026-06-15T10:11:00.000Z',
           durationMs: 60_000,
         },
       ],
@@ -269,9 +271,9 @@ describe('run-mode.reconciler', () => {
     await seedCursor(wcId, tagId, cursorAt, 1)
 
     const segment = {
-      from: '2026-06-15T10:10:00.000Z',
-      to: '2026-06-15T10:15:00.000Z',
-      value: 0,
+      state: 0,
+      start: '2026-06-15T10:10:00.000Z',
+      end: '2026-06-15T10:15:00.000Z',
       durationMs: 300_000,
     }
 
@@ -313,9 +315,9 @@ describe('run-mode.reconciler', () => {
       .mockResolvedValueOnce({
         segments: [
           {
-            from: '2026-06-15T10:05:00.000Z',
-            to: '2026-06-15T10:05:00.000Z',
-            value: 0,
+            state: 0,
+            start: '2026-06-15T10:05:00.000Z',
+            end: '2026-06-15T10:05:00.000Z',
             durationMs: 0,
           },
         ],
@@ -325,9 +327,9 @@ describe('run-mode.reconciler', () => {
       .mockResolvedValueOnce({
         segments: [
           {
-            from: '2026-06-15T10:10:00.000Z',
-            to: '2026-06-15T10:10:00.000Z',
-            value: 1,
+            state: 1,
+            start: '2026-06-15T10:10:00.000Z',
+            end: '2026-06-15T10:10:00.000Z',
             durationMs: 0,
           },
         ],
@@ -337,9 +339,9 @@ describe('run-mode.reconciler', () => {
       .mockResolvedValueOnce({
         segments: [
           {
-            from: '2026-06-15T10:15:00.000Z',
-            to: '2026-06-15T10:15:00.000Z',
-            value: 0,
+            state: 0,
+            start: '2026-06-15T10:15:00.000Z',
+            end: '2026-06-15T10:15:00.000Z',
             durationMs: 0,
           },
         ],
@@ -384,9 +386,9 @@ describe('run-mode.reconciler', () => {
       .mockResolvedValueOnce({
         segments: [
           {
-            from: '2026-06-15T10:05:00.000Z',
-            to: '2026-06-15T10:05:00.000Z',
-            value: 0,
+            state: 0,
+            start: '2026-06-15T10:05:00.000Z',
+            end: '2026-06-15T10:05:00.000Z',
             durationMs: 0,
           },
         ],
@@ -396,15 +398,15 @@ describe('run-mode.reconciler', () => {
       .mockResolvedValueOnce({
         segments: [
           {
-            from: '2026-06-15T10:05:00.000Z',
-            to: '2026-06-15T10:05:00.000Z',
-            value: 0,
+            state: 0,
+            start: '2026-06-15T10:05:00.000Z',
+            end: '2026-06-15T10:05:00.000Z',
             durationMs: 0,
           },
           {
-            from: '2026-06-15T10:10:00.000Z',
-            to: '2026-06-15T10:10:00.000Z',
-            value: 1,
+            state: 1,
+            start: '2026-06-15T10:10:00.000Z',
+            end: '2026-06-15T10:10:00.000Z',
             durationMs: 0,
           },
         ],
@@ -435,7 +437,7 @@ describe('run-mode.reconciler', () => {
       counter += 1
       const ts = new Date(Date.UTC(2026, 5, 15, 10, 0, counter)).toISOString() // 10:00:01, 10:00:02, ...
       return {
-        segments: [{ from: ts, to: ts, value: 1, durationMs: 0 }],
+        segments: [{ state: 1, start: ts, end: ts, durationMs: 0 }],
         hasMore: true,
         nextCursor: ts,
       }

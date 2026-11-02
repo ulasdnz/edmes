@@ -46,6 +46,16 @@ export async function writeDecision(
   await redisClient.set(key, JSON.stringify(decision), 'EX', DECISION_TTL_SECONDS)
 }
 
+// Writes the decision only when none of its kind is stored, in one command: the first write wins
+export async function writeDecisionIfAbsent(
+  workCenterId: string,
+  runModeTagId: string,
+  decision: PendingDecision,
+): Promise<void> {
+  const key = decisionKey(decision.kind, workCenterId, runModeTagId)
+  await redisClient.set(key, JSON.stringify(decision), 'EX', DECISION_TTL_SECONDS, 'NX')
+}
+
 export async function deleteDecision(
   kind: DecisionKind,
   workCenterId: string,

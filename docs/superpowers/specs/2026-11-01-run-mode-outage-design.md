@@ -79,7 +79,9 @@ check is the one place that uses the clock, because the absence of a signal prov
 
 - A planned stop covers T0: nothing happens (as today).
 - D = 0: the stop opens at T0 at once (as today).
-- D > 0: a candidate `{ firstStoppedAt: T0, debounceMs: D }` is written.
+- D > 0: a candidate `{ firstStoppedAt: T0, debounceMs: D }` is written, unless one is pending: the
+  first write wins, in one Redis command (`SET … NX`), so a stop whose value stays below 1 across two
+  stored samples keeps its first start.
 
 ### 2. Running signal at T1
 
@@ -120,6 +122,26 @@ Performance asks telemetry for the latest sample of the tag:
 
 The tick and rule 2 can try to write the same stop at once. A unique index on `(workCenterId, startAt)`
 for run-mode stops refuses the second write, which then counts as already recorded.
+
+### 6. A signal whose predecessor was never processed
+
+Each signal names the tag's previous stored sample (`previousOccurredAt`). When that is later than the
+processing cursor's `lastProcessedOccurredAt`, telemetry stored signals performance never processed: a
+sample that failed and was overtaken by a newer one before its redelivery, a dead-lettered sample, a
+failed publish, or samples dropped while the tag map had a gap. Before deciding the signal,
+performance replays telemetry's stored samples strictly between the cursor and the signal
+(`state-durations`, with the boot reconciler's paging loop) through rules 1 and 2, each advancing the
+cursor as a delivered signal does, and logs `run_mode.sample.gap_replayed` (warn) with `from`, `to`
+and the number `replayed`. Then it decides the signal.
+
+- `previousOccurredAt` null or equal to the cursor, or no cursor yet: telemetry is not asked.
+- Telemetry cannot answer during the replay: the signal fails and the stream redelivers it, as with any
+  other dependency failure. The samples replayed before the failure keep the cursor they advanced.
+- The replay reaches its page limit before the signal: the signal fails the same way, and its
+  redelivery goes on from the replayed samples.
+
+Unlike the rejected periodic reconciliation, it runs only when a gap is proven, in the same writer
+that processes the signals, with one telemetry request per gap.
 
 ### Example (D = 60 s)
 
@@ -177,6 +199,10 @@ the same rule as `closeIfOpen` and publishes the opened and then the closed even
   them up where it left off.
 - A sample is acknowledged only after it is processed, so a crash redelivers it. The cursor guard and
   the unique index keep a stop from being written twice.
+- A failed sample is redelivered only after the stream's reclaim delay, so a newer sample of the same
+  tag can be processed first. Rule 6 replays the failed one from telemetry's history before that newer
+  sample, and the cursor guard then skips the late redelivery. A sample dead-lettered after its last
+  delivery is replayed the same way by the next sample of its tag.
 
 ### Accepted risks
 
@@ -277,12 +303,13 @@ the decision rules, with whatever signals survived.
 
 | Component | Change |
 |---|---|
-| `performance/src/modules/run-mode/run-mode.processor.ts` | Rules 1 and 2, deleting a stop shorter than D, `now` parameter |
+| `performance/src/modules/run-mode/run-mode.processor.ts` | Rules 1, 2 and 6, deleting a stop shorter than D, the replay loop rule 6 and the reconciler share, `now` parameter |
 | `performance/src/modules/run-mode/run-mode.debounce-tick.ts` | Rule 3, after-planned checks, retry schedule, 24-hour limit |
-| `performance/src/modules/run-mode/run-mode.reconciler.ts` | Retry per work center in the background |
+| `performance/src/modules/run-mode/run-mode.reconciler.ts` | Retry per work center in the background; replays through the shared loop |
+| `performance/src/lib/internal-api/run-mode-telemetry.client.ts` | State-durations segments in the shape telemetry answers (`state`, `start`, `end`) |
 | `performance/src/modules/planned-stop/planned-stop.service.ts` | Rule 4: leave a check when the run mode cannot be read |
 | `performance/src/modules/unplanned-stop/` | Insert a closed run-mode stop, unique index, duplicate counts as recorded |
-| `performance/src/jobs/subscribers.ts` | Read work-center before changing the map, full refresh with retries |
+| `performance/src/jobs/subscribers.ts` | Read work-center before changing the map, full refresh with retries; pass `previousOccurredAt` on |
 | `performance/src/lib/internal-api/run-mode-monitors.client.ts` | Throw when work-center cannot answer |
 | `telemetry/src/lib/mqtt.ts`, telemetry config | Client id and session expiry from config; dropped-message check on connect |
 | `telemetry/src/jobs/events.ts`, `telemetry/src/modules/ingestion/ingestion.pipeline.ts` | `tag.value.recorded` carries the previous stored sample's time |
@@ -323,6 +350,17 @@ production passes the real time.
     cursor are mapped and reconciled. Telemetry is down at boot: reconciliation retries until it
     succeeds.
 11. A pending candidate in Redis is decided after the processor restarts.
+
+Missed signals (rule 6), in the same suite, with a telemetry stub that answers `state-durations` from
+its stored samples as telemetry does:
+
+- A running signal fails and a newer stopped signal of the tag is processed first: the newer one
+  replays it, both stops keep their own times, and the late redelivery changes nothing. The same when
+  the candidate could not be deleted after the stop was written: no second stop at T0.
+- Two signals never reach performance: the next one replays both, in their order.
+- A signal that follows the one processed last, or a tag without a cursor, asks telemetry nothing.
+- Telemetry cannot answer, or Redis fails part way, during a replay: the signal fails, the replayed
+  samples keep their cursor, and the redelivery replays the rest once the dependency answers.
 
 ### End to end (real services and MQTT broker)
 

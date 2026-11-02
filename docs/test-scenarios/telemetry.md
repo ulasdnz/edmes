@@ -500,6 +500,17 @@
 
 ---
 
+## Historian.stateDurations (provider contract with performance)
+> target: telemetry/src/test/contracts/performance.contract.test.ts
+> spec: docs/superpowers/specs/2026-11-01-run-mode-outage-design.md, Decision rules 6 (performance replays a gap through this endpoint and stubs it in its own tests)
+
+### happy path
+- [HIGH] binary samples 0@06:00, 1@06:05, 0@06:10 and 1@06:15 stored through the ingestion pipeline, `GET /internal/v1/historian/:tagId/state-durations` from 06:00 to 06:20 without `limit` → segments `{ state, start, end, durationMs }` starting at 06:00, 06:05, 06:10 and 06:15, the last one ending at `to`; `hasMore` false, `nextCursor` null
+- from 06:02 to 06:15 → the first segment starts at `from` with the state before it, and the sample at `to` is left out
+- `limit` 2 → a page ends before its last sample (`hasMore` true, `nextCursor` = that sample's time) and the next page, `after` = `nextCursor`, starts at that sample
+
+---
+
 ## Historian.latest
 > target: telemetry/src/modules/historian/__tests__/historian.service.test.ts
 > plan-task: 12

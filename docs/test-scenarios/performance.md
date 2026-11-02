@@ -271,6 +271,26 @@
 
 ---
 
+## RunMode.missedSamples
+> target: performance/src/modules/run-mode/__contract__/run-mode-outage.contract.test.ts
+> plan-task: 4
+> spec: Decision rules 6; Crashes and restarts (a failed sample overtaken by a newer one)
+
+Samples reach performance as telemetry publishes them, with `previousOccurredAt`; the telemetry stub answers `state-durations` from the samples it stored, as telemetry computes it.
+
+### happy path
+- [CRITICAL] 0@10:00 processed, 1@10:05 fails (Redis refuses the candidate read), 0@10:20 arrives with `previousOccurredAt` 10:05 → the stop [10:00, 10:05] is recorded, a candidate since 10:20 is stored, the cursor is at 10:20, telemetry is asked once (state-durations from 10:00 to 10:20) and one `run_mode.sample.gap_replayed` is logged (from 10:00, to 10:20, replayed 1); the redelivered 1@10:05 then changes nothing, and 1@10:25 with `previousOccurredAt` 10:20 records [10:20, 10:25]
+- [CRITICAL] cursor at 0@10:00, 1@10:05 and 0@10:10 never reach performance, 1@10:15 arrives with `previousOccurredAt` 10:10 → the stops [10:00, 10:05] and [10:10, 10:15] are recorded, no candidate is left, the cursor is at 10:15 and `replayed` is 2
+
+### constraints
+- [CRITICAL] the candidate's delete fails after [10:00, 10:05] was written, then 0@10:20 arrives with `previousOccurredAt` 10:05 → no second stop starts at 10:00 and a candidate since 10:20 is stored; 1@10:25 records [10:20, 10:25]
+- [HIGH] the tag's first stored sample (`previousOccurredAt` null), then a sample whose `previousOccurredAt` equals the cursor → telemetry is not asked and no `run_mode.sample.gap_replayed` is logged
+- [HIGH] a sample of a tag without a cursor, whose predecessor was stored before the tag reached the map → telemetry is not asked
+- [HIGH] telemetry cannot answer during the replay → the sample fails and nothing is decided for it (no stop, the candidate as it was, the cursor where it was); once telemetry answers, the redelivered sample replays the gap and records [10:00, 10:05] and [10:10, 10:15]
+- [HIGH] Redis refuses the write of the second replayed sample's candidate → the sample fails, the first replayed sample keeps its stop and the cursor it advanced (10:05); the redelivered sample replays the rest
+
+---
+
 ## UnplannedStop.recordClosedFromRunMode
 > target: performance/src/modules/unplanned-stop/unplanned-stop.service.test.ts
 > plan-task: 3
@@ -326,6 +346,17 @@
 
 ### constraints
 - a stopped signal at T0 with D > 0 and no planned stop covering T0 → a candidate is stored under `runmode:candidate:{workCenterId}:{runModeTagId}` with `since` = T0 (ISO 8601 UTC with `Z`), the `debounceMs` it starts with, `attempts` 0 and no `nextAttemptAt`, and a TTL of 25 hours (90 000 s) instead of `debounce + 2 s`
+- the candidate is written in one command only when none is stored (`SET key value EX 90000 NX`): the first write wins
+
+---
+
+## RunMode.replayPageLimit
+> target: performance/src/modules/run-mode/run-mode.processor.test.ts
+> plan-task: 4
+> spec: Decision rules 6 (page limit)
+
+### constraints
+- telemetry answers every state-durations page with `hasMore` (as only a fault would) while a gap is replayed → after 100 pages the sample fails and is not decided, and the replayed samples keep the cursor they advanced
 
 ---
 

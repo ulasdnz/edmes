@@ -4,7 +4,19 @@ import { once } from 'node:events'
 import type { Server } from 'node:http'
 import express, { type Request, type Response } from 'express'
 import { Types } from 'mongoose'
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  type MockInstance,
+  vi,
+} from 'vitest'
+import { __test__ as subscribers } from '../../../jobs/subscribers.js'
+import { logger } from '../../../lib/logger.js'
 import { closeRedis, initRedis, redisClient } from '../../../lib/redis.js'
 import { testRedis } from '../../../test/contract-setup.js'
 import { PlannedStop } from '../../planned-stop/planned-stop.model.js'
@@ -35,18 +47,60 @@ interface StubEndpoint {
 
 type Endpoint = 'workCenter' | 'runModeMonitors' | 'latest' | 'stateDurations'
 
+interface StoredSample {
+  occurredAt: Date
+  value: number
+}
+
+// The samples telemetry stored per tag, oldest first: a value only when it changed
+const telemetryHistory = new Map<string, StoredSample[]>()
+
+// state-durations as telemetry computes it (binary.calc.ts, with the validator's default limit of
+// 500): the samples in [after ?? from, to), the state before them as the baseline, and while hasMore
+// the segment still in progress left out, for the next page to start at nextCursor
+function stateDurations(req: Request) {
+  const from = new Date(String(req.query.from))
+  const to = new Date(String(req.query.to))
+  const after = req.query.after === undefined ? undefined : new Date(String(req.query.after))
+  const limit = req.query.limit === undefined ? 500 : Math.max(2, Number(req.query.limit))
+  const windowStart = after && after.getTime() > from.getTime() ? after : from
+  const samples = telemetryHistory.get(String(req.params.tagId)) ?? []
+  const baseline = samples.filter(s => s.occurredAt.getTime() < windowStart.getTime()).at(-1)
+  const inWindow = samples.filter(
+    s => s.occurredAt.getTime() >= windowStart.getTime() && s.occurredAt.getTime() < to.getTime(),
+  )
+  const hasMore = inWindow.length > limit
+  const docs = hasMore ? inWindow.slice(0, limit) : inWindow
+  if (!baseline && docs.length === 0) return { segments: [], hasMore, nextCursor: null }
+
+  const segments: { state: number; start: Date; end: Date; durationMs: number }[] = []
+  let state = baseline ? baseline.value : docs[0].value
+  let start = baseline ? windowStart : docs[0].occurredAt
+  for (const doc of baseline ? docs : docs.slice(1)) {
+    if (doc.value === state) continue
+    const durationMs = doc.occurredAt.getTime() - start.getTime()
+    if (durationMs > 0) segments.push({ state, start, end: doc.occurredAt, durationMs })
+    state = doc.value
+    start = doc.occurredAt
+  }
+  const lastMs = to.getTime() - start.getTime()
+  if (!hasMore && lastMs > 0) segments.push({ state, start, end: to, durationMs: lastMs })
+  return { segments, hasMore, nextCursor: hasMore ? docs[docs.length - 1].occurredAt : null }
+}
+
 let stubs: Record<Endpoint, StubEndpoint>
+// The requests each endpoint received, as their path parameters and query
+let received: Record<Endpoint, Record<string, unknown>[]>
 
 function resetStubs(): void {
   stubs = {
     workCenter: { mode: 'answer', answer: () => null },
     runModeMonitors: { mode: 'answer', answer: () => [] },
     latest: { mode: 'answer', answer: () => null },
-    stateDurations: {
-      mode: 'answer',
-      answer: () => ({ segments: [], hasMore: false, nextCursor: null }),
-    },
+    stateDurations: { mode: 'answer', answer: stateDurations },
   }
+  received = { workCenter: [], runModeMonitors: [], latest: [], stateDurations: [] }
+  telemetryHistory.clear()
 }
 
 // Requests held by a hanging endpoint, released after each test
@@ -54,6 +108,7 @@ const held = new Set<Response>()
 
 function serve(endpoint: Endpoint) {
   return (req: Request, res: Response): void => {
+    received[endpoint].push({ ...req.params, ...req.query })
     const { mode, answer } = stubs[endpoint]
     if (mode === 'hang') {
       held.add(res)
@@ -103,6 +158,7 @@ afterAll(async () => {
 
 beforeEach(async () => {
   resetStubs()
+  subscribers.runModeTagToWorkCenter.clear()
   // contract-setup wipes MongoDB and flushes Redis after every test
   await bootstrapSystemReasons()
 })
@@ -135,6 +191,37 @@ function signal(machine: Machine, value: number, time: string): Promise<void> {
   return handleRunModeSample({ ...machine, value, occurredAt: at(time) })
 }
 
+// What telemetry publishes as tag.value.recorded
+interface RecordedValue {
+  tagId: string
+  behavior: string
+  value: number
+  occurredAt: string
+  previousOccurredAt: string | null
+}
+
+// Telemetry stores the machine's run-mode value and publishes it with the time of the sample it
+// stored before for the tag
+function recorded(machine: Machine, value: number, time: string): RecordedValue {
+  const history = telemetryHistory.get(machine.runModeTagId) ?? []
+  const previous = history.at(-1)
+  history.push({ occurredAt: at(time), value })
+  telemetryHistory.set(machine.runModeTagId, history)
+  return {
+    tagId: machine.runModeTagId,
+    behavior: 'binary',
+    value,
+    occurredAt: at(time).toISOString(),
+    previousOccurredAt: previous ? previous.occurredAt.toISOString() : null,
+  }
+}
+
+// The stream hands a recorded value to performance's subscriber, which knows the machine's tag
+function deliver(machine: Machine, event: RecordedValue): Promise<void> {
+  subscribers.runModeTagToWorkCenter.set(machine.runModeTagId, machine.workCenterId)
+  return subscribers.streams['events.telemetry']['tag.value.recorded'](event)
+}
+
 async function stopsOf(machine: Machine) {
   const stops = await UnplannedStop.find({ workCenterId: new Types.ObjectId(machine.workCenterId) })
     .sort({ startAt: 1 })
@@ -160,6 +247,15 @@ async function storedCandidate(machine: Machine): Promise<PendingDecision | null
   const raw = await testRedis.get(candidateKey(machine))
   return raw === null ? null : (JSON.parse(raw) as PendingDecision)
 }
+
+// The candidate rule 1 writes for a stop at the given time, D = 60 s
+const candidateSince = (time: string): PendingDecision => ({
+  kind: 'debounce',
+  since: at(time).toISOString(),
+  debounceMs: 60_000,
+  attempts: 0,
+  nextAttemptAt: null,
+})
 
 function seedReason(usage: 'planned_stop' | 'unplanned_stop') {
   const code = `R-${new Types.ObjectId().toString()}`
@@ -528,6 +624,189 @@ describe('A Redis error while a sample is handled fails the sample', () => {
     await signal(machine, 1, '10:05:00')
 
     expect(await stopsOf(machine)).toEqual([runModeStop('10:00:00', '10:05:00')])
+    expect(await candidateKeys(machine)).toEqual([])
+  })
+})
+
+// ── Rule 6: samples telemetry stored that performance missed ─────────────────
+
+// A sample whose predecessor in telemetry is newer than the cursor proves samples performance never
+// processed: one that failed and was overtaken before its redelivery, a dead letter, a failed
+// publish, a gap in the tag map. They are replayed from telemetry's history before the sample
+describe('Samples performance missed are replayed from telemetry first (rule 6)', () => {
+  let warn: MockInstance
+
+  beforeEach(() => {
+    warn = vi.spyOn(logger, 'warn')
+  })
+
+  afterEach(() => {
+    warn.mockRestore()
+  })
+
+  const gapsReplayed = () =>
+    warn.mock.calls
+      .map(([, meta]) => meta)
+      .filter(meta => meta?.event === 'run_mode.sample.gap_replayed')
+
+  const gapReplayed = (machine: Machine, from: string, to: string, replayed: number) => ({
+    event: 'run_mode.sample.gap_replayed',
+    workCenterId: machine.workCenterId,
+    runModeTagId: machine.runModeTagId,
+    from: at(from).toISOString(),
+    to: at(to).toISOString(),
+    replayed,
+  })
+
+  it('replays a failed running signal that a newer sample overtook, before that sample', async () => {
+    const machine = await machineWithDebounce(60_000)
+    await deliver(machine, recorded(machine, 0, '10:00:00'))
+    const running = recorded(machine, 1, '10:05:00')
+    await whileRedisRefuses('get', async () => {
+      await expect(deliver(machine, running)).rejects.toThrow(/NOPERM.*'get' command/)
+    })
+
+    // The stream goes on with the next sample before it redelivers the failed one
+    await deliver(machine, recorded(machine, 0, '10:20:00'))
+
+    expect(await stopsOf(machine)).toEqual([runModeStop('10:00:00', '10:05:00')])
+    expect(await storedCandidate(machine)).toEqual(candidateSince('10:20:00'))
+    expect((await cursorOf(machine))?.lastProcessedOccurredAt).toEqual(at('10:20:00'))
+    expect(gapsReplayed()).toEqual([gapReplayed(machine, '10:00:00', '10:20:00', 1)])
+    expect(received.stateDurations).toEqual([
+      {
+        tagId: machine.runModeTagId,
+        from: at('10:00:00').toISOString(),
+        to: at('10:20:00').toISOString(),
+      },
+    ])
+
+    await deliver(machine, running)
+
+    expect(await stopsOf(machine)).toEqual([runModeStop('10:00:00', '10:05:00')])
+    expect(await storedCandidate(machine)).toEqual(candidateSince('10:20:00'))
+
+    await deliver(machine, recorded(machine, 1, '10:25:00'))
+
+    expect(await stopsOf(machine)).toEqual([
+      runModeStop('10:00:00', '10:05:00'),
+      runModeStop('10:20:00', '10:25:00'),
+    ])
+    expect(await candidateKeys(machine)).toEqual([])
+    expect(gapsReplayed()).toHaveLength(1)
+  })
+
+  it('replays a running signal whose candidate could not be deleted without a second stop', async () => {
+    const machine = await machineWithDebounce(60_000)
+    await deliver(machine, recorded(machine, 0, '10:00:00'))
+    await whileRedisRefuses('del', async () => {
+      await expect(deliver(machine, recorded(machine, 1, '10:05:00'))).rejects.toThrow(
+        /NOPERM.*'del' command/,
+      )
+    })
+
+    await deliver(machine, recorded(machine, 0, '10:20:00'))
+
+    expect(await stopsOf(machine)).toEqual([runModeStop('10:00:00', '10:05:00')])
+    expect(await storedCandidate(machine)).toEqual(candidateSince('10:20:00'))
+
+    await deliver(machine, recorded(machine, 1, '10:25:00'))
+
+    expect(await stopsOf(machine)).toEqual([
+      runModeStop('10:00:00', '10:05:00'),
+      runModeStop('10:20:00', '10:25:00'),
+    ])
+    expect(await candidateKeys(machine)).toEqual([])
+  })
+
+  it('replays two samples that never reached performance, in their order', async () => {
+    const machine = await machineWithDebounce(60_000)
+    await deliver(machine, recorded(machine, 0, '10:00:00'))
+    recorded(machine, 1, '10:05:00')
+    recorded(machine, 0, '10:10:00')
+
+    await deliver(machine, recorded(machine, 1, '10:15:00'))
+
+    expect(await stopsOf(machine)).toEqual([
+      runModeStop('10:00:00', '10:05:00'),
+      runModeStop('10:10:00', '10:15:00'),
+    ])
+    expect(await candidateKeys(machine)).toEqual([])
+    expect((await cursorOf(machine))?.lastProcessedOccurredAt).toEqual(at('10:15:00'))
+    expect(gapsReplayed()).toEqual([gapReplayed(machine, '10:00:00', '10:15:00', 2)])
+  })
+
+  it('asks telemetry nothing when a sample follows the one processed last', async () => {
+    const machine = await machineWithDebounce(60_000)
+
+    // The tag's first stored sample has no predecessor, the next one names the first
+    await deliver(machine, recorded(machine, 0, '10:00:00'))
+    await deliver(machine, recorded(machine, 1, '10:05:00'))
+
+    expect(await stopsOf(machine)).toEqual([runModeStop('10:00:00', '10:05:00')])
+    expect(received.stateDurations).toEqual([])
+    expect(gapsReplayed()).toEqual([])
+  })
+
+  it('asks telemetry nothing for a sample of a tag performance has no cursor for', async () => {
+    const machine = await machineWithDebounce(60_000)
+    // Stored before the tag reached performance's map
+    recorded(machine, 1, '09:00:00')
+
+    await deliver(machine, recorded(machine, 0, '10:00:00'))
+
+    expect(await storedCandidate(machine)).toEqual(candidateSince('10:00:00'))
+    expect(received.stateDurations).toEqual([])
+    expect(gapsReplayed()).toEqual([])
+  })
+
+  it('fails the sample while telemetry cannot answer, and its redelivery replays the gap', async () => {
+    const machine = await machineWithDebounce(60_000)
+    await deliver(machine, recorded(machine, 0, '10:00:00'))
+    recorded(machine, 1, '10:05:00')
+    recorded(machine, 0, '10:10:00')
+    const running = recorded(machine, 1, '10:15:00')
+    stubs.stateDurations.mode = 'fail'
+
+    await expect(deliver(machine, running)).rejects.toThrow('error.telemetry_unreachable')
+
+    expect(await stopsOf(machine)).toEqual([])
+    expect(await storedCandidate(machine)).toEqual(candidateSince('10:00:00'))
+    expect((await cursorOf(machine))?.lastProcessedOccurredAt).toEqual(at('10:00:00'))
+
+    stubs.stateDurations.mode = 'answer'
+    await deliver(machine, running)
+
+    expect(await stopsOf(machine)).toEqual([
+      runModeStop('10:00:00', '10:05:00'),
+      runModeStop('10:10:00', '10:15:00'),
+    ])
+    expect(await candidateKeys(machine)).toEqual([])
+    expect((await cursorOf(machine))?.lastProcessedOccurredAt).toEqual(at('10:15:00'))
+  })
+
+  it('keeps what it replayed before a failure, and the redelivery replays the rest', async () => {
+    const machine = await machineWithDebounce(60_000)
+    await deliver(machine, recorded(machine, 0, '10:00:00'))
+    recorded(machine, 1, '10:05:00')
+    recorded(machine, 0, '10:10:00')
+    const running = recorded(machine, 1, '10:15:00')
+
+    // The replayed 10:05 sample records its stop, the 10:10 one cannot write its candidate
+    await whileRedisRefuses('set', async () => {
+      await expect(deliver(machine, running)).rejects.toThrow(/NOPERM.*'set' command/)
+    })
+
+    expect(await stopsOf(machine)).toEqual([runModeStop('10:00:00', '10:05:00')])
+    expect(await candidateKeys(machine)).toEqual([])
+    expect((await cursorOf(machine))?.lastProcessedOccurredAt).toEqual(at('10:05:00'))
+
+    await deliver(machine, running)
+
+    expect(await stopsOf(machine)).toEqual([
+      runModeStop('10:00:00', '10:05:00'),
+      runModeStop('10:10:00', '10:15:00'),
+    ])
     expect(await candidateKeys(machine)).toEqual([])
   })
 })

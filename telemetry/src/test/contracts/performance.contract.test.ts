@@ -1,6 +1,6 @@
-// Provider side of the contract with performance/src/lib/internal-api/telemetry.client.ts.
-// Performance stubs produced-summary in its own tests, so this test feeds counter samples
-// through the real ingestion pipeline and asserts what the real endpoint answers.
+// Provider side of the contract with performance/src/lib/internal-api/telemetry.client.ts and
+// run-mode-telemetry.client.ts. Performance stubs these endpoints in its own tests, so this test
+// feeds samples through the real ingestion pipeline and asserts what the real endpoints answer.
 import { INTERNAL_TOKEN_HEADER } from '@mes/auth'
 import { setupMongoTestContainer } from '@mes/testing'
 import type { Express } from 'express'
@@ -82,5 +82,73 @@ describe('POST /internal/v1/historian/:tagId/speed-summary (performance speedSum
       { from: at(0).toISOString(), to: at(30).toISOString(), valueArea: 300 * 30 * 60_000 },
       { from: at(30).toISOString(), to: at(60).toISOString(), valueArea: 400 * 30 * 60_000 },
     ])
+  })
+})
+
+describe('GET /internal/v1/historian/:tagId/state-durations (performance run-mode replay)', () => {
+  it('answers the stored samples in [from, to) as segments, a page of limit samples at a time', async () => {
+    const tag = await Tag.create({
+      name: 'Press run mode',
+      tagTypeId: new Types.ObjectId(),
+      behavior: 'binary',
+    })
+    // The press stops at 06:00, runs at 06:05, stops at 06:10 and runs again at 06:15.
+    await ingestValue(tag, 0, at(0))
+    await ingestValue(tag, 1, at(5))
+    await ingestValue(tag, 0, at(10))
+    await ingestValue(tag, 1, at(15))
+
+    const stateDurations = async (query: Record<string, string>) => {
+      const res = await request(app)
+        .get(`/internal/v1/historian/${tag.id}/state-durations`)
+        .query(query)
+        .set({ [INTERNAL_TOKEN_HEADER]: INTERNAL_TOKEN })
+      expect(res.status, JSON.stringify(res.body.error)).toBe(200)
+      return res.body.data
+    }
+    const segment = (state: number, start: Date, end: Date) => ({
+      state,
+      start: start.toISOString(),
+      end: end.toISOString(),
+      durationMs: end.getTime() - start.getTime(),
+    })
+    const window = { from: at(0).toISOString(), to: at(20).toISOString() }
+
+    // As performance asks, without a limit: every sample from its cursor up to the one it holds.
+    expect(await stateDurations(window)).toEqual({
+      segments: [
+        segment(0, at(0), at(5)),
+        segment(1, at(5), at(10)),
+        segment(0, at(10), at(15)),
+        segment(1, at(15), at(20)),
+      ],
+      hasMore: false,
+      nextCursor: null,
+    })
+
+    // Clipped to the window: the state before `from` opens it, a sample at or after `to` is left out.
+    expect(await stateDurations({ from: at(2).toISOString(), to: at(15).toISOString() })).toEqual({
+      segments: [segment(0, at(2), at(5)), segment(1, at(5), at(10)), segment(0, at(10), at(15))],
+      hasMore: false,
+      nextCursor: null,
+    })
+
+    // Two samples a page: the segment still in progress is left to the next page, which starts at
+    // nextCursor, the last sample of the page, again (`after` is inclusive).
+    expect(await stateDurations({ ...window, limit: '2' })).toEqual({
+      segments: [segment(0, at(0), at(5))],
+      hasMore: true,
+      nextCursor: at(5).toISOString(),
+    })
+    expect(await stateDurations({ ...window, limit: '2', after: at(5).toISOString() })).toEqual({
+      segments: [segment(1, at(5), at(10))],
+      hasMore: true,
+      nextCursor: at(10).toISOString(),
+    })
+    expect(await stateDurations({ ...window, limit: '2', after: at(10).toISOString() })).toEqual({
+      segments: [segment(0, at(10), at(15)), segment(1, at(15), at(20))],
+      hasMore: false,
+      nextCursor: null,
+    })
   })
 })

@@ -32,12 +32,13 @@ vi.mock('../../lib/cache.js', () => ({
   sharedCacheDel: vi.fn(),
 }))
 
-const { getLatest } = vi.hoisted(() => ({
+const { getLatest, getStateDurations } = vi.hoisted(() => ({
   getLatest: vi.fn(async () => null as null | { tagId: string; value: number; occurredAt: string }),
+  getStateDurations: vi.fn(),
 }))
 vi.mock('../../lib/internal-api/run-mode-telemetry.client.js', () => ({
   getLatest,
-  getStateDurations: vi.fn(),
+  getStateDurations,
 }))
 
 const { getWorkCenter } = vi.hoisted(() => ({
@@ -55,7 +56,8 @@ const { redisStore, redisGet, redisSet, redisDel } = vi.hoisted(() => {
   return {
     redisStore: store,
     redisGet: vi.fn(async (key: string) => store.get(key) ?? null),
-    redisSet: vi.fn(async (key: string, value: string, ..._options: unknown[]) => {
+    redisSet: vi.fn(async (key: string, value: string, ...options: unknown[]) => {
+      if (options.includes('NX') && store.has(key)) return null
       store.set(key, value)
       return 'OK'
     }),
@@ -99,6 +101,7 @@ describe('run-mode.processor', () => {
   beforeEach(async () => {
     cacheStore.clear()
     getLatest.mockReset()
+    getStateDurations.mockReset()
     getWorkCenter.mockReset()
     getLatest.mockResolvedValue(null)
     getWorkCenter.mockResolvedValue(null)
@@ -238,6 +241,7 @@ describe('run-mode.processor', () => {
         expect.any(String),
         'EX',
         90_000,
+        'NX',
       )
     })
 
@@ -263,7 +267,53 @@ describe('run-mode.processor', () => {
         attempts: 0,
         nextAttemptAt: null,
       })
-      expect(options).toEqual(['EX', 90_000])
+      // Written only when no candidate is stored, in one command: the first write wins
+      expect(options).toEqual(['EX', 90_000, 'NX'])
+    })
+  })
+
+  describe('handleRunModeSample — samples telemetry stored that performance missed', () => {
+    it('fails the sample when the replay stops at its page limit before reaching it', async () => {
+      const wcId = new Types.ObjectId().toString()
+      const tagId = new Types.ObjectId().toString()
+      await seedPolicyForWc(wcId, 0)
+      await processor.handleRunModeSample(
+        sample({
+          workCenterId: wcId,
+          runModeTagId: tagId,
+          value: 1,
+          occurredAt: new Date('2026-06-15T10:00:00.000Z'),
+        }),
+      )
+      // Telemetry always has one more page, as only a fault would make it
+      let page = 0
+      getStateDurations.mockImplementation(async () => {
+        page += 1
+        const start = new Date(Date.UTC(2026, 5, 15, 10, 0, page)).toISOString()
+        return {
+          segments: [{ state: 1, start, end: start, durationMs: 0 }],
+          hasMore: true,
+          nextCursor: start,
+        }
+      })
+
+      await expect(
+        processor.handleRunModeSample({
+          workCenterId: wcId,
+          runModeTagId: tagId,
+          value: 0,
+          occurredAt: new Date('2026-06-15T11:00:00.000Z'),
+          previousOccurredAt: new Date('2026-06-15T10:59:00.000Z'),
+        }),
+      ).rejects.toThrow()
+
+      expect(getStateDurations).toHaveBeenCalledTimes(100)
+      // The replayed samples keep the cursor they advanced; the sample itself is not decided
+      const cursor = await RunModeProcessingState.findOne({
+        workCenterId: new Types.ObjectId(wcId),
+      }).lean()
+      expect(cursor?.lastProcessedOccurredAt).toEqual(new Date('2026-06-15T10:01:40.000Z'))
+      expect(await UnplannedStop.countDocuments({ workCenterId: new Types.ObjectId(wcId) })).toBe(0)
     })
   })
 
