@@ -62,6 +62,38 @@ export async function writeDecisionIfAbsent(
   await redisClient.set(key, JSON.stringify(decision), 'EX', DECISION_TTL_SECONDS, 'NX')
 }
 
+// The check after a planned stop that ended at endedAt: the history since then decides it
+export const afterPlannedCheck = (endedAt: Date): PendingDecision => ({
+  kind: 'after_planned',
+  since: endedAt.toISOString(),
+  debounceMs: 0,
+  attempts: 0,
+  nextAttemptAt: null,
+})
+
+// Writes the check unless one for the same or an earlier end is pending, in one step. One key holds
+// the earliest check; deciding it hands the key on to the next planned stop that closed. Every since
+// is an ISO 8601 UTC string of one length, so their string order is their time order
+const WRITE_IF_EARLIER = `
+local stored = redis.call('GET', KEYS[1])
+if stored and cjson.decode(stored).since <= ARGV[1] then return 0 end
+redis.call('SET', KEYS[1], ARGV[2], 'EX', ARGV[3])
+return 1
+`
+
+export async function writeCheckIfEarlier(target: DecisionTarget, endedAt: Date): Promise<void> {
+  const check = afterPlannedCheck(endedAt)
+  const key = decisionKey(check.kind, target.workCenterId, target.runModeTagId)
+  await redisClient.eval(
+    WRITE_IF_EARLIER,
+    1,
+    key,
+    check.since,
+    JSON.stringify(check),
+    DECISION_TTL_SECONDS,
+  )
+}
+
 // True when there was a decision to delete
 export async function deleteDecision(
   kind: DecisionKind,
@@ -78,11 +110,18 @@ export function retryDelayMs(attempts: number): number {
 
 // Replaces the stored record, or deletes it when no new value is given, only while it has the given
 // since, in one step: a tick that gets its answer late must not bring back a record a running
-// signal decided meanwhile, nor touch the record of a newer stop
+// signal decided meanwhile, nor touch the record of a newer stop. A record that waits on another
+// stop gets a TTL of its own; one that only gets new retry fields keeps the TTL it was written with
 const REPLACE_IF_SAME_SINCE = `
 local stored = redis.call('GET', KEYS[1])
 if not stored or cjson.decode(stored).since ~= ARGV[1] then return 0 end
-if ARGV[2] then redis.call('SET', KEYS[1], ARGV[2], 'KEEPTTL') else redis.call('DEL', KEYS[1]) end
+if not ARGV[2] then
+  redis.call('DEL', KEYS[1])
+elseif ARGV[3] then
+  redis.call('SET', KEYS[1], ARGV[2], 'EX', ARGV[3])
+else
+  redis.call('SET', KEYS[1], ARGV[2], 'KEEPTTL')
+end
 return 1
 `
 
@@ -92,7 +131,9 @@ async function replaceIfSameSince(
   replacement?: PendingDecision,
 ): Promise<boolean> {
   const key = decisionKey(decision.kind, target.workCenterId, target.runModeTagId)
-  const args = replacement ? [decision.since, JSON.stringify(replacement)] : [decision.since]
+  const args: (string | number)[] = [decision.since]
+  if (replacement) args.push(JSON.stringify(replacement))
+  if (replacement && replacement.since !== decision.since) args.push(DECISION_TTL_SECONDS)
   return (await redisClient.eval(REPLACE_IF_SAME_SINCE, 1, key, ...args)) === 1
 }
 
@@ -184,13 +225,15 @@ export async function deferDecision(
   })
 }
 
-// The decided record goes, unless another writer has replaced it with a newer one meanwhile
+// The decided record goes, unless another writer has replaced it with a newer one meanwhile. A
+// decided check hands its key on to the next one, in the same step
 export async function resolveDecision(
   target: DecisionTarget,
   decision: PendingDecision,
   now: Date,
+  next?: PendingDecision,
 ): Promise<void> {
-  if (await replaceIfSameSince(target, decision)) logDecisionResolved(target, decision, now)
+  if (await replaceIfSameSince(target, decision, next)) logDecisionResolved(target, decision, now)
 }
 
 // Ends the wait the deferral log started; waitedMs counts from the moment the decision was due

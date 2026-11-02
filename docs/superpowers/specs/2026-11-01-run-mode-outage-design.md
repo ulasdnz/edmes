@@ -77,7 +77,13 @@ check is the one place that uses the clock, because the absence of a signal prov
 
 ### 1. Stopped signal at T0
 
-- A planned stop covers T0: nothing happens (as today).
+- A planned stop covers T0: no stop and no candidate (as today). A planned stop covers T when its
+  planned window holds T and it had not closed by T: it is planned or active, or it closed after T.
+  That is the answer the signal got when it happened, however late performance processes it, such as
+  from an outage backlog, a replay (rule 6) or a redelivery. When that planned stop has closed since,
+  the signal leaves the check after it at its end E (rule 4), which decides from the history whether
+  the machine still stood at E. Otherwise a late signal would open a stop inside the planned stop, and
+  after a close that read a stale run mode nothing would open the stop at E.
 - D = 0: the stop opens at T0 at once (as today).
 - D > 0: a candidate `{ firstStoppedAt: T0, debounceMs: D }` is written, unless one is pending: the
   first write wins, in one Redis command (`SET … NX`), so a stop whose value stays below 1 across two
@@ -86,7 +92,9 @@ check is the one place that uses the clock, because the absence of a signal prov
 ### 2. Running signal at T1
 
 - A candidate exists and T1 − T0 ≥ D: the stop `[T0, T1]` is recorded closed, unless a planned stop
-  covers T0, and the candidate is deleted. *Today the candidate is deleted and the stop is lost.*
+  covers T0, and the candidate is deleted. *Today the candidate is deleted and the stop is lost.* A
+  planned stop that covered T0 and has closed since leaves the check at its end instead, as in
+  rule 1.
 - A candidate exists and T1 − T0 < D: no stop; the candidate is deleted (as today).
 - An open unplanned stop of any source exists: it closes at T1 (as today). *New:* if it is the
   run-mode stop the tick opened from a candidate (rule 3), it would close shorter than the debounce
@@ -102,13 +110,18 @@ check is the one place that uses the clock, because the absence of a signal prov
   opens starts at a sample it processed, so such a stop was opened at the end of a planned stop
   (rule 4) from a history that did not hold T1 yet, such as a broker backlog still draining when
   telemetry first answers, and T1 shows the machine was running before it.
+- No close ends a stop before it starts, whoever closes it: a planned stop started retroactively at
+  S closes only the stop that started at or before S, and leaves a later one open, to close at its
+  own running signal.
 
 ### 3. Tick, every second, for candidates whose D has run out
 
 Performance asks telemetry for the latest sample of the tag:
 
 - It is the candidate's own stopped sample (time T0, value below 1): the machine has stood since T0. The
-  stop opens at T0 and the candidate is deleted.
+  stop opens at T0 and the candidate is deleted. When a planned stop covers T0, such as one entered
+  after the signal was processed, no stop opens; one that has closed since leaves the check at its
+  end, as in rule 1.
 - It is newer: performance has not processed that signal yet. The candidate waits and rules 1 and 2
   decide when the signal arrives.
 - Telemetry cannot answer: the candidate waits and the question is asked again (see
@@ -118,15 +131,36 @@ Performance asks telemetry for the latest sample of the tag:
 
 ### 4. A planned stop closes at E
 
-- The run mode can be read: as today, a stopped machine gets a stop opened at E.
-- It cannot be read: a "check after planned stop" record `{ since: E }` is left under its own key, apart
-  from the debounce candidate. Once telemetry answers, the history since E (`state-durations`) decides:
+The run-mode tag comes from work-center; a work center it names no run-mode tag for is not
+monitored, and the close leaves nothing, as today. When work-center cannot answer, the work center's
+cursor names the tag; with no cursor either, the close logs `planned_stop.run_mode_unmonitored` (warn)
+and leaves nothing.
+
+- The run mode can be read: as today, a stopped machine gets a stop opened at E. Telemetry's answer
+  decides only if it saw every processed sample, as the tick's does (rule 5): the close reads the
+  tag's cursor before it asks, and opens the stop under the tag's lock only while the cursor has not
+  moved. A running signal processed while it asked would otherwise leave a stop at E that no running
+  signal closes. When the cursor has moved, the close leaves the check below instead.
+- It cannot be read, or work-center could not name the tag: a "check after planned stop" record
+  `{ since: E }` is left under its own key, apart from the debounce candidate. Once telemetry answers,
+  the history since E (`state-durations`) decides:
   - stopped at E: the stop `[E, first running signal]` is recorded, or opened at E if the machine is
-    still stopped;
+    still stopped. The next planned stop that started after E ends the stop at its start, as that
+    start would have closed it had it been open;
   - running at E: nothing.
 
   As today, no debounce applies to this check. If telemetry does not know the tag, the check is dropped
   with a warning log, as in rule 3.
+- One key holds one check, so a check write keeps the earliest pending E, in one Redis step: it writes
+  when no check is stored or when the stored one waits on a later E. Planned stops such as changeovers
+  can close twice within one outage, and a late signal of rule 1 can leave an earlier E than the
+  pending one; overwriting or refusing either check would lose a stop. Deciding the check at E hands
+  the key on, in the same compare-and-set that removes the record: the next planned stop that closed
+  after E gets a fresh check at its end, with 25 hours of its own. A check handed to a close that could
+  read the run mode records the same stop again, which the unique start index refuses.
+- The planned stop is closed already when its run mode is checked, so a failure that leaves no check
+  behind, such as Redis refusing the write, does not fail the close. It is logged at error level
+  (`planned_stop.run_mode_check_failed`), because a stop may be lost.
 - In both cases the stop opened at E has no debounce: a running signal closes it however short, so the
   check that opens the stop and the check that already sees the running signal record the same stop.
 
@@ -135,20 +169,23 @@ Performance asks telemetry for the latest sample of the tag:
 The tick and the rules take turns per tag. Every state change of one work center and run-mode tag
 happens under one lock per `(workCenterId, runModeTagId)`, in the performance process. The lock covers:
 
-- rule 1's candidate write;
+- rule 1's candidate write, or its check after a planned stop;
 - rule 2's decision;
 - the cursor update, with its guard checked again, so the cursor only moves forward;
-- the tick's decide-and-write.
+- the tick's decide-and-write;
+- the planned stop's close: its stop at E, or its check (rule 4).
 
 Telemetry is never asked under the lock. The tick asks first. A replay (rule 6) also asks first, and
-each sample it replays then takes the lock for its own decision.
+each sample it replays then takes the lock for its own decision. The close asks first as well. The
+lock is not re-entrant: a writer that holds it writes its check without taking it again.
 
 The tick decides only from an answer that saw every processed sample. It reads the tag's cursor before
 it asks telemetry. After the answer it takes the lock, and decides only when its record still has the
 same `since` and the cursor has not moved. Otherwise it leaves the record for the next tick, with no
 attempt counted and no log line. Without this check, an answer computed before telemetry stored a
 running signal that performance processed meanwhile could open a stop at T0, or at E for the check
-after a planned stop, that no running signal would close.
+after a planned stop, that no running signal would close. A check replaced by an earlier one while
+the tick asked (rule 4) moves no cursor; the same `since` is what keeps the tick from deciding it.
 
 A unique index on `(workCenterId, startAt)` for run-mode stops refuses a second write of the same stop,
 such as a decision made again after a failure part way. That second write counts as already recorded.
@@ -191,11 +228,16 @@ If the tick runs first at 10:10, it sees the newer 10:05 record, waits, and the 
 
 Covers the debounce candidate and the check after a planned stop.
 
-- When a service cannot answer, the decision waits. The question is asked again after 1, 2, 4, 8 and 16 s,
-  then every 30 s. The tick still runs every second and skips records whose next attempt has not come.
-  The attempt count and the next attempt time live in the Redis record.
-- Logs mark changes, not attempts: a warning on the first deferral (`run_mode.decision.deferred`) and an
-  info line with the time waited once it is decided (`run_mode.decision.resolved`).
+- When telemetry cannot answer, or MongoDB or Redis fails while the decision is made or written, the
+  decision waits. The question is asked again after 1, 2, 4, 8 and 16 s, then every 30 s. The tick
+  still runs every second and skips records whose next attempt has not come. The attempt count and the
+  next attempt time live in the Redis record.
+- Logs mark changes, not attempts: a warning on the first deferral (`run_mode.decision.deferred`, with
+  the cause) and an info line with the time waited once it is decided (`run_mode.decision.resolved`).
+  The tick's telemetry requests log no line of their own at warn.
+- When Redis cannot list the pending decisions, the tick logs `run_mode.debounce_tick.scan_failed`
+  (warn) once, when the listing starts failing, and `run_mode.debounce_tick.scan_recovered` (info)
+  once, when it works again. The tick keeps ticking meanwhile.
 - A record still undecided after 24 hours is dropped with an error log
   (`run_mode.decision.abandoned`), because a stop may have been lost. A 25-hour Redis TTL only clears
   orphaned keys.
@@ -320,7 +362,8 @@ the decision rules, with whatever signals survived.
   - `runmode:candidate:{workCenterId}:{runModeTagId}` gains `attempts` and `nextAttemptAt`; its TTL
     becomes 25 hours.
   - New `runmode:after-planned:{workCenterId}:{runModeTagId}`:
-    `{ since, attempts, nextAttemptAt }`, same TTL.
+    `{ since, attempts, nextAttemptAt }`, same TTL. It holds the earliest pending E; a decided check
+    hands the key to the next planned stop that closed after E (rule 4).
 - **MongoDB:** unique index on unplanned stops `{ workCenterId: 1, startAt: 1 }` with the partial filter
   `{ source: 'run_mode' }`. The product is not released, so there is no migration; a local database that
   already holds two run-mode stops with the same start must be cleaned before the index can build.
@@ -336,12 +379,12 @@ the decision rules, with whatever signals survived.
 
 | Component | Change |
 |---|---|
-| `performance/src/modules/run-mode/run-mode.processor.ts` | Rules 1, 2 and 6, deleting a stop shorter than D, the replay loop rule 6 and the reconciler share, `now` parameter |
+| `performance/src/modules/run-mode/run-mode.processor.ts` | Rules 1, 2 and 6, deleting a stop shorter than D, the replay loop rule 6 and the reconciler share, `now` parameter; a planned stop that has closed since covers a late signal; rule 4 at the close, the check's end at the next planned stop's start and its handover |
 | `performance/src/modules/run-mode/run-mode.debounce-tick.ts` | Rule 3, after-planned checks, retry schedule, 24-hour limit |
 | `performance/src/modules/run-mode/run-mode.reconciler.ts` | Retry per work center in the background; replays through the shared loop |
 | `performance/src/lib/internal-api/run-mode-telemetry.client.ts` | State-durations segments in the shape telemetry answers (`state`, `start`, `end`) |
-| `performance/src/modules/planned-stop/planned-stop.service.ts` | Rule 4: leave a check when the run mode cannot be read |
-| `performance/src/modules/unplanned-stop/` | Insert a closed run-mode stop, unique index, duplicate counts as recorded |
+| `performance/src/modules/planned-stop/planned-stop.service.ts` | Rule 4: the run-mode tag from work-center or the cursor; leave a check when the run mode cannot be read; a failed check does not fail the close |
+| `performance/src/modules/unplanned-stop/` | Insert a closed run-mode stop, unique index, duplicate counts as recorded; no close ends a stop before it starts |
 | `performance/src/jobs/subscribers.ts` | Read work-center before changing the map, full refresh with retries; pass `previousOccurredAt` on |
 | `performance/src/lib/internal-api/run-mode-monitors.client.ts` | Throw when work-center cannot answer |
 | `telemetry/src/lib/mqtt.ts`, telemetry config | Client id and session expiry from config; dropped-message check on connect |
@@ -380,8 +423,12 @@ production passes the real time.
    `[E, first running signal]` and running at E records nothing. A stop opened at E, by the close that
    reads the run mode or by the check, closes at a later running signal however short. When telemetry
    answers before it has stored a running signal from before E that the broker still holds, the stop
-   opened at E is deleted once that signal arrives, and a stopped signal after it opens a stop again
-   through rule 1.
+   opened at E is deleted once that signal arrives, and a stopped signal after it opens a stop again:
+   through rule 1 after E, through the check at E before E. Two planned stops that close while
+   telemetry is down each get their end decided; a machine that stood through the second gets
+   `[E1, start of the second]` and `[E2, first running signal]`. A running signal processed while the
+   close asks telemetry leaves the check instead of a stop at E. A stopped signal processed after the
+   planned stop that covered it closed leaves the check at its end, whichever rule meets it.
 8. Retries come after 1, 2, 4 … 30 s; only the deferred and resolved lines are logged; after 24 hours the
    record is dropped with an error log.
 9. Work-center is down on `work_center.updated`: the old mapping stays and signals keep being processed;

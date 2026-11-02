@@ -10,6 +10,7 @@ import {
   recordClosedFromRunMode,
 } from '../unplanned-stop/unplanned-stop.service.js'
 import {
+  afterPlannedCheck,
   deferDecision,
   deleteDecision,
   dropDecisionOfUnknownTag,
@@ -18,6 +19,7 @@ import {
   readDecision,
   readDueDecision,
   resolveDecision,
+  writeCheckIfEarlier,
   writeDecisionIfAbsent,
 } from './run-mode.decisions.js'
 import { withTagLock } from './run-mode.lock.js'
@@ -33,14 +35,30 @@ export interface RunModeSample {
   previousOccurredAt?: Date | null
 }
 
-async function plannedStopCovers(workCenterId: string, at: Date): Promise<boolean> {
-  const hit = await PlannedStop.exists({
+// A planned stop covered T when its planned window holds T and it had not closed by T: the answer
+// a sample at T got when it happened, however late it is processed. endedAt is null while that
+// planned stop is still planned or active, and its end once it has closed (the earliest, should
+// several have covered T): the check at that end then decides from the history whether the machine
+// still stood there
+async function plannedStopCovering(
+  workCenterId: string,
+  at: Date,
+): Promise<{ endedAt: Date | null } | null> {
+  const covering = await PlannedStop.find({
     workCenterId: new Types.ObjectId(workCenterId),
-    status: { $in: ['planned', 'active'] },
     plannedStartAt: { $lte: at },
     plannedEndAt: { $gt: at },
+    $or: [
+      { status: { $in: ['planned', 'active'] } },
+      { status: 'closed', actualEndAt: { $gt: at } },
+    ],
   })
-  return Boolean(hit)
+    .select({ status: 1, actualEndAt: 1 })
+    .sort({ actualEndAt: 1 })
+    .lean()
+  if (covering.length === 0) return null
+  if (covering.some(stop => stop.status !== 'closed')) return { endedAt: null }
+  return { endedAt: covering[0].actualEndAt ?? null }
 }
 
 async function updateCursor(sample: RunModeSample): Promise<void> {
@@ -167,8 +185,13 @@ export async function replayStoredSamples(
   return { replayed, complete: false }
 }
 
+// Rules 1 and 2 run under the tag's lock, so the check they leave is written without taking it
 async function handleStopped(sample: RunModeSample): Promise<void> {
-  if (await plannedStopCovers(sample.workCenterId, sample.occurredAt)) return
+  const covering = await plannedStopCovering(sample.workCenterId, sample.occurredAt)
+  if (covering) {
+    if (covering.endedAt) await writeCheckIfEarlier(sample, covering.endedAt)
+    return
+  }
 
   const policy = await resolveForWorkCenter(sample.workCenterId)
   if (policy.runModeDebounceMs === 0) {
@@ -191,11 +214,13 @@ async function handleRunning(sample: RunModeSample): Promise<void> {
   if (candidate) {
     const firstStoppedAt = new Date(candidate.since)
     const stoppedMs = sample.occurredAt.getTime() - firstStoppedAt.getTime()
-    if (
-      stoppedMs >= candidate.debounceMs &&
-      !(await plannedStopCovers(sample.workCenterId, firstStoppedAt))
-    ) {
-      await recordClosedFromRunMode(sample.workCenterId, firstStoppedAt, sample.occurredAt)
+    if (stoppedMs >= candidate.debounceMs) {
+      const covering = await plannedStopCovering(sample.workCenterId, firstStoppedAt)
+      if (!covering) {
+        await recordClosedFromRunMode(sample.workCenterId, firstStoppedAt, sample.occurredAt)
+      } else if (covering.endedAt) {
+        await writeCheckIfEarlier(sample, covering.endedAt)
+      }
     }
     if (await deleteDecision('debounce', sample.workCenterId, sample.runModeTagId)) {
       logDecisionResolved(sample, candidate, new Date())
@@ -279,8 +304,11 @@ export async function confirmCandidate(
       if (latest.value >= 1 || new Date(latest.occurredAt).getTime() !== firstStoppedAt.getTime()) {
         return
       }
-      if (!(await plannedStopCovers(target.workCenterId, firstStoppedAt))) {
+      const covering = await plannedStopCovering(target.workCenterId, firstStoppedAt)
+      if (!covering) {
         await openUnplannedFromRunMode(target.workCenterId, firstStoppedAt, candidate.debounceMs)
+      } else if (covering.endedAt) {
+        await writeCheckIfEarlier(target, covering.endedAt)
       }
       await resolveDecision(target, candidate, now)
     },
@@ -315,15 +343,81 @@ export async function confirmAfterPlannedCheck(
       const [atEnd, ...later] = history.segments
       if (atEnd && new Date(atEnd.start).getTime() === endedAt.getTime() && atEnd.state < 1) {
         const running = later.find(segment => segment.state >= 1)
-        if (running) {
-          await recordClosedFromRunMode(target.workCenterId, endedAt, new Date(running.start))
+        let endAt = running ? new Date(running.start) : null
+        // The next planned stop's start would have closed the stop, had it been open then
+        const nextStart = await nextPlannedStopStart(target.workCenterId, endedAt)
+        if (nextStart && (!endAt || nextStart.getTime() < endAt.getTime())) endAt = nextStart
+        if (endAt) {
+          await recordClosedFromRunMode(target.workCenterId, endedAt, endAt)
         } else {
           await openUnplannedFromRunMode(target.workCenterId, endedAt)
         }
       }
-      await resolveDecision(target, check, now)
+      // One key holds one check, so a planned stop that closed after E could not leave its own
+      // while this one waited: the key goes on to it
+      const nextEnd = await nextPlannedStopEnd(target.workCenterId, endedAt)
+      const next = nextEnd ? afterPlannedCheck(nextEnd) : undefined
+      await resolveDecision(target, check, now, next)
     },
   )
+}
+
+// The start of the work center's first planned stop that started after E
+async function nextPlannedStopStart(workCenterId: string, after: Date): Promise<Date | null> {
+  const next = await PlannedStop.findOne({
+    workCenterId: new Types.ObjectId(workCenterId),
+    status: { $in: ['active', 'closed'] },
+    actualStartAt: { $gt: after },
+  })
+    .sort({ actualStartAt: 1 })
+    .select({ actualStartAt: 1 })
+    .lean()
+  return next?.actualStartAt ?? null
+}
+
+// The end of the work center's first planned stop that closed after E
+async function nextPlannedStopEnd(workCenterId: string, after: Date): Promise<Date | null> {
+  const next = await PlannedStop.findOne({
+    workCenterId: new Types.ObjectId(workCenterId),
+    status: 'closed',
+    actualEndAt: { $gt: after },
+  })
+    .sort({ actualEndAt: 1 })
+    .select({ actualEndAt: 1 })
+    .lean()
+  return next?.actualEndAt ?? null
+}
+
+// Rule 4 as the planned stop closes at E: a stopped machine gets its stop at E. Telemetry's answer
+// decides only if it saw every sample processed here, as the tick's does: a running signal
+// processed while telemetry was asked would leave a stop at E that nothing closes. Otherwise, and
+// when the run mode cannot be read, the check at E decides from the history
+export async function checkRunModeAfterPlannedStop(
+  target: ConfirmationTarget,
+  endedAt: Date,
+): Promise<void> {
+  const cursorBefore = await readCursor(target.workCenterId, target.runModeTagId)
+  // undefined when telemetry cannot answer; the request logs why
+  const latest = await getLatest(target.runModeTagId).catch(() => undefined)
+  // Telemetry does not know the tag
+  if (latest === null) return
+  await withTagLock(target, async () => {
+    const cursor = await readCursor(target.workCenterId, target.runModeTagId)
+    if (latest && cursorAt(cursor) === cursorAt(cursorBefore)) {
+      if (latest.value < 1) await openUnplannedFromRunMode(target.workCenterId, endedAt)
+      return
+    }
+    await writeCheckIfEarlier(target, endedAt)
+  })
+}
+
+// Rule 4 as the planned stop closes at E when the run mode cannot be read at all, such as when
+// work-center cannot name the tag
+export async function leaveAfterPlannedCheck(
+  target: ConfirmationTarget,
+  endedAt: Date,
+): Promise<void> {
+  await withTagLock(target, () => writeCheckIfEarlier(target, endedAt))
 }
 
 export interface MonitoredWorkCenter {
@@ -344,6 +438,18 @@ export async function listMonitoredFromCursors(): Promise<MonitoredWorkCenter[]>
 export async function resolveRunModeTagId(workCenterId: string): Promise<string | null> {
   const wc = await getWorkCenter(workCenterId)
   return wc?.tagBindings?.runModeTagId ?? null
+}
+
+// The tag of the work center's latest processed run-mode signal, for when work-center cannot
+// answer
+export async function runModeTagIdFromCursor(workCenterId: string): Promise<string | null> {
+  const cursor = await RunModeProcessingState.findOne({
+    workCenterId: new Types.ObjectId(workCenterId),
+  })
+    .sort({ lastProcessedOccurredAt: -1 })
+    .select({ runModeTagId: 1 })
+    .lean()
+  return cursor ? cursor.runModeTagId.toString() : null
 }
 
 export function logSkippedSample(sample: RunModeSample, reason: string): void {

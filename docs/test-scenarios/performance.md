@@ -148,18 +148,80 @@
 ---
 
 ## PlannedStop.closeWithoutRunMode
-> target: performance/src/modules/planned-stop/planned-stop.service.test.ts
+> target: performance/src/modules/run-mode/__contract__/run-mode-after-planned-stop.contract.test.ts
 > plan-task: 6
 > spec: Decision rules 4 (the check is left); first half of the scenario carried by RunMode.checkAfterPlannedStop
+> note: the plan named planned-stop.service.test.ts; the check is a Redis record behind the raw client (Ruling 10), so these tests run in the contract suite on real Redis and MongoDB (Task 6, item 8)
 
 ### happy path
-- [CRITICAL] a planned stop closes at E and telemetry cannot be reached to read the run mode → the check `{ kind: 'after_planned', since: E (ISO 8601 UTC with Z), debounceMs: 0, attempts: 0, nextAttemptAt: null }` is stored under `runmode:after-planned:{workCenterId}:{runModeTagId}` with a TTL of 25 hours, and no stop is opened at that moment
+- [CRITICAL] a planned stop closes at E and telemetry cannot be reached to read the run mode → the check `{ kind: 'after_planned', since: E (ISO 8601 UTC with Z), debounceMs: 0, attempts: 0, nextAttemptAt: null }` is stored under `runmode:after-planned:{workCenterId}:{runModeTagId}` with a TTL of 25 hours, and no stop is opened at that moment; the only warn line is the failed request's `internal_api.telemetry.fetch_failed` with its status
 - [HIGH] work-center cannot be reached when the planned stop closes → the run-mode tag is taken from the work center's `RunModeProcessingState` (its cursor) and the check is stored for that tag
 
 ### constraints
 - the run mode can be read when the planned stop closes → no check is stored (a stopped machine gets its stop opened at E, as before)
 - [HIGH] a debounce candidate of the same work center and tag is pending when the check is stored → the candidate stays untouched (the check has its own key)
-- neither work-center nor a cursor yields a run-mode tag → `planned_stop.run_mode_unmonitored` is logged at warn level, nothing is stored, and closing the planned stop completes normally
+- neither work-center nor a cursor yields a run-mode tag → `planned_stop.run_mode_unmonitored` is logged at warn level (after work-center's own `internal_api.work_center.fetch_failed`), nothing is stored, and closing the planned stop completes normally
+- [HIGH] Redis refuses the check when the planned stop closes while telemetry cannot be reached → the close completes and returns the closed planned stop, no check is stored, and `planned_stop.run_mode_check_failed` is logged at error level with the planned stop, the work center, its `actualEndAt` and Redis's error (a stop may be lost)
+
+### state transitions
+- [CRITICAL] a planned stop from 10:00 covers 0@10:02 and closes at E = 10:30 while telemetry cannot answer; the tick at 10:31 still cannot read the history (the check stays, `attempts` 1); telemetry comes back having stored 1@10:34 → the tick at 10:40 records [10:30, 10:34] and deletes the check, and the later delivery of 1@10:34 changes nothing
+
+---
+
+## RunMode.closeReadsRunMode
+> target: performance/src/modules/run-mode/__contract__/run-mode-after-planned-stop.contract.test.ts
+> plan-task: 6
+> spec: Decision rules 4 (the run mode can be read) and 5 (an answer that saw every processed sample)
+
+### edge cases
+- [CRITICAL] a planned stop from 10:00 covers 0@10:02 and closes at E = 10:30; while the close asks telemetry for the latest sample, 1@10:32 is processed, and telemetry answers with 0@10:02, computed before it stored 1@10:32 → the close opens no stop (it would stay open: the running signal is processed already) and leaves the check since 10:30; the tick at 10:33 records [10:30, 10:32] and deletes the check
+- [HIGH] the same with the running signal at 10:28, before E → the close opens no stop and leaves the check since 10:30; the tick at 10:33 records nothing and deletes the check
+
+---
+
+## RunMode.signalInClosedPlannedStop
+> target: performance/src/modules/run-mode/__contract__/run-mode-after-planned-stop.contract.test.ts
+> plan-task: 6
+> spec: Decision rules 1-3 (a planned stop covers T when its planned window holds T and it had not closed by T)
+
+### edge cases
+- [CRITICAL] D = 0, cursor at 1@09:00, a planned stop from 10:00 to 11:00 has closed at E = 10:30, then 0@10:05 is processed (from a backlog) → no stop opens inside the planned stop and the check since 10:30 is stored; the tick at 10:31 opens the stop at 10:30 and deletes the check
+- [HIGH] candidate since 10:05 (D = 60 s), a planned stop from 10:00 to 11:00 is entered afterwards and has closed at 10:30, then 1@10:40 arrives → no stop [10:05, 10:40], the candidate is deleted and the check since 10:30 is stored; the tick at 10:41 records [10:30, 10:40]
+- [HIGH] the same candidate and planned stop, and the tick at 10:31 finds the 10:05 stopped sample still the tag's latest → no stop opens at 10:05, the candidate is deleted and the check since 10:30 is stored; the tick at 10:31:01 opens the stop at 10:30
+- [CRITICAL] performance lags telemetry: a planned stop from 10:00 covers 0@10:02, telemetry has stored 1@10:10 and 0@10:20 when the planned stop closes at E = 10:30, so the close reads 0@10:20 and opens the stop at 10:30; 1@10:10 is then processed and deletes that stop (rule 2), and 0@10:20 is processed → no candidate, the check since 10:30 is stored, and the tick at 10:31 opens the stop at 10:30 again
+
+---
+
+## RunMode.oneCheckPerTag
+> target: performance/src/modules/run-mode/__contract__/run-mode-after-planned-stop.contract.test.ts
+> plan-task: 6
+> spec: Decision rules 4 (the earliest pending E, the end at the next planned stop's start, the handover)
+
+### state transitions
+- [CRITICAL] telemetry cannot answer while planned stops [10:00, 10:30] and [10:40, 10:50] close; the machine stood from 10:05 to 10:35 and from 10:45 to 10:55 → after both closes the check since 10:30 is stored; once telemetry answers, the tick at 10:56 records [10:30, 10:35] and leaves the check since 10:50, and the tick at 10:56:01 records [10:50, 10:55] and deletes the check
+- [CRITICAL] the same planned stops while the machine stood from 10:05 until 11:00 → the ticks record [10:30, 10:40] (the start of the second planned stop ends it) and [10:50, 11:00]
+- [HIGH] the first planned stop closes at 10:30 while telemetry answers without the machine's 0@10:05 (the broker still holds it), so the close leaves nothing; the second closes at 10:50 while telemetry cannot answer and leaves the check since 10:50; then the backlog 0@10:05, 1@10:35, 0@10:45, 1@10:55 is processed → 0@10:05 replaces the pending check with the check since 10:30 (0@10:45 cannot replace it with the later 10:50), and the ticks record [10:30, 10:35] and [10:50, 10:55]
+- [HIGH] the check since 10:30 has waited 23 hours (2 of its 25 hours of TTL left) when it is decided → the check since 10:50 it hands over has a TTL of 25 hours of its own (above 89 900 s)
+
+---
+
+## RunMode.checkReplacedWhileAsked
+> target: performance/src/modules/run-mode/__contract__/run-mode-after-planned-stop.contract.test.ts
+> plan-task: 6
+> spec: Decision rules 5 (the tick decides only while its record has the same `since`)
+
+### edge cases
+- [CRITICAL] the machine stands since 10:10; a planned stop from 10:35 to 10:40 closed while telemetry could not answer and left the check since 10:40; the tick at 10:41 asks for the history since 10:40, and meanwhile a planned stop from 10:00 to 10:30, entered after the fact, closes while telemetry cannot answer: its check since 10:30 replaces the pending one and no sample moves the cursor; then telemetry answers → the tick opens nothing and the check since 10:30 stays as written; the next ticks record [10:30, 10:35] and open the stop at 10:40
+
+---
+
+## PlannedStop.retroactiveStart
+> target: performance/src/modules/planned-stop/planned-stop.service.test.ts
+> plan-task: 6
+> spec: Decision rules 2 (no close ends a stop before it starts)
+
+### edge cases
+- [HIGH] a run-mode stop opened at 12:05 is open and a planned stop is started with `actualStartAt` 12:00 → that stop stays open (`endAt` null), to close at its own running signal: no stop ends before it starts
 
 ---
 
