@@ -20,6 +20,7 @@ import {
   resolveDecision,
   writeDecisionIfAbsent,
 } from './run-mode.decisions.js'
+import { withTagLock } from './run-mode.lock.js'
 import { RunModeProcessingState } from './run-mode-processing-state.model.js'
 
 export interface RunModeSample {
@@ -58,10 +59,12 @@ async function updateCursor(sample: RunModeSample): Promise<void> {
   )
 }
 
-async function readCursor(
-  workCenterId: string,
-  runModeTagId: string,
-): Promise<{ lastProcessedOccurredAt: Date; lastProcessedValue: number } | null> {
+interface Cursor {
+  lastProcessedOccurredAt: Date
+  lastProcessedValue: number
+}
+
+async function readCursor(workCenterId: string, runModeTagId: string): Promise<Cursor | null> {
   const doc = await RunModeProcessingState.findOne({
     workCenterId: new Types.ObjectId(workCenterId),
     runModeTagId: new Types.ObjectId(runModeTagId),
@@ -75,13 +78,17 @@ async function readCursor(
   }
 }
 
+// The cursor guard: a sample at or before the last one processed was decided already
+const isProcessed = (sample: RunModeSample, cursor: Cursor | null): boolean =>
+  cursor !== null && sample.occurredAt.getTime() <= cursor.lastProcessedOccurredAt.getTime()
+
 export async function handleRunModeSample(sample: RunModeSample): Promise<void> {
   const cursor = await readCursor(sample.workCenterId, sample.runModeTagId)
-  if (cursor && sample.occurredAt.getTime() <= cursor.lastProcessedOccurredAt.getTime()) {
-    return
-  }
+  if (isProcessed(sample, cursor)) return
 
-  // Telemetry stored samples after the cursor that were never processed here; they come first
+  // Telemetry stored samples after the cursor that were never processed here; they come first.
+  // The replay asks telemetry outside the tag's lock, and each sample it replays takes the lock
+  // for its own decision
   if (
     cursor &&
     sample.previousOccurredAt &&
@@ -90,13 +97,17 @@ export async function handleRunModeSample(sample: RunModeSample): Promise<void> 
     await replayGap(sample, cursor.lastProcessedOccurredAt)
   }
 
-  if (sample.value < 1) {
-    await handleStopped(sample)
-  } else {
-    await handleRunning(sample)
-  }
-
-  await updateCursor(sample)
+  await withTagLock(sample, async () => {
+    // Another path may have processed this sample, or a later one, while this one waited: the
+    // cursor only moves forward
+    if (isProcessed(sample, await readCursor(sample.workCenterId, sample.runModeTagId))) return
+    if (sample.value < 1) {
+      await handleStopped(sample)
+    } else {
+      await handleRunning(sample)
+    }
+    await updateCursor(sample)
+  })
 }
 
 // A sample that failed and was overtaken before its redelivery, a dead letter, a failed publish or
@@ -205,7 +216,10 @@ export interface ConfirmationTarget {
 const DECISION_REQUEST = { failureLogLevel: 'debug' } as const
 
 // One attempt of the tick at a pending decision: telemetry is asked and its answer decides. Any
-// failure, of telemetry, MongoDB or Redis, defers the decision to its next attempt
+// failure, of telemetry, MongoDB or Redis, defers the decision to its next attempt. The answer
+// decides only if it saw every sample processed here: the cursor is read before telemetry is
+// asked, and under the tag's lock the decision is made only while the record and the cursor are
+// as they were. Otherwise the next tick asks again, with no attempt counted
 async function attemptDecision<T>(
   target: ConfirmationTarget,
   decision: PendingDecision,
@@ -214,11 +228,30 @@ async function attemptDecision<T>(
   decide: (answer: T) => Promise<void>,
 ): Promise<void> {
   try {
-    await decide(await ask())
+    const cursorBefore = await readCursor(target.workCenterId, target.runModeTagId)
+    const answer = await ask()
+    await withTagLock(target, async () => {
+      if (await unchangedSinceAsked(target, decision, cursorBefore)) await decide(answer)
+    })
   } catch (err) {
-    await deferDecision(target, decision, now, err)
+    await withTagLock(target, () => deferDecision(target, decision, now, err))
   }
 }
+
+// The record still waits on the same stop, and no sample was processed since the cursor was read
+async function unchangedSinceAsked(
+  target: ConfirmationTarget,
+  decision: PendingDecision,
+  cursorBefore: Cursor | null,
+): Promise<boolean> {
+  const stored = await readDecision(decision.kind, target.workCenterId, target.runModeTagId)
+  if (stored?.since !== decision.since) return false
+  const cursor = await readCursor(target.workCenterId, target.runModeTagId)
+  return cursorAt(cursor) === cursorAt(cursorBefore)
+}
+
+const cursorAt = (cursor: Cursor | null): number | null =>
+  cursor ? cursor.lastProcessedOccurredAt.getTime() : null
 
 // Rule 3: once D has run out, a candidate whose stopped sample is still the tag's latest one in
 // telemetry has stood since T0, and its stop opens at T0

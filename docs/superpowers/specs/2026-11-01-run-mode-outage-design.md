@@ -132,8 +132,26 @@ Performance asks telemetry for the latest sample of the tag:
 
 ### 5. Two writers, one stop
 
-The tick and rule 2 can try to write the same stop at once. A unique index on `(workCenterId, startAt)`
-for run-mode stops refuses the second write, which then counts as already recorded.
+The tick and the rules take turns per tag. Every state change of one work center and run-mode tag
+happens under one lock per `(workCenterId, runModeTagId)`, in the performance process. The lock covers:
+
+- rule 1's candidate write;
+- rule 2's decision;
+- the cursor update, with its guard checked again, so the cursor only moves forward;
+- the tick's decide-and-write.
+
+Telemetry is never asked under the lock. The tick asks first. A replay (rule 6) also asks first, and
+each sample it replays then takes the lock for its own decision.
+
+The tick decides only from an answer that saw every processed sample. It reads the tag's cursor before
+it asks telemetry. After the answer it takes the lock, and decides only when its record still has the
+same `since` and the cursor has not moved. Otherwise it leaves the record for the next tick, with no
+attempt counted and no log line. Without this check, an answer computed before telemetry stored a
+running signal that performance processed meanwhile could open a stop at T0, or at E for the check
+after a planned stop, that no running signal would close.
+
+A unique index on `(workCenterId, startAt)` for run-mode stops refuses a second write of the same stop,
+such as a decision made again after a failure part way. That second write counts as already recorded.
 
 ### 6. A signal whose predecessor was never processed
 
@@ -222,6 +240,9 @@ the same rule as `closeIfOpen` and publishes the opened and then the closed even
 - An operator may open a manual stop during an outage that overlaps the run-mode stop recorded late.
   The OEE already clips overlapping stops and reports `overlapping_stop_records_clipped`.
 - A broker crash loses the messages it received since its last autosave.
+- One performance process writes the run-mode state, the writer rule 6 already assumes. The lock that
+  makes the tick and the rules take turns (rule 5) lives in that process. A second performance
+  instance would need a lock shared between processes, or one writer chosen among them.
 - A telemetry outage longer than the target, or a load above the design load, fills the queue ceiling
   and the broker drops messages. This is detected and alerted (see
   [When an outage runs longer](#when-an-outage-runs-longer)), not prevented.

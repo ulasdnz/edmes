@@ -35,6 +35,7 @@ import {
   writeDecision,
 } from '../run-mode.decisions.js'
 import { handleRunModeSample } from '../run-mode.processor.js'
+import { reconcileOnBoot } from '../run-mode.reconciler.js'
 import { RunModeProcessingState } from '../run-mode-processing-state.model.js'
 
 // ── Stub servers: each endpoint answers, fails with 500 or never answers ─────
@@ -1114,6 +1115,39 @@ describe('Samples performance missed are replayed from telemetry first (rule 6)'
     expect(await storedCandidate(machine)).toEqual(candidateSince('10:00:00'))
     expect((await cursorOf(machine))?.lastProcessedOccurredAt).toEqual(at('10:00:00'))
   }, 15_000)
+
+  // Two paths handle the tag at once: the stream's sample waits for its replay, outside the tag's
+  // lock, while the boot reconciler replays the same samples and a later one
+  it('decides each sample once and never moves the cursor back when another path handles the tag meanwhile', async () => {
+    const machine = await machineWithDebounce(60_000)
+    await deliver(machine, recorded(machine, 0, '10:00:00'))
+    recorded(machine, 1, '10:05:00')
+    const stoppedAgain = recorded(machine, 0, '10:10:00')
+    const runningAgain = recorded(machine, 1, '10:20:00')
+    stubs.stateDurations.mode = 'hang'
+    const delivered = deliver(machine, stoppedAgain)
+    await vi.waitFor(() => expect(held.size).toBe(1))
+
+    stubs.stateDurations.mode = 'answer'
+    await reconcileOnBoot({ now: at('10:30:00'), monitored: [machine] })
+
+    const stops = [runModeStop('10:00:00', '10:05:00'), runModeStop('10:10:00', '10:20:00')]
+    expect(await stopsOf(machine)).toEqual(stops)
+    expect((await cursorOf(machine))?.lastProcessedOccurredAt).toEqual(at('10:20:00'))
+
+    releaseHeld(res => res.json({ data: stateDurations(res.req) }))
+    await delivered
+
+    expect(await stopsOf(machine)).toEqual(stops)
+    expect(await candidateKeys(machine)).toEqual([])
+    expect((await cursorOf(machine))?.lastProcessedOccurredAt).toEqual(at('10:20:00'))
+
+    // The later sample's own delivery comes after, and finds it decided
+    await deliver(machine, runningAgain)
+
+    expect(await stopsOf(machine)).toEqual(stops)
+    expect(await candidateKeys(machine)).toEqual([])
+  })
 })
 
 // ── Rule 3: the tick decides a candidate whose debounce has run out ──────────
@@ -1274,6 +1308,26 @@ describe('The tick and a running signal decide the same candidate (scenario 5)',
     expect(await stopsOf(machine)).toEqual([runModeStop('10:00:00', '10:05:00')])
     expect(await storedCandidate(machine)).toEqual(candidateSince('10:06:00'))
   })
+
+  // An answer telemetry computed before it stored the running sample still names T0; a stop opened
+  // from it now would stay open, as no running signal is left to close it
+  it('opens no stop when the running signal decides a short stop while telemetry is asked', async () => {
+    const machine = await machineWithDebounce(60_000)
+    await deliver(machine, recorded(machine, 0, '10:00:00'))
+    stubs.latest.mode = 'hang'
+    const pending = tick('10:01:00')
+    await vi.waitFor(() => expect(held.size).toBe(1))
+    const [question] = held
+    const answer = latestSample(question.req)
+
+    await deliver(machine, recorded(machine, 1, '10:00:20'))
+    releaseHeld(res => res.json({ data: answer }))
+    await pending
+
+    expect(await stopsOf(machine)).toEqual([])
+    expect(await candidateKeys(machine)).toEqual([])
+    expect(logs.lines()).toEqual([])
+  })
 })
 
 // ── Rule 4: the check after a planned stop ───────────────────────────────────
@@ -1399,6 +1453,52 @@ describe('The check after a planned stop decides once telemetry answers (scenari
     await deliver(machine, recorded(machine, 0, '10:40:00'))
 
     expect(await stopsOf(machine)).toEqual([openRunModeStop('10:40:00')])
+  })
+
+  // A planned stop from 10:00 covers 0@10:02 and closes at E = 10:30. The tick asks for the history
+  // since E, and the running sample is processed before telemetry's answer, computed without it,
+  // arrives
+  async function checkAskedWhileRunningArrives(runningAt: string) {
+    const machine = await machineWithDebounce(60_000)
+    const planned = await activePlannedStop(machine, '10:00:00', '11:00:00')
+    await deliver(machine, recorded(machine, 0, '10:02:00'))
+    await closePlannedStop(planned._id, '10:30:00')
+    await writeDecision(machine.workCenterId, machine.runModeTagId, afterPlannedSince('10:30:00'))
+    stubs.stateDurations.mode = 'hang'
+    const pending = tick('10:33:00')
+    await vi.waitFor(() => expect(held.size).toBe(1))
+    const [question] = held
+    const history = stateDurations(question.req)
+
+    await deliver(machine, recorded(machine, 1, runningAt))
+    releaseHeld(res => res.json({ data: history }))
+    await pending
+    stubs.stateDurations.mode = 'answer'
+    return machine
+  }
+
+  it('opens nothing from a history that missed a running signal processed meanwhile, and the next tick records the stop', async () => {
+    const machine = await checkAskedWhileRunningArrives('10:32:00')
+
+    expect(await stopsOf(machine)).toEqual([])
+    expect(await storedCheck(machine)).toEqual(afterPlannedSince('10:30:00'))
+
+    await tick('10:34:00')
+
+    expect(await stopsOf(machine)).toEqual([runModeStop('10:30:00', '10:32:00')])
+    expect(await storedCheck(machine)).toBeNull()
+  })
+
+  it('records nothing once the next tick sees the running signal before E that was processed meanwhile', async () => {
+    const machine = await checkAskedWhileRunningArrives('10:28:00')
+
+    expect(await stopsOf(machine)).toEqual([])
+    expect(await storedCheck(machine)).toEqual(afterPlannedSince('10:30:00'))
+
+    await tick('10:34:00')
+
+    expect(await stopsOf(machine)).toEqual([])
+    expect(await storedCheck(machine)).toBeNull()
   })
 })
 

@@ -75,6 +75,19 @@
 - [CRITICAL] the tick (the latest telemetry sample is the T0 stopped sample) and the running signal (T1 - T0 >= D) decide the same candidate at the same moment → exactly one run-mode stop with startAt = T0 exists, closed at T1, and neither writer fails (the second write counts as already recorded)
 - [CRITICAL] the tick has asked telemetry about the candidate, the running signal records [T0, T1] and deletes the candidate, then telemetry fails the tick's question → the candidate is not written back (the retry fields are written only while the stored record has the same `since`) and no deferral is logged
 - [CRITICAL] the tick has asked telemetry about candidate T0 = 10:00, the machine runs at 10:05 and stops again at 10:06 (a candidate since 10:06 is stored), then telemetry answers with the 10:00 stopped sample → [10:00, 10:05] stays the only stop and the candidate since 10:06 is kept (a decided record is deleted only while it has the same `since`)
+- [CRITICAL] the tick has asked telemetry about candidate T0 = 10:00 (D = 60 s), the running signal at 10:00:20 is processed meanwhile (no stop, the candidate deleted), then telemetry answers with the 10:00 stopped sample it computed before storing 10:00:20 → no stop is opened, none is open and no candidate is left: the tick decides only while its record has the same `since` and the cursor has not moved since before its request
+
+---
+
+## RunMode.tagLock
+> target: performance/src/modules/run-mode/run-mode.lock.test.ts
+> plan-task: 5
+> spec: Decision rules 5 (the tick and the rules take turns per tag)
+
+### constraints
+- [HIGH] three callers for one work center and run-mode tag → each runs only after the one before it has finished, in the order they came, even when a later one is ready first
+- a caller for another tag → runs while the first tag is held
+- [HIGH] a caller fails → the failure reaches that caller, and the next caller for the tag runs
 
 ---
 
@@ -129,6 +142,8 @@
 ### edge cases
 - [HIGH] a planned stop from 10:00 covers 0@10:02 and closes at E = 10:30, telemetry first answers while the machine's 1@10:25 still waits at the broker → the check opens a stop at 10:30; once 1@10:25 arrives that untouched stop is deleted and no stop remains
 - [HIGH] the same with D = 0, and 0@10:40 follows the late 1@10:25 → rule 1 opens a stop at 10:40, the only stop
+- [CRITICAL] a planned stop from 10:00 covers 0@10:02 and closes at E = 10:30, the tick at 10:33 asks for the history since E, 1@10:32 is processed meanwhile, then telemetry answers with the history it computed before storing 1@10:32 (stopped since E, no running signal) → that tick opens nothing and leaves the check as it was (no attempt counted); the tick at 10:34 records [10:30, 10:32] and deletes the check
+- [HIGH] the same with the running signal at 10:28, before E → that tick opens nothing, and the tick at 10:34 records nothing and deletes the check
 
 ---
 
@@ -344,6 +359,9 @@ Samples reach performance as telemetry publishes them, with `previousOccurredAt`
 - [HIGH] a sample of a tag without a cursor, whose predecessor was stored before the tag reached the map → telemetry is not asked
 - [HIGH] telemetry cannot answer during the replay → the sample fails and nothing is decided for it (no stop, the candidate as it was, the cursor where it was), and the failed request logs `internal_api.telemetry.fetch_failed` at warn with its status; once telemetry answers, the redelivered sample replays the gap and records [10:00, 10:05] and [10:10, 10:15]
 - [HIGH] Redis refuses the write of the second replayed sample's candidate → the sample fails, the first replayed sample keeps its stop and the cursor it advanced (10:05); the redelivered sample replays the rest
+
+### edge cases
+- [CRITICAL] cursor at 0@10:00, 1@10:05 never reaches performance, 0@10:10 arrives with `previousOccurredAt` 10:05 and its replay waits on telemetry, while the boot reconciler replays the tag up to 1@10:20 → [10:00, 10:05] and [10:10, 10:20] are each recorded once; once the waiting replay is answered, 0@10:10 is not decided again (no candidate is left) and the cursor stays at 10:20; the later delivery of 1@10:20 changes nothing
 
 ---
 
