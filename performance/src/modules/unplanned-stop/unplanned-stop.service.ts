@@ -118,14 +118,16 @@ export async function recordClosedFromRunMode(
 export async function closeIfOpen(
   workCenterId: string,
   endAt: Date,
-  options: { closedBy?: string } = {},
+  options: { closedBy?: string; startedAtOrBefore?: Date } = {},
 ): Promise<IUnplannedStop | null> {
   const wcObjectId = new Types.ObjectId(workCenterId)
   const update: Record<string, unknown> = { endAt }
   if (options.closedBy) update.closedBy = new Types.ObjectId(options.closedBy)
+  const filter: Record<string, unknown> = { workCenterId: wcObjectId, endAt: null }
+  if (options.startedAtOrBefore) filter.startAt = { $lte: options.startedAtOrBefore }
 
   const closed = await UnplannedStop.findOneAndUpdate(
-    { workCenterId: wcObjectId, endAt: null },
+    filter,
     { $set: update },
     { returnDocument: 'after' },
   )
@@ -157,16 +159,17 @@ export async function closeOnRunning(
   endAt: Date,
   debounceMs: number,
 ): Promise<IUnplannedStop | null> {
-  // One conditional delete, so a stop a user changes in the meantime is closed and kept
+  // One conditional delete, so a stop a user changes in the meantime is closed and kept. A late or
+  // replayed running signal never ends a stop that started after it, in either branch
   const deleted = await deleteStop({
     workCenterId: new Types.ObjectId(workCenterId),
     endAt: null,
     source: 'run_mode',
     updatedBy: null,
-    startAt: { $gt: new Date(endAt.getTime() - debounceMs) },
+    startAt: { $gt: new Date(endAt.getTime() - debounceMs), $lte: endAt },
   })
   if (deleted) return null
-  return closeIfOpen(workCenterId, endAt)
+  return closeIfOpen(workCenterId, endAt, { startedAtOrBefore: endAt })
 }
 
 export async function createManual(

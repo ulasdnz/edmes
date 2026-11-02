@@ -425,6 +425,41 @@ describe('A late running signal for a stop already open (scenario 6)', () => {
   })
 })
 
+// ── Rule 2: a late running signal never ends a stop that started after it ────
+
+describe('A late running signal never ends a stop that started after it (rule 2)', () => {
+  it("leaves an operator's manual stop opened after the signal open", async () => {
+    const machine = await machineWithDebounce(60_000)
+    await signal(machine, 0, '10:00:00')
+    // The operator opens a stop at 10:30, before the machine's 10:25 running signal arrives
+    const manual = await unplannedStopService.createManual(
+      { workCenterId: machine.workCenterId, startAt: at('10:30:00') },
+      userId,
+    )
+
+    await signal(machine, 1, '10:25:00')
+
+    expect(await stopsOf(machine)).toEqual([
+      runModeStop('10:00:00', '10:25:00'),
+      { source: 'manual', startAt: at('10:30:00'), endAt: null },
+    ])
+    expect((await UnplannedStop.findById(manual._id).lean())?.endAt).toBeNull()
+  })
+
+  it('leaves an untouched run-mode stop opened after the signal open', async () => {
+    const machine = await machineWithDebounce(60_000)
+    // A planned stop that closed at 10:30 opened it, before the machine's 10:25 running signal arrived
+    const open = await unplannedStopService.openFromRunMode(machine.workCenterId, at('10:30:00'))
+
+    await signal(machine, 1, '10:25:00')
+
+    expect(await stopsOf(machine)).toEqual([
+      { source: 'run_mode', startAt: at('10:30:00'), endAt: null },
+    ])
+    expect((await UnplannedStop.findById(open._id).lean())?.endAt).toBeNull()
+  })
+})
+
 // ── Review focus 4: the same stopped sample delivered twice ──────────────────
 
 describe('The same stopped sample delivered twice (review focus 4)', () => {
@@ -599,7 +634,7 @@ describe('A Redis error while a sample is handled fails the sample', () => {
       await expect(signal(machine, 1, '10:05:00')).rejects.toThrow(/NOPERM.*'del' command/)
     })
 
-    // The stop was written before the delete failed; the candidate is left and the sample unprocessed
+    expect(await stopsOf(machine)).toEqual([runModeStop('10:00:00', '10:05:00')])
     expect((await cursorOf(machine))?.lastProcessedOccurredAt).toEqual(at('10:00:00'))
     expect(await candidateKeys(machine)).toEqual([candidateKey(machine)])
 

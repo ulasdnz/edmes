@@ -92,6 +92,8 @@ check is the one place that uses the clock, because the absence of a signal prov
   stop that would close shorter than D, because the machine sent the running signal late, and no user
   has changed it (`updatedBy` is null), it is deleted instead of closed, through the same path as a
   manual delete. A stop a user has changed is closed and kept, so no operator input is lost.
+- An open stop that started after T1, such as an operator's stop opened before a late or replayed
+  running signal arrived, is neither closed nor deleted: no stop ends before it starts.
 
 ### 3. Tick, every second, for candidates whose D has run out
 
@@ -339,7 +341,7 @@ production passes the real time.
    duplicate.
 5. The tick and a running signal write the same candidate at once: one stop.
 6. The machine sends the running signal late: an untouched short stop is deleted; a stop an operator gave
-   a reason is closed and kept.
+   a reason is closed and kept; a stop that started after the signal, manual or run-mode, stays open.
 7. A planned stop closes while telemetry is down; once it is back, stopped at E records
    `[E, first running signal]` and running at E records nothing.
 8. Retries come after 1, 2, 4 … 30 s; only the deferred and resolved lines are logged; after 24 hours the

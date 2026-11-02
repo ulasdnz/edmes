@@ -84,6 +84,10 @@
 - [CRITICAL] untouched run-mode stop (updatedBy null) opened at 10:00 through `openFromRunMode`, D = 60 s, running signal at 10:00:20 (shorter than D) → the stop is deleted and no unplanned stop remains for the work center
 - [CRITICAL] run-mode stop a user has changed (updatedBy set, for example an operator gave it a reason) opened at 10:00, running signal at 10:00:20 → the stop is closed at 10:00:20 and kept, with the user's change intact
 
+### edge cases
+- [CRITICAL] candidate since 10:00, an operator opens a manual stop at 10:30, then the late running signal at 10:25 is processed → [10:00, 10:25] is recorded and the manual stop stays open (a running signal never ends a stop that started after it)
+- [HIGH] untouched run-mode stop opened at 10:30 (as a planned stop's close opens one), late running signal at 10:25 → the stop is neither deleted nor closed
+
 ---
 
 ## RunMode.checkAfterPlannedStop
@@ -268,6 +272,19 @@
 ### edge cases
 - [HIGH] candidate written with D = 60 s at T0 = 10:00, the policy debounce is then set to 300 s, running signal at 10:02 → the stop [10:00, 10:02] is recorded: the candidate keeps the debounce it started with
 - [HIGH] same candidate and policy change, the latest telemetry sample is the T0 stopped sample and the tick runs at T0 + 60 s → the tick opens the stop at T0 (the candidate's own D has run out; the new policy value does not apply to it)
+
+---
+
+## RunMode.redisErrorFailsTheSample
+> target: performance/src/modules/run-mode/__contract__/run-mode-outage.contract.test.ts
+> plan-task: 4
+> spec: Crashes and restarts (a sample is acknowledged only after it is processed)
+
+### constraints
+- [CRITICAL] Redis refuses the write of a stopped sample's candidate → the sample fails, no candidate and no cursor; the redelivered sample stores the candidate
+- [CRITICAL] Redis refuses the read of the candidate for a running sample → the sample fails, no stop, the cursor stays at T0 and the candidate is kept; the redelivered sample records [T0, T1]
+- [CRITICAL] Redis refuses the delete of the candidate after [10:00, 10:05] was written → the sample fails; the stop exists, the cursor stays at 10:00 and the candidate is kept; the redelivered sample leaves exactly that stop and no candidate
+- [HIGH] the service's Redis connection is lost while a running sample is handled → the sample fails, no stop; once Redis is back the redelivered sample records [T0, T1]
 
 ---
 
