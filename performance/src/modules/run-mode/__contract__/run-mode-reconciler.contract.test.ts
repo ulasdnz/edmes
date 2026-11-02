@@ -11,10 +11,12 @@ import {
 } from '../run-mode.reconciler.js'
 import {
   at,
+  candidateKeys,
   candidateSince,
   cursorOf,
   deliver,
   held,
+  latestSample,
   type Machine,
   machineWithDebounce,
   received,
@@ -205,6 +207,60 @@ describe('Boot reconciliation and the event path on one tag', () => {
     })
     expect(await storedCandidate(machine)).toEqual(candidateSince('10:05:00'))
     expect(await stopsOf(machine)).toEqual([])
+    expect(logs.lines()).toEqual([])
+  })
+
+  it('leaves a running latest sample to the event path once it has a cursor, so its delivery still records the stop', async () => {
+    const machine = await machineWithDebounce(60_000)
+    stubs.latest.mode = 'hang'
+
+    const reconciling = reconcileWorkCenter(machine, at('10:10:00'))
+    await vi.waitFor(() => expect(held.size).toBe(1))
+    // Telemetry drains a backlog: the event path handles the stop before telemetry answers, and the
+    // running sample stored right after it is still on its way through the stream
+    await deliver(machine, recorded(machine, 0, '10:05:00'))
+    const running = recorded(machine, 1, '10:06:00')
+    releaseHeld(res => res.json({ data: latestSample(res.req) }))
+    await reconciling
+
+    // The running sample is the event path's to decide
+    expect((await cursorOf(machine))?.lastProcessedOccurredAt).toEqual(at('10:05:00'))
+
+    await deliver(machine, running)
+
+    expect(await stopsOf(machine)).toEqual([runModeStop('10:05:00', '10:06:00')])
+    expect(await candidateKeys(machine)).toEqual([])
+    expect(await cursorOf(machine)).toMatchObject({
+      lastProcessedOccurredAt: at('10:06:00'),
+      lastProcessedValue: 1,
+    })
+    expect(logs.lines()).toEqual([])
+  })
+
+  it('leaves a stopped latest sample to the event path once it has a cursor, so no sample before it is skipped', async () => {
+    const machine = await machineWithDebounce(60_000)
+    stubs.latest.mode = 'hang'
+
+    const reconciling = reconcileWorkCenter(machine, at('10:20:00'))
+    await vi.waitFor(() => expect(held.size).toBe(1))
+    // The event path handles the stop at 10:00 before telemetry answers; telemetry has also stored the
+    // run at 10:05 and the stop at 10:10, which the stream has not delivered yet
+    await deliver(machine, recorded(machine, 0, '10:00:00'))
+    const running = recorded(machine, 1, '10:05:00')
+    const stoppedAgain = recorded(machine, 0, '10:10:00')
+    releaseHeld(res => res.json({ data: latestSample(res.req) }))
+    await reconciling
+
+    // The latest sample, the stop at 10:10, is the event path's to decide
+    expect((await cursorOf(machine))?.lastProcessedOccurredAt).toEqual(at('10:00:00'))
+    expect(await storedCandidate(machine)).toEqual(candidateSince('10:00:00'))
+
+    await deliver(machine, running)
+    await deliver(machine, stoppedAgain)
+
+    expect(await stopsOf(machine)).toEqual([runModeStop('10:00:00', '10:05:00')])
+    expect(await storedCandidate(machine)).toEqual(candidateSince('10:10:00'))
+    expect((await cursorOf(machine))?.lastProcessedOccurredAt).toEqual(at('10:10:00'))
     expect(logs.lines()).toEqual([])
   })
 })

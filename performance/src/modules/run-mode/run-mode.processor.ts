@@ -107,7 +107,18 @@ async function readCursor(workCenterId: string, runModeTagId: string): Promise<C
 const isProcessed = (sample: RunModeSample, cursor: Cursor | null): boolean =>
   cursor !== null && sample.occurredAt.getTime() <= cursor.lastProcessedOccurredAt.getTime()
 
-export async function handleRunModeSample(sample: RunModeSample): Promise<void> {
+export interface SampleHandling {
+  // Decide the sample only while the tag has no cursor. The reconciler starts a tag from its latest
+  // sample this way: a cursor written meanwhile means the event path has taken the tag over, and
+  // deciding the latest sample would skip the samples before it that the event path has not
+  // processed yet
+  onlyWithoutCursor?: boolean
+}
+
+export async function handleRunModeSample(
+  sample: RunModeSample,
+  { onlyWithoutCursor = false }: SampleHandling = {},
+): Promise<void> {
   const cursor = await readCursor(sample.workCenterId, sample.runModeTagId)
   if (isProcessed(sample, cursor)) return
 
@@ -125,7 +136,8 @@ export async function handleRunModeSample(sample: RunModeSample): Promise<void> 
   await withTagLock(sample, async () => {
     // Another path may have processed this sample, or a later one, while this one waited: the
     // cursor only moves forward
-    if (isProcessed(sample, await readCursor(sample.workCenterId, sample.runModeTagId))) return
+    const current = await readCursor(sample.workCenterId, sample.runModeTagId)
+    if (onlyWithoutCursor ? current !== null : isProcessed(sample, current)) return
     if (sample.value < 1) {
       await handleStopped(sample)
     } else {

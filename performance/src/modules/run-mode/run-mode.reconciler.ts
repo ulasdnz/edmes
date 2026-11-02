@@ -25,16 +25,16 @@ async function readCursor(target: MonitoredWorkCenter): Promise<Date | null> {
   return doc?.lastProcessedOccurredAt ?? null
 }
 
-// Under the tag's lock, like every cursor update, and only forward: a newer sample the event path
-// processed while telemetry was asked keeps its place
+// Under the tag's lock, like every cursor update, and only while the tag has none: a cursor the
+// event path wrote while telemetry was asked means it has taken the tag over, and a cursor at the
+// latest sample would skip the samples it has not processed yet
 async function initializeCursor(
   target: MonitoredWorkCenter,
   occurredAt: Date,
   value: number,
 ): Promise<void> {
   await withTagLock(target, async () => {
-    const cursor = await readCursor(target)
-    if (cursor && cursor.getTime() >= occurredAt.getTime()) return
+    if (await readCursor(target)) return
     await RunModeProcessingState.findOneAndUpdate(
       {
         workCenterId: new Types.ObjectId(target.workCenterId),
@@ -72,7 +72,9 @@ export async function reconcileWorkCenter(
     return
   }
 
-  // No cursor: fall back to latest value (debounce-aware via handleRunModeSample).
+  // No cursor: fall back to latest value (debounce-aware via handleRunModeSample). Either way it
+  // acts only while the tag still has no cursor; one written meanwhile leaves the tag to the event
+  // path and rule 6
   const latest = await getLatest(target.runModeTagId, request)
   if (!latest) return
   const occurredAt = new Date(latest.occurredAt)
@@ -81,12 +83,15 @@ export async function reconcileWorkCenter(
     await initializeCursor(target, occurredAt, latest.value)
     return
   }
-  await handleRunModeSample({
-    workCenterId: target.workCenterId,
-    runModeTagId: target.runModeTagId,
-    value: latest.value,
-    occurredAt,
-  })
+  await handleRunModeSample(
+    {
+      workCenterId: target.workCenterId,
+      runModeTagId: target.runModeTagId,
+      value: latest.value,
+      occurredAt,
+    },
+    { onlyWithoutCursor: true },
+  )
 }
 
 // Retries one work center on the retry schedule until it succeeds, apart from the others, so one that
