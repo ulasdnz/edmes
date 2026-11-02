@@ -3,7 +3,7 @@ import '../../../test/contract-setup.js'
 import { once } from 'node:events'
 import type { Server } from 'node:http'
 import express, { type Request, type Response } from 'express'
-import { Types } from 'mongoose'
+import mongoose, { Types } from 'mongoose'
 import {
   afterAll,
   afterEach,
@@ -25,6 +25,7 @@ import { bootstrapSystemReasons } from '../../reason/reason.bootstrap.js'
 import { Reason } from '../../reason/reason.model.js'
 import { UnplannedStop } from '../../unplanned-stop/unplanned-stop.model.js'
 import * as unplannedStopService from '../../unplanned-stop/unplanned-stop.service.js'
+import { runDecisionTick, startDebounceTick, stopDebounceTick } from '../run-mode.debounce-tick.js'
 import {
   deleteDecision,
   type PendingDecision,
@@ -88,6 +89,13 @@ function stateDurations(req: Request) {
   return { segments, hasMore, nextCursor: hasMore ? docs[docs.length - 1].occurredAt : null }
 }
 
+// The tag's last stored sample, as telemetry's latest endpoint answers it
+function latestSample(req: Request) {
+  const tagId = String(req.params.tagId)
+  const last = telemetryHistory.get(tagId)?.at(-1)
+  return last ? { tagId, value: last.value, occurredAt: last.occurredAt } : null
+}
+
 let stubs: Record<Endpoint, StubEndpoint>
 // The requests each endpoint received, as their path parameters and query
 let received: Record<Endpoint, Record<string, unknown>[]>
@@ -96,7 +104,7 @@ function resetStubs(): void {
   stubs = {
     workCenter: { mode: 'answer', answer: () => null },
     runModeMonitors: { mode: 'answer', answer: () => [] },
-    latest: { mode: 'answer', answer: () => null },
+    latest: { mode: 'answer', answer: latestSample },
     stateDurations: { mode: 'answer', answer: stateDurations },
   }
   received = { workCenter: [], runModeMonitors: [], latest: [], stateDurations: [] }
@@ -105,6 +113,18 @@ function resetStubs(): void {
 
 // Requests held by a hanging endpoint, released after each test
 const held = new Set<Response>()
+
+// A hanging endpoint answers the requests it holds at last: those `which` picks, or all of them
+function releaseHeld(
+  respond: (res: Response) => void,
+  which: (req: Request) => boolean = () => true,
+): void {
+  for (const res of held) {
+    if (!which(res.req)) continue
+    respond(res)
+    held.delete(res)
+  }
+}
 
 function serve(endpoint: Endpoint) {
   return (req: Request, res: Response): void => {
@@ -301,6 +321,91 @@ async function whileRedisIsUnreachable<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
+// The decision tick, as production runs it every second, at a time of the server's clock
+const tick = (time: string) => runDecisionTick(at(time))
+
+const openRunModeStop = (from: string) => ({ source: 'run_mode', startAt: at(from), endAt: null })
+
+// The check a planned stop that closed at the given time leaves when the run mode cannot be read
+const afterPlannedSince = (time: string): PendingDecision => ({
+  kind: 'after_planned',
+  since: at(time).toISOString(),
+  debounceMs: 0,
+  attempts: 0,
+  nextAttemptAt: null,
+})
+
+async function storedCheck(machine: Machine): Promise<PendingDecision | null> {
+  const raw = await testRedis.get(
+    `performance:runmode:after-planned:${machine.workCenterId}:${machine.runModeTagId}`,
+  )
+  return raw === null ? null : (JSON.parse(raw) as PendingDecision)
+}
+
+async function activePlannedStop(machine: Machine, from: string, to: string) {
+  const reason = await seedReason('planned_stop')
+  return PlannedStop.create({
+    workCenterId: new Types.ObjectId(machine.workCenterId),
+    reasonId: reason._id,
+    plannedOwnerId: new Types.ObjectId(userId),
+    source: 'manual',
+    startMode: 'manual',
+    status: 'active',
+    plannedStartAt: at(from),
+    plannedEndAt: at(to),
+    actualStartAt: at(from),
+    createdBy: new Types.ObjectId(userId),
+  })
+}
+
+const closePlannedStop = (plannedStopId: Types.ObjectId, time: string) =>
+  PlannedStop.updateOne(
+    { _id: plannedStopId },
+    { $set: { status: 'closed', actualEndAt: at(time) } },
+  )
+
+// What the service logs about pending decisions and the tick that decides them, in order, with the
+// level of each line
+function watchDecisionLogs() {
+  const spies = (['info', 'warn', 'error'] as const).map(level => {
+    const spy: MockInstance = vi.spyOn(logger, level)
+    return { level, spy }
+  })
+  return {
+    lines: () =>
+      spies
+        .flatMap(({ level, spy }) =>
+          spy.mock.calls.map(([, meta], i) => ({
+            level,
+            meta,
+            order: spy.mock.invocationCallOrder[i],
+          })),
+        )
+        .filter(({ meta }) => /^run_mode\.(decision|debounce_tick)\./.test(String(meta?.event)))
+        .sort((a, b) => a.order - b.order)
+        .map(({ level, meta }) => [level, meta]),
+    restore: () => {
+      for (const { spy } of spies) spy.mockRestore()
+    },
+  }
+}
+
+// The performance service started again: every module loaded afresh, with Redis clients of its own,
+// and nothing kept from before but what Redis and MongoDB hold
+async function restartedTick() {
+  vi.resetModules()
+  // The fresh modules compile their models again on the same connection
+  mongoose.set('overwriteModels', true)
+  try {
+    const redis = await import('../../../lib/redis.js')
+    await redis.initRedis()
+    const { runDecisionTick } = await import('../run-mode.debounce-tick.js')
+    return { runDecisionTick, redisClient: redis.redisClient, stop: redis.closeRedis }
+  } finally {
+    mongoose.set('overwriteModels', false)
+  }
+}
+
 // ── Scenario 2: the running signal decides a pending candidate ───────────────
 
 describe('A running signal decides a pending candidate on the machine times (scenario 2)', () => {
@@ -425,9 +530,9 @@ describe('A late running signal for a stop already open (scenario 6)', () => {
   })
 })
 
-// ── Rule 2: a late running signal never ends a stop that started after it ────
+// ── Rule 2: a late running signal never closes a stop that started after it ──
 
-describe('A late running signal never ends a stop that started after it (rule 2)', () => {
+describe('A late running signal never closes a stop that started after it (rule 2)', () => {
   it("leaves an operator's manual stop opened after the signal open", async () => {
     const machine = await machineWithDebounce(60_000)
     await signal(machine, 0, '10:00:00')
@@ -446,17 +551,33 @@ describe('A late running signal never ends a stop that started after it (rule 2)
     expect((await UnplannedStop.findById(manual._id).lean())?.endAt).toBeNull()
   })
 
-  it('leaves an untouched run-mode stop opened after the signal open', async () => {
+  it('deletes an untouched run-mode stop opened after the signal', async () => {
     const machine = await machineWithDebounce(60_000)
-    // A planned stop that closed at 10:30 opened it, before the machine's 10:25 running signal arrived
-    const open = await unplannedStopService.openFromRunMode(machine.workCenterId, at('10:30:00'))
+    // A planned stop that closed at 10:30 opened it from a history that did not hold the machine's
+    // 10:25 running signal yet: the signal shows the machine was running by then
+    await unplannedStopService.openFromRunMode(machine.workCenterId, at('10:30:00'))
 
     await signal(machine, 1, '10:25:00')
 
-    expect(await stopsOf(machine)).toEqual([
-      { source: 'run_mode', startAt: at('10:30:00'), endAt: null },
-    ])
-    expect((await UnplannedStop.findById(open._id).lean())?.endAt).toBeNull()
+    expect(await stopsOf(machine)).toEqual([])
+  })
+
+  it('leaves a run-mode stop a user changed after the signal open', async () => {
+    const machine = await machineWithDebounce(60_000)
+    const open = await unplannedStopService.openFromRunMode(machine.workCenterId, at('10:30:00'))
+    const reason = await seedReason('unplanned_stop')
+    await unplannedStopService.patch(
+      open._id.toString(),
+      { reasonId: reason._id.toString() },
+      userId,
+    )
+
+    await signal(machine, 1, '10:25:00')
+
+    expect(await stopsOf(machine)).toEqual([openRunModeStop('10:30:00')])
+    expect((await UnplannedStop.findById(open._id).lean())?.reasonId?.toString()).toBe(
+      reason._id.toString(),
+    )
   })
 })
 
@@ -530,6 +651,21 @@ describe('The debounce changes while a candidate is pending (review focus 5)', (
     await signal(machine, 1, '10:02:00')
 
     expect(await stopsOf(machine)).toEqual([runModeStop('10:00:00', '10:02:00')])
+    expect(await candidateKeys(machine)).toEqual([])
+  })
+
+  it('confirms a candidate once the debounce it started with has run out', async () => {
+    const machine = await machineWithDebounce(60_000)
+    await deliver(machine, recorded(machine, 0, '10:00:00'))
+    await policyService.upsertForWorkCenter(
+      machine.workCenterId,
+      { runModeDebounceMs: 300_000, microStopThresholdMs: 600_000 },
+      userId,
+    )
+
+    await tick('10:01:00')
+
+    expect(await stopsOf(machine)).toEqual([openRunModeStop('10:00:00')])
     expect(await candidateKeys(machine)).toEqual([])
   })
 })
@@ -844,4 +980,748 @@ describe('Samples performance missed are replayed from telemetry first (rule 6)'
     ])
     expect(await candidateKeys(machine)).toEqual([])
   })
+
+  // The stream consumer runs one handler at a time, so a replay waiting on a telemetry that never
+  // answers would hold up every performance stream
+  it('fails the sample within 5 s while telemetry never answers, and decides nothing for it', async () => {
+    const machine = await machineWithDebounce(60_000)
+    await deliver(machine, recorded(machine, 0, '10:00:00'))
+    recorded(machine, 1, '10:05:00')
+    recorded(machine, 0, '10:10:00')
+    const running = recorded(machine, 1, '10:15:00')
+    stubs.stateDurations.mode = 'hang'
+
+    const startedAt = Date.now()
+    await expect(deliver(machine, running)).rejects.toThrow('error.telemetry_unreachable')
+
+    expect(Date.now() - startedAt).toBeLessThan(6_000)
+    // Telemetry never answered: performance gave up on the request
+    expect(held.size).toBe(1)
+    expect(await stopsOf(machine)).toEqual([])
+    expect(await storedCandidate(machine)).toEqual(candidateSince('10:00:00'))
+    expect((await cursorOf(machine))?.lastProcessedOccurredAt).toEqual(at('10:00:00'))
+  }, 15_000)
+})
+
+// ── Rule 3: the tick decides a candidate whose debounce has run out ──────────
+
+describe('The tick opens a stop once telemetry answers again (scenario 1)', () => {
+  it('opens the stop at its first stop time once telemetry is back', async () => {
+    const machine = await machineWithDebounce(60_000)
+    await deliver(machine, recorded(machine, 0, '10:00:00'))
+    stubs.latest.mode = 'fail'
+
+    await tick('10:01:00')
+
+    // "Cannot answer" never means "stopped": the candidate waits
+    expect(await stopsOf(machine)).toEqual([])
+    expect(await storedCandidate(machine)).toMatchObject({
+      since: at('10:00:00').toISOString(),
+      attempts: 1,
+    })
+
+    // Back ten minutes later, with the stopped sample still the tag's latest
+    stubs.latest.mode = 'answer'
+    await tick('10:10:00')
+
+    expect(await stopsOf(machine)).toEqual([openRunModeStop('10:00:00')])
+    expect(await candidateKeys(machine)).toEqual([])
+  })
+})
+
+describe('The tick waits for a sample performance has not processed yet (scenario 4)', () => {
+  it('waits for the signal when telemetry knows a newer sample', async () => {
+    const machine = await machineWithDebounce(60_000)
+    await deliver(machine, recorded(machine, 0, '10:00:00'))
+    // Stored by telemetry, still on its way to performance
+    const running = recorded(machine, 1, '10:05:00')
+
+    await tick('10:05:00')
+
+    expect(await stopsOf(machine)).toEqual([])
+    expect(await storedCandidate(machine)).toEqual(candidateSince('10:00:00'))
+
+    await deliver(machine, running)
+
+    expect(await stopsOf(machine)).toEqual([runModeStop('10:00:00', '10:05:00')])
+    expect(await candidateKeys(machine)).toEqual([])
+  })
+
+  it('waits as well when the newer sample is a stopped one', async () => {
+    const machine = await machineWithDebounce(60_000)
+    await deliver(machine, recorded(machine, 0, '10:00:00'))
+    // The machine ran and stopped again; neither sample has reached performance yet
+    recorded(machine, 1, '10:05:00')
+    const stoppedAgain = recorded(machine, 0, '10:10:00')
+
+    await tick('10:12:00')
+
+    expect(await stopsOf(machine)).toEqual([])
+    expect(await storedCandidate(machine)).toEqual(candidateSince('10:00:00'))
+
+    await deliver(machine, stoppedAgain)
+
+    expect(await stopsOf(machine)).toEqual([runModeStop('10:00:00', '10:05:00')])
+    expect(await storedCandidate(machine)).toEqual(candidateSince('10:10:00'))
+  })
+
+  it('records nothing when the newer sample shows the stop was shorter than the debounce', async () => {
+    const machine = await machineWithDebounce(60_000)
+    await deliver(machine, recorded(machine, 0, '10:00:00'))
+    const running = recorded(machine, 1, '10:00:20')
+
+    await tick('10:01:00')
+    await deliver(machine, running)
+
+    expect(await stopsOf(machine)).toEqual([])
+    expect(await candidateKeys(machine)).toEqual([])
+  })
+
+  it('keeps the candidate for the replay of a sample performance missed', async () => {
+    const machine = await machineWithDebounce(60_000)
+    await deliver(machine, recorded(machine, 0, '10:00:00'))
+    // It never reaches performance, and telemetry holds it as the tag's latest sample
+    recorded(machine, 1, '10:05:00')
+
+    await tick('10:10:00')
+
+    expect(await storedCandidate(machine)).toEqual(candidateSince('10:00:00'))
+
+    // The next sample replays the missed one first, which decides the candidate
+    await deliver(machine, recorded(machine, 0, '10:20:00'))
+
+    expect(await stopsOf(machine)).toEqual([runModeStop('10:00:00', '10:05:00')])
+    expect(await storedCandidate(machine)).toEqual(candidateSince('10:20:00'))
+  })
+})
+
+describe('The tick and a running signal decide the same candidate (scenario 5)', () => {
+  let logs: ReturnType<typeof watchDecisionLogs>
+
+  beforeEach(() => {
+    logs = watchDecisionLogs()
+  })
+
+  afterEach(() => {
+    logs.restore()
+  })
+
+  it('writes one stop when the tick and a running signal decide together', async () => {
+    const machine = await machineWithDebounce(60_000)
+    await deliver(machine, recorded(machine, 0, '10:00:00'))
+    // Telemetry answers the tick before it has stored the running sample
+    stubs.latest.answer = () => ({
+      tagId: machine.runModeTagId,
+      value: 0,
+      occurredAt: at('10:00:00'),
+    })
+
+    await Promise.all([tick('10:05:00'), signal(machine, 1, '10:05:00')])
+
+    expect(await stopsOf(machine)).toEqual([runModeStop('10:00:00', '10:05:00')])
+    expect(await candidateKeys(machine)).toEqual([])
+    // Neither writer failed: the tick logs any decision it fails
+    expect(logs.lines()).toEqual([])
+  })
+
+  it('does not bring back a candidate the running signal decided while telemetry was asked', async () => {
+    const machine = await machineWithDebounce(60_000)
+    await deliver(machine, recorded(machine, 0, '10:00:00'))
+    stubs.latest.mode = 'hang'
+    const pending = tick('10:05:00')
+    await vi.waitFor(() => expect(held.size).toBe(1))
+
+    await deliver(machine, recorded(machine, 1, '10:05:00'))
+    // Only now telemetry fails the tick's question
+    releaseHeld(res =>
+      res.status(500).json({ error: { code: 'error.internal', message: 'Internal error' } }),
+    )
+    await pending
+
+    expect(await stopsOf(machine)).toEqual([runModeStop('10:00:00', '10:05:00')])
+    expect(await candidateKeys(machine)).toEqual([])
+    expect(logs.lines()).toEqual([])
+  })
+
+  it('leaves the candidate of a newer stop when it decides an older one late', async () => {
+    const machine = await machineWithDebounce(60_000)
+    await deliver(machine, recorded(machine, 0, '10:00:00'))
+    stubs.latest.mode = 'hang'
+    const pending = tick('10:05:00')
+    await vi.waitFor(() => expect(held.size).toBe(1))
+
+    // While telemetry has not answered the tick, the machine runs and stops again
+    await deliver(machine, recorded(machine, 1, '10:05:00'))
+    await deliver(machine, recorded(machine, 0, '10:06:00'))
+    releaseHeld(res =>
+      res.json({ data: { tagId: machine.runModeTagId, value: 0, occurredAt: at('10:00:00') } }),
+    )
+    await pending
+
+    expect(await stopsOf(machine)).toEqual([runModeStop('10:00:00', '10:05:00')])
+    expect(await storedCandidate(machine)).toEqual(candidateSince('10:06:00'))
+  })
+})
+
+// ── Rule 4: the check after a planned stop ───────────────────────────────────
+
+describe('The check after a planned stop decides once telemetry answers (scenario 7)', () => {
+  it('records the stop after a planned stop once telemetry is back', async () => {
+    const machine = await machineWithDebounce(60_000)
+    recorded(machine, 0, '10:10:00')
+    await writeDecision(machine.workCenterId, machine.runModeTagId, afterPlannedSince('10:30:00'))
+    recorded(machine, 1, '10:34:00')
+    stubs.stateDurations.mode = 'fail'
+
+    await tick('10:31:00')
+
+    expect(await stopsOf(machine)).toEqual([])
+    expect(await storedCheck(machine)).toMatchObject({
+      since: at('10:30:00').toISOString(),
+      attempts: 1,
+    })
+
+    stubs.stateDurations.mode = 'answer'
+    await tick('10:40:00')
+
+    expect(await stopsOf(machine)).toEqual([runModeStop('10:30:00', '10:34:00')])
+    expect(await storedCheck(machine)).toBeNull()
+    expect(received.stateDurations.at(-1)).toEqual({
+      tagId: machine.runModeTagId,
+      from: at('10:30:00').toISOString(),
+      to: at('10:40:00').toISOString(),
+    })
+  })
+
+  it('opens the stop at the end of the planned stop while the machine still stands', async () => {
+    const machine = await machineWithDebounce(60_000)
+    recorded(machine, 0, '10:10:00')
+    await writeDecision(machine.workCenterId, machine.runModeTagId, afterPlannedSince('10:30:00'))
+
+    await tick('10:40:00')
+
+    expect(await stopsOf(machine)).toEqual([openRunModeStop('10:30:00')])
+    expect(await storedCheck(machine)).toBeNull()
+  })
+
+  it('records nothing when the machine was running when the planned stop ended', async () => {
+    const machine = await machineWithDebounce(60_000)
+    recorded(machine, 0, '10:10:00')
+    recorded(machine, 1, '10:25:00')
+    await writeDecision(machine.workCenterId, machine.runModeTagId, afterPlannedSince('10:30:00'))
+
+    await tick('10:40:00')
+
+    expect(await stopsOf(machine)).toEqual([])
+    expect(await storedCheck(machine)).toBeNull()
+  })
+
+  it('records nothing when the history cannot tell the state at the end of the planned stop', async () => {
+    const machine = await machineWithDebounce(60_000)
+    await writeDecision(machine.workCenterId, machine.runModeTagId, afterPlannedSince('10:30:00'))
+    // The tag's first stored sample comes after E; rule 1 decides it when it arrives
+    recorded(machine, 0, '10:35:00')
+
+    await tick('10:40:00')
+
+    expect(await stopsOf(machine)).toEqual([])
+    expect(await storedCheck(machine)).toBeNull()
+  })
+
+  it('applies no debounce to the check', async () => {
+    const machine = await machineWithDebounce(60_000)
+    recorded(machine, 0, '10:10:00')
+    await writeDecision(machine.workCenterId, machine.runModeTagId, afterPlannedSince('10:30:00'))
+    recorded(machine, 1, '10:30:10')
+
+    await tick('10:40:00')
+
+    expect(await stopsOf(machine)).toEqual([runModeStop('10:30:00', '10:30:10')])
+  })
+
+  it('waits until the end of the planned stop has passed', async () => {
+    const machine = await machineWithDebounce(60_000)
+    recorded(machine, 0, '10:10:00')
+    await writeDecision(machine.workCenterId, machine.runModeTagId, afterPlannedSince('10:30:00'))
+
+    // A tick in the same millisecond as E would read an empty history
+    await tick('10:30:00')
+
+    expect(received.stateDurations).toEqual([])
+    expect(await storedCheck(machine)).toEqual(afterPlannedSince('10:30:00'))
+
+    await tick('10:30:01')
+
+    expect(await stopsOf(machine)).toEqual([openRunModeStop('10:30:00')])
+  })
+
+  // Telemetry can answer before it has stored what the broker queued while it was down, so the
+  // check can open a stop at E that a running signal still on its way contradicts
+  it('drops the stop it opened once the late running signal shows the machine ran before E', async () => {
+    const machine = await machineWithDebounce(60_000)
+    const planned = await activePlannedStop(machine, '10:00:00', '11:00:00')
+    // The machine stops during the planned stop, which covers the sample
+    await deliver(machine, recorded(machine, 0, '10:02:00'))
+    await closePlannedStop(planned._id, '10:30:00')
+    await writeDecision(machine.workCenterId, machine.runModeTagId, afterPlannedSince('10:30:00'))
+
+    await tick('10:31:00')
+
+    expect(await stopsOf(machine)).toEqual([openRunModeStop('10:30:00')])
+
+    await deliver(machine, recorded(machine, 1, '10:25:00'))
+
+    expect(await stopsOf(machine)).toEqual([])
+  })
+
+  it('opens a stop again when the machine stops after the late running signal', async () => {
+    const machine = await machineWithDebounce(0)
+    const planned = await activePlannedStop(machine, '10:00:00', '11:00:00')
+    await deliver(machine, recorded(machine, 0, '10:02:00'))
+    await closePlannedStop(planned._id, '10:30:00')
+    await writeDecision(machine.workCenterId, machine.runModeTagId, afterPlannedSince('10:30:00'))
+    await tick('10:31:00')
+
+    await deliver(machine, recorded(machine, 1, '10:25:00'))
+    await deliver(machine, recorded(machine, 0, '10:40:00'))
+
+    expect(await stopsOf(machine)).toEqual([openRunModeStop('10:40:00')])
+  })
+})
+
+// ── Errors and retries ────────────────────────────────────────────────────────
+
+describe('A decision telemetry cannot answer waits on the retry schedule (scenario 8)', () => {
+  let logs: ReturnType<typeof watchDecisionLogs>
+
+  beforeEach(() => {
+    logs = watchDecisionLogs()
+  })
+
+  afterEach(() => {
+    logs.restore()
+  })
+
+  // Runs the tick every second from the given time and returns the seconds at which telemetry was
+  // asked, each with the record the failed attempt left
+  async function tickEverySecond(
+    from: Date,
+    seconds: number,
+    asked: () => number,
+    stored: () => Promise<PendingDecision | null>,
+  ) {
+    const attempts: { second: number; attempts?: number; nextAttemptAt?: string | null }[] = []
+    for (let second = 0; second <= seconds; second++) {
+      const before = asked()
+      await runDecisionTick(new Date(from.getTime() + second * 1000))
+      if (asked() > before) {
+        const record = await stored()
+        attempts.push({ second, attempts: record?.attempts, nextAttemptAt: record?.nextAttemptAt })
+      }
+    }
+    return attempts
+  }
+
+  it('retries on schedule and logs only the deferral and the decision', async () => {
+    const machine = await machineWithDebounce(60_000)
+    await deliver(machine, recorded(machine, 0, '10:00:00'))
+    stubs.latest.mode = 'fail'
+
+    const attempts = await tickEverySecond(
+      at('10:01:00'),
+      100,
+      () => received.latest.length,
+      () => storedCandidate(machine),
+    )
+
+    expect(attempts).toEqual([
+      { second: 0, attempts: 1, nextAttemptAt: at('10:01:01').toISOString() },
+      { second: 1, attempts: 2, nextAttemptAt: at('10:01:03').toISOString() },
+      { second: 3, attempts: 3, nextAttemptAt: at('10:01:07').toISOString() },
+      { second: 7, attempts: 4, nextAttemptAt: at('10:01:15').toISOString() },
+      { second: 15, attempts: 5, nextAttemptAt: at('10:01:31').toISOString() },
+      { second: 31, attempts: 6, nextAttemptAt: at('10:02:01').toISOString() },
+      { second: 61, attempts: 7, nextAttemptAt: at('10:02:31').toISOString() },
+      { second: 91, attempts: 8, nextAttemptAt: at('10:03:01').toISOString() },
+    ])
+    expect(await stopsOf(machine)).toEqual([])
+    // The retries keep the 25 hours the record was written with
+    expect(await testRedis.ttl(candidateKey(machine))).toBeGreaterThan(89_900)
+
+    stubs.latest.mode = 'answer'
+    await tick('10:03:01')
+
+    expect(await stopsOf(machine)).toEqual([openRunModeStop('10:00:00')])
+    expect(await candidateKeys(machine)).toEqual([])
+    expect(logs.lines()).toEqual([
+      [
+        'warn',
+        {
+          event: 'run_mode.decision.deferred',
+          kind: 'debounce',
+          workCenterId: machine.workCenterId,
+          runModeTagId: machine.runModeTagId,
+          since: at('10:00:00').toISOString(),
+          nextAttemptAt: at('10:01:01').toISOString(),
+          error: 'error.telemetry_unreachable',
+        },
+      ],
+      [
+        'info',
+        {
+          event: 'run_mode.decision.resolved',
+          kind: 'debounce',
+          workCenterId: machine.workCenterId,
+          runModeTagId: machine.runModeTagId,
+          since: at('10:00:00').toISOString(),
+          attempts: 8,
+          waitedMs: 121_000,
+        },
+      ],
+    ])
+  })
+
+  it('retries a check after a planned stop on the same schedule', async () => {
+    const machine = await machineWithDebounce(60_000)
+    recorded(machine, 0, '10:10:00')
+    await writeDecision(machine.workCenterId, machine.runModeTagId, afterPlannedSince('10:30:00'))
+    recorded(machine, 1, '10:30:10')
+    stubs.stateDurations.mode = 'fail'
+
+    const attempts = await tickEverySecond(
+      at('10:30:01'),
+      20,
+      () => received.stateDurations.length,
+      () => storedCheck(machine),
+    )
+
+    expect(attempts).toEqual([
+      { second: 0, attempts: 1, nextAttemptAt: at('10:30:02').toISOString() },
+      { second: 1, attempts: 2, nextAttemptAt: at('10:30:04').toISOString() },
+      { second: 3, attempts: 3, nextAttemptAt: at('10:30:08').toISOString() },
+      { second: 7, attempts: 4, nextAttemptAt: at('10:30:16').toISOString() },
+      { second: 15, attempts: 5, nextAttemptAt: at('10:30:32').toISOString() },
+    ])
+
+    stubs.stateDurations.mode = 'answer'
+    await tick('10:30:32')
+
+    expect(await stopsOf(machine)).toEqual([runModeStop('10:30:00', '10:30:10')])
+    expect(await storedCheck(machine)).toBeNull()
+    expect(logs.lines()).toEqual([
+      [
+        'warn',
+        expect.objectContaining({ event: 'run_mode.decision.deferred', kind: 'after_planned' }),
+      ],
+      [
+        'info',
+        {
+          event: 'run_mode.decision.resolved',
+          kind: 'after_planned',
+          workCenterId: machine.workCenterId,
+          runModeTagId: machine.runModeTagId,
+          since: at('10:30:00').toISOString(),
+          attempts: 5,
+          waitedMs: 32_000,
+        },
+      ],
+    ])
+  })
+
+  it('logs the decision when the running signal decides a deferred candidate', async () => {
+    const machine = await machineWithDebounce(60_000)
+    await deliver(machine, recorded(machine, 0, '10:00:00'))
+    stubs.latest.mode = 'fail'
+    await tick('10:01:00')
+
+    await deliver(machine, recorded(machine, 1, '10:05:00'))
+
+    expect(await stopsOf(machine)).toEqual([runModeStop('10:00:00', '10:05:00')])
+    expect(logs.lines()).toEqual([
+      ['warn', expect.objectContaining({ event: 'run_mode.decision.deferred' })],
+      [
+        'info',
+        {
+          event: 'run_mode.decision.resolved',
+          kind: 'debounce',
+          workCenterId: machine.workCenterId,
+          runModeTagId: machine.runModeTagId,
+          since: at('10:00:00').toISOString(),
+          attempts: 1,
+          waitedMs: expect.any(Number),
+        },
+      ],
+    ])
+  })
+
+  it('drops a decision after 24 hours with an error log', async () => {
+    const machine = await machineWithDebounce(60_000)
+    await deliver(machine, recorded(machine, 0, '10:00:00'))
+    stubs.latest.mode = 'fail'
+    const firstStoppedAt = at('10:00:00').getTime()
+
+    // 23 h 59 min after the stop it is still pending, and asked again
+    await runDecisionTick(new Date(firstStoppedAt + 23 * 3_600_000 + 59 * 60_000))
+
+    expect(received.latest).toHaveLength(1)
+    expect(await storedCandidate(machine)).toMatchObject({ attempts: 1 })
+
+    await runDecisionTick(new Date(firstStoppedAt + 24 * 3_600_000 + 1000))
+
+    expect(await candidateKeys(machine)).toEqual([])
+    expect(await stopsOf(machine)).toEqual([])
+    expect(received.latest).toHaveLength(1)
+    expect(logs.lines()).toEqual([
+      ['warn', expect.objectContaining({ event: 'run_mode.decision.deferred' })],
+      [
+        'error',
+        {
+          event: 'run_mode.decision.abandoned',
+          kind: 'debounce',
+          workCenterId: machine.workCenterId,
+          runModeTagId: machine.runModeTagId,
+          since: at('10:00:00').toISOString(),
+          attempts: 1,
+        },
+      ],
+    ])
+  })
+})
+
+describe('A pending decision across a restart (scenario 11)', () => {
+  it('decides a candidate written before a restart', async () => {
+    const machine = await machineWithDebounce(60_000)
+    await deliver(machine, recorded(machine, 0, '10:00:00'))
+
+    const restarted = await restartedTick()
+    try {
+      expect(restarted.redisClient).not.toBe(redisClient)
+      await restarted.runDecisionTick(at('10:01:00'))
+    } finally {
+      await restarted.stop()
+    }
+
+    expect(await stopsOf(machine)).toEqual([openRunModeStop('10:00:00')])
+    expect(await candidateKeys(machine)).toEqual([])
+  })
+
+  it('goes on with the attempts of a record written before a restart', async () => {
+    const machine = await machineWithDebounce(60_000)
+    recorded(machine, 0, '10:00:00')
+    await writeDecision(machine.workCenterId, machine.runModeTagId, {
+      ...candidateSince('10:00:00'),
+      attempts: 3,
+      nextAttemptAt: at('10:01:07').toISOString(),
+    })
+    stubs.latest.mode = 'fail'
+
+    const restarted = await restartedTick()
+    try {
+      await restarted.runDecisionTick(at('10:01:06'))
+      expect(received.latest).toEqual([])
+
+      await restarted.runDecisionTick(at('10:01:07'))
+    } finally {
+      await restarted.stop()
+    }
+
+    expect(received.latest).toHaveLength(1)
+    expect(await storedCandidate(machine)).toEqual({
+      ...candidateSince('10:00:00'),
+      attempts: 4,
+      nextAttemptAt: at('10:01:15').toISOString(),
+    })
+  })
+})
+
+// ── Review focus 1: a machine clock ahead of the server ──────────────────────
+
+describe('A machine clock ahead of the server (review focus 1)', () => {
+  it('does not confirm a stop stamped ahead of the server clock', async () => {
+    const machine = await machineWithDebounce(60_000)
+    // The machine's clock runs two minutes ahead: its 10:02 is the server's 10:00
+    await deliver(machine, recorded(machine, 0, '10:02:00'))
+
+    await tick('10:00:00')
+    await tick('10:01:00')
+    await tick('10:02:59')
+
+    expect(await stopsOf(machine)).toEqual([])
+    expect(await storedCandidate(machine)).toEqual(candidateSince('10:02:00'))
+    expect(received.latest).toEqual([])
+
+    // The server clock reaches T0 + D
+    await tick('10:03:00')
+
+    expect(await stopsOf(machine)).toEqual([openRunModeStop('10:02:00')])
+    expect(await candidateKeys(machine)).toEqual([])
+  })
+})
+
+// ── Review focus 2: telemetry that hangs instead of refusing ─────────────────
+
+describe('Telemetry that never answers (review focus 2)', () => {
+  let logs: ReturnType<typeof watchDecisionLogs>
+
+  beforeEach(() => {
+    logs = watchDecisionLogs()
+  })
+
+  afterEach(() => {
+    logs.restore()
+  })
+
+  it('decides other work centers while telemetry hangs for one', async () => {
+    const hanging = await machineWithDebounce(60_000)
+    const answering = await machineWithDebounce(60_000)
+    await deliver(hanging, recorded(hanging, 0, '10:00:00'))
+    await deliver(answering, recorded(answering, 0, '10:00:00'))
+    stubs.latest.mode = 'hang'
+
+    const startedAt = Date.now()
+    const pending = tick('10:01:00')
+    // Both questions are out at once, so neither waits for the other's answer; one gets it
+    await vi.waitFor(() => expect(held.size).toBe(2), { timeout: 4_000 })
+    releaseHeld(
+      res => res.json({ data: latestSample(res.req) }),
+      req => req.params.tagId === answering.runModeTagId,
+    )
+    await vi.waitFor(
+      async () => expect(await stopsOf(answering)).toEqual([openRunModeStop('10:00:00')]),
+      { timeout: 5_000, interval: 20 },
+    )
+
+    expect(Date.now() - startedAt).toBeLessThan(5_000)
+
+    await pending
+
+    // Cut off after 5 s, which counts as "cannot answer"
+    expect(Date.now() - startedAt).toBeGreaterThanOrEqual(4_900)
+    expect(Date.now() - startedAt).toBeLessThan(6_000)
+    expect(held.size).toBe(1)
+    expect(await stopsOf(hanging)).toEqual([])
+    expect(await storedCandidate(hanging)).toEqual({
+      ...candidateSince('10:00:00'),
+      attempts: 1,
+      nextAttemptAt: at('10:01:01').toISOString(),
+    })
+    expect(logs.lines()).toEqual([
+      [
+        'warn',
+        expect.objectContaining({
+          event: 'run_mode.decision.deferred',
+          workCenterId: hanging.workCenterId,
+          error: 'error.telemetry_unreachable',
+        }),
+      ],
+    ])
+  }, 15_000)
+})
+
+// ── Rules 3 and 4: a tag telemetry does not know ─────────────────────────────
+
+describe('A tag telemetry does not know (rules 3 and 4)', () => {
+  let logs: ReturnType<typeof watchDecisionLogs>
+
+  beforeEach(() => {
+    logs = watchDecisionLogs()
+  })
+
+  afterEach(() => {
+    logs.restore()
+  })
+
+  it('drops a candidate whose tag telemetry does not know', async () => {
+    const machine = await machineWithDebounce(60_000)
+    await deliver(machine, recorded(machine, 0, '10:00:00'))
+    stubs.latest.answer = () => null
+
+    await tick('10:01:00')
+
+    expect(await candidateKeys(machine)).toEqual([])
+    expect(await stopsOf(machine)).toEqual([])
+    expect(logs.lines()).toEqual([
+      [
+        'warn',
+        {
+          event: 'run_mode.decision.unknown_tag',
+          kind: 'debounce',
+          workCenterId: machine.workCenterId,
+          runModeTagId: machine.runModeTagId,
+          since: at('10:00:00').toISOString(),
+        },
+      ],
+    ])
+  })
+
+  it('drops a check after a planned stop whose tag telemetry does not know', async () => {
+    const machine = await machineWithDebounce(60_000)
+    await writeDecision(machine.workCenterId, machine.runModeTagId, afterPlannedSince('10:30:00'))
+    stubs.stateDurations.answer = () => null
+
+    await tick('10:31:00')
+
+    expect(await storedCheck(machine)).toBeNull()
+    expect(await stopsOf(machine)).toEqual([])
+    expect(logs.lines()).toEqual([
+      [
+        'warn',
+        {
+          event: 'run_mode.decision.unknown_tag',
+          kind: 'after_planned',
+          workCenterId: machine.workCenterId,
+          runModeTagId: machine.runModeTagId,
+          since: at('10:30:00').toISOString(),
+        },
+      ],
+    ])
+  })
+})
+
+// ── The tick while Redis cannot answer ───────────────────────────────────────
+
+describe('The tick when Redis cannot list the pending decisions', () => {
+  afterEach(() => {
+    stopDebounceTick()
+  })
+
+  it('logs the failure, keeps ticking, and decides once Redis answers again', async () => {
+    const warn: MockInstance = vi.spyOn(logger, 'warn')
+    const scanFailures = () =>
+      warn.mock.calls.filter(([, meta]) => meta?.event === 'run_mode.debounce_tick.scan_failed')
+    try {
+      const machine = await machineWithDebounce(60_000)
+      // A stop two minutes old on the server's own clock, which the tick started below runs on
+      const firstStoppedAt = new Date(Math.floor(Date.now() / 1000) * 1000 - 120_000)
+      telemetryHistory.set(machine.runModeTagId, [{ occurredAt: firstStoppedAt, value: 0 }])
+      await writeDecision(machine.workCenterId, machine.runModeTagId, {
+        ...candidateSince('10:00:00'),
+        since: firstStoppedAt.toISOString(),
+      })
+
+      await whileRedisRefuses('scan', async () => {
+        startDebounceTick()
+        // Two ticks failed, so the first failure did not end the loop
+        await vi.waitFor(() => expect(scanFailures().length).toBeGreaterThanOrEqual(2), {
+          timeout: 5_000,
+        })
+      })
+
+      expect(scanFailures()[0][1]).toEqual({
+        event: 'run_mode.debounce_tick.scan_failed',
+        error: expect.stringMatching(/NOPERM.*'scan' command/),
+      })
+      await vi.waitFor(
+        async () => {
+          expect(await stopsOf(machine)).toEqual([
+            { source: 'run_mode', startAt: firstStoppedAt, endAt: null },
+          ])
+          expect(await candidateKeys(machine)).toEqual([])
+        },
+        { timeout: 5_000 },
+      )
+    } finally {
+      warn.mockRestore()
+    }
+  }, 20_000)
 })

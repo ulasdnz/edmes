@@ -159,14 +159,17 @@ export async function closeOnRunning(
   endAt: Date,
   debounceMs: number,
 ): Promise<IUnplannedStop | null> {
-  // One conditional delete, so a stop a user changes in the meantime is closed and kept. A late or
-  // replayed running signal never ends a stop that started after it, in either branch
+  // One conditional delete, so a stop a user changes in the meantime is closed and kept. It also
+  // takes an untouched run-mode stop that started after the signal: every stop the processor opens
+  // starts at a sample it processed, so such a stop was opened at the end of a planned stop from a
+  // history that did not hold this signal yet. A late or replayed running signal never closes a
+  // stop that started after it
   const deleted = await deleteStop({
     workCenterId: new Types.ObjectId(workCenterId),
     endAt: null,
     source: 'run_mode',
     updatedBy: null,
-    startAt: { $gt: new Date(endAt.getTime() - debounceMs), $lte: endAt },
+    startAt: { $gt: new Date(endAt.getTime() - debounceMs) },
   })
   if (deleted) return null
   return closeIfOpen(workCenterId, endAt, { startedAtOrBefore: endAt })

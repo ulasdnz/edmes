@@ -23,18 +23,18 @@ export interface StateDurationsPage {
   nextCursor: string | null
 }
 
+// null when telemetry does not know the tag
 export async function getStateDurations(
   tagId: string,
   from: Date,
   to: Date,
   opts?: { limit?: number; after?: Date },
-): Promise<StateDurationsPage> {
+): Promise<StateDurationsPage | null> {
   const params = new URLSearchParams()
   params.set('from', from.toISOString())
   params.set('to', to.toISOString())
   if (opts?.limit !== undefined) params.set('limit', String(opts.limit))
   if (opts?.after !== undefined) params.set('after', opts.after.toISOString())
   const url = `/internal/v1/historian/${tagId}/state-durations?${params.toString()}`
-  const result = await request<StateDurationsPage>(url)
-  return result ?? { segments: [], hasMore: false, nextCursor: null }
+  return request<StateDurationsPage>(url)
 }

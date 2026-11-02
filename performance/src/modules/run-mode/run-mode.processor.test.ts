@@ -51,7 +51,7 @@ vi.mock('../../lib/internal-api/work-center.client.js', () => ({
 
 // Pending decisions go through the raw Redis client; this stands in for it where no Redis runs.
 // The contract tests run the same code against a real Redis.
-const { redisStore, redisGet, redisSet, redisDel } = vi.hoisted(() => {
+const { redisStore, redisGet, redisSet, redisDel, redisEval } = vi.hoisted(() => {
   const store = new Map<string, string>()
   return {
     redisStore: store,
@@ -62,11 +62,21 @@ const { redisStore, redisGet, redisSet, redisDel } = vi.hoisted(() => {
       return 'OK'
     }),
     redisDel: vi.fn(async (key: string) => (store.delete(key) ? 1 : 0)),
+    // Stands in for the script that replaces or deletes a record while it has the same since
+    redisEval: vi.fn(
+      async (_script: string, _keys: number, key: string, since: string, value?: string) => {
+        const stored = store.get(key)
+        if (stored === undefined || JSON.parse(stored).since !== since) return 0
+        if (value === undefined) store.delete(key)
+        else store.set(key, value)
+        return 1
+      },
+    ),
   }
 })
 vi.mock('../../lib/redis.js', async importOriginal => ({
   ...(await importOriginal<typeof import('../../lib/redis.js')>()),
-  redisClient: { get: redisGet, set: redisSet, del: redisDel },
+  redisClient: { get: redisGet, set: redisSet, del: redisDel, eval: redisEval },
 }))
 
 import { PlannedStop } from '../planned-stop/planned-stop.model.js'
@@ -109,6 +119,7 @@ describe('run-mode.processor', () => {
     redisGet.mockClear()
     redisSet.mockClear()
     redisDel.mockClear()
+    redisEval.mockClear()
     await bootstrapSystemReasons()
   })
 
@@ -377,7 +388,7 @@ describe('run-mode.processor', () => {
   })
 
   describe('confirmCandidate', () => {
-    it('opens unplanned when candidate matures and latest value still < 1', async () => {
+    it('opens unplanned when candidate matures and its own stopped sample is still the latest', async () => {
       const wcId = new Types.ObjectId().toString()
       const tagId = new Types.ObjectId().toString()
       await seedPolicyForWc(wcId, 5000)
@@ -393,7 +404,7 @@ describe('run-mode.processor', () => {
       getLatest.mockResolvedValue({
         tagId,
         value: 0,
-        occurredAt: new Date().toISOString(),
+        occurredAt: firstStoppedAt.toISOString(),
       })
       await processor.confirmCandidate({ workCenterId: wcId, runModeTagId: tagId })
       const open = await UnplannedStop.findOne({
@@ -402,9 +413,10 @@ describe('run-mode.processor', () => {
       })
       expect(open).not.toBeNull()
       expect(open?.startAt.getTime()).toBe(firstStoppedAt.getTime())
+      expect(redisStore.has(`runmode:candidate:${wcId}:${tagId}`)).toBe(false)
     })
 
-    it('cancels candidate (no open) when latest value>=1', async () => {
+    it('keeps the candidate (no open) when telemetry knows a newer sample', async () => {
       const wcId = new Types.ObjectId().toString()
       const tagId = new Types.ObjectId().toString()
       await seedPolicyForWc(wcId, 5000)
@@ -427,6 +439,8 @@ describe('run-mode.processor', () => {
         endAt: null,
       })
       expect(open).toBeNull()
+      // The running signal decides it once performance processes it
+      expect(redisStore.has(`runmode:candidate:${wcId}:${tagId}`)).toBe(true)
     })
 
     it('skips when candidate has not matured yet', async () => {

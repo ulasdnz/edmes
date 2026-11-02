@@ -92,8 +92,12 @@ check is the one place that uses the clock, because the absence of a signal prov
   stop that would close shorter than D, because the machine sent the running signal late, and no user
   has changed it (`updatedBy` is null), it is deleted instead of closed, through the same path as a
   manual delete. A stop a user has changed is closed and kept, so no operator input is lost.
-- An open stop that started after T1, such as an operator's stop opened before a late or replayed
-  running signal arrived, is neither closed nor deleted: no stop ends before it starts.
+- An open stop that started after T1 is never closed: no stop ends before it starts. An operator's
+  stop, or a run-mode stop a user has changed, stays as it is. An untouched run-mode stop that
+  started after T1 is deleted, through the same path as a manual delete: every stop the processor
+  opens starts at a sample it processed, so such a stop was opened at the end of a planned stop
+  (rule 4) from a history that did not hold T1 yet, such as a broker backlog still draining when
+  telemetry first answers, and T1 shows the machine was running before it.
 
 ### 3. Tick, every second, for candidates whose D has run out
 
@@ -341,9 +345,12 @@ production passes the real time.
    duplicate.
 5. The tick and a running signal write the same candidate at once: one stop.
 6. The machine sends the running signal late: an untouched short stop is deleted; a stop an operator gave
-   a reason is closed and kept; a stop that started after the signal, manual or run-mode, stays open.
+   a reason is closed and kept; a manual stop or a run-mode stop a user has changed that started after
+   the signal stays open, and an untouched run-mode stop that started after it is deleted.
 7. A planned stop closes while telemetry is down; once it is back, stopped at E records
-   `[E, first running signal]` and running at E records nothing.
+   `[E, first running signal]` and running at E records nothing. When telemetry answers before it has
+   stored a running signal from before E that the broker still holds, the stop opened at E is deleted
+   once that signal arrives, and a stopped signal after it opens a stop again through rule 1.
 8. Retries come after 1, 2, 4 … 30 s; only the deferred and resolved lines are logged; after 24 hours the
    record is dropped with an error log.
 9. Work-center is down on `work_center.updated`: the old mapping stays and signals keep being processed;

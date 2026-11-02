@@ -56,10 +56,12 @@
 
 ### happy path
 - [CRITICAL] candidate (T0, D = 60 s) whose D has run out, and the latest telemetry sample for the tag is newer than T0 (a signal performance has not processed yet) → the tick opens no stop and keeps the candidate
+- [HIGH] the newer latest sample is a stopped one (the machine ran at 10:05 and stopped again at 10:10, neither sample processed yet) → the tick opens no stop at 10:00 and keeps the candidate; once 0@10:10 arrives, its replay of 1@10:05 records [10:00, 10:05] and a candidate since 10:10 is stored
 
 ### state transitions
 - [CRITICAL] the tick waited on a newer record, then the running signal arrives with T1 - T0 >= D → exactly one stop [T0, T1] is recorded (no duplicate) and the candidate is deleted
 - [CRITICAL] the tick waited on a newer record, then the running signal arrives with T1 - T0 < D → no stop is recorded (no false stop) and the candidate is deleted
+- [CRITICAL] candidate T0 = 10:00, 1@10:05 never reaches performance and is telemetry's latest sample, the tick runs at 10:10, then 0@10:20 arrives with `previousOccurredAt` 10:05 → the tick keeps the candidate, the replay of 1@10:05 records [10:00, 10:05], and a candidate since 10:20 is stored
 
 ---
 
@@ -71,6 +73,8 @@
 
 ### edge cases
 - [CRITICAL] the tick (the latest telemetry sample is the T0 stopped sample) and the running signal (T1 - T0 >= D) decide the same candidate at the same moment → exactly one run-mode stop with startAt = T0 exists, closed at T1, and neither writer fails (the second write counts as already recorded)
+- [CRITICAL] the tick has asked telemetry about the candidate, the running signal records [T0, T1] and deletes the candidate, then telemetry fails the tick's question → the candidate is not written back (the retry fields are written only while the stored record has the same `since`) and no deferral is logged
+- [CRITICAL] the tick has asked telemetry about candidate T0 = 10:00, the machine runs at 10:05 and stops again at 10:06 (a candidate since 10:06 is stored), then telemetry answers with the 10:00 stopped sample → [10:00, 10:05] stays the only stop and the candidate since 10:06 is kept (a decided record is deleted only while it has the same `since`)
 
 ---
 
@@ -85,8 +89,9 @@
 - [CRITICAL] run-mode stop a user has changed (updatedBy set, for example an operator gave it a reason) opened at 10:00, running signal at 10:00:20 → the stop is closed at 10:00:20 and kept, with the user's change intact
 
 ### edge cases
-- [CRITICAL] candidate since 10:00, an operator opens a manual stop at 10:30, then the late running signal at 10:25 is processed → [10:00, 10:25] is recorded and the manual stop stays open (a running signal never ends a stop that started after it)
-- [HIGH] untouched run-mode stop opened at 10:30 (as a planned stop's close opens one), late running signal at 10:25 → the stop is neither deleted nor closed
+- [CRITICAL] candidate since 10:00, an operator opens a manual stop at 10:30, then the late running signal at 10:25 is processed → [10:00, 10:25] is recorded and the manual stop stays open (a running signal never closes a stop that started after it)
+- [HIGH] untouched run-mode stop opened at 10:30 (as a planned stop's close opens one from a history without the 10:25 signal), late running signal at 10:25 → the stop is deleted, through the same path as a manual delete
+- [HIGH] run-mode stop opened at 10:30 that a user has changed, late running signal at 10:25 → the stop stays open with the user's change
 
 ---
 
@@ -104,6 +109,12 @@
 ### constraints
 - no debounce applies to the check: D = 60 s, the history shows the machine stopped at E and running again at E + 10 s → the stop [E, E + 10 s] is recorded
 - [CRITICAL] telemetry cannot answer → no stop is created and the check stays
+- a tick whose time is E itself → telemetry is not asked and the check stays (the history since E holds nothing yet); the next tick decides it
+- [HIGH] the history holds no sample at or before E (the tag's first stored sample comes after E) → no stop is created and the check is deleted (a stop is never created from missing information)
+
+### edge cases
+- [HIGH] a planned stop from 10:00 covers 0@10:02 and closes at E = 10:30, telemetry first answers while the machine's 1@10:25 still waits at the broker → the check opens a stop at 10:30; once 1@10:25 arrives that untouched stop is deleted and no stop remains
+- [HIGH] the same with D = 0, and 0@10:40 follows the late 1@10:25 → rule 1 opens a stop at 10:40, the only stop
 
 ---
 
@@ -132,9 +143,10 @@
 - [HIGH] telemetry keeps failing: the tick (which runs every second) asks again 1 s after the first failed attempt, then 2, 4, 8 and 16 s after the following failures, and every 30 s after that; the ticks in between skip the record without calling telemetry
 - [HIGH] a decision that waits through several failed attempts and is then made → exactly one `run_mode.decision.deferred` (warn, at the first failure) and one `run_mode.decision.resolved` (info, with `waitedMs`) are logged for it; the failed attempts in between add no log line
 - an after-planned check whose history cannot be read follows the same retry schedule and logs the same two lines as a candidate
+- a candidate the tick deferred is decided by the running signal → one `run_mode.decision.resolved` (info, with `waitedMs`) follows the deferral
 
 ### constraints
-- after each failed attempt the Redis record holds `attempts` increased by one and `nextAttemptAt` (ISO 8601 UTC with `Z`) set to the attempt time plus the delay of that attempt
+- after each failed attempt the Redis record holds `attempts` increased by one and `nextAttemptAt` (ISO 8601 UTC with `Z`) set to the attempt time plus the delay of that attempt, and keeps the TTL it was written with
 
 ### edge cases
 - [HIGH] a record still undecided with its `since` more than 24 hours before the tick's `now` → the record is deleted, one `run_mode.decision.abandoned` is logged at error level, and no stop is created
@@ -240,6 +252,17 @@
 ### edge cases
 - [HIGH] telemetry never answers a request → the request is cut off after 5 s and counts as "cannot answer": the record is deferred (`attempts` increased by one, `nextAttemptAt` set, one `run_mode.decision.deferred` logged) and no stop is created
 - [HIGH] candidates of two work centers are due and telemetry never answers for the first one's tag → the other work center's stop is opened no later than 5 s after the tick starts
+- [HIGH] telemetry never answers the state-durations request of a gap replay (rule 6) → the sample fails within 5 s and nothing is decided for it (no stop, the candidate as it was, the cursor where it was)
+
+---
+
+## RunMode.tickSurvivesRedisErrors
+> target: performance/src/modules/run-mode/__contract__/run-mode-outage.contract.test.ts
+> plan-task: 5
+> spec: Errors and retries (pending decisions); Crashes and restarts
+
+### edge cases
+- [HIGH] Redis refuses to list the pending decisions (SCAN) while the tick runs → each failed tick logs `run_mode.debounce_tick.scan_failed` (warn), the process keeps running and the tick keeps ticking; once Redis answers, a due candidate is decided
 
 ---
 

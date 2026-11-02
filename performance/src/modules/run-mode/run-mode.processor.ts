@@ -1,5 +1,10 @@
 import { Types } from 'mongoose'
-import { getLatest, getStateDurations } from '../../lib/internal-api/run-mode-telemetry.client.js'
+import {
+  getLatest,
+  getStateDurations,
+  type LatestSample,
+  type StateDurationsPage,
+} from '../../lib/internal-api/run-mode-telemetry.client.js'
 import { getById as getWorkCenter } from '../../lib/internal-api/work-center.client.js'
 import { logger } from '../../lib/logger.js'
 import { PlannedStop } from '../planned-stop/planned-stop.model.js'
@@ -9,7 +14,16 @@ import {
   openFromRunMode as openUnplannedFromRunMode,
   recordClosedFromRunMode,
 } from '../unplanned-stop/unplanned-stop.service.js'
-import { deleteDecision, readDecision, writeDecisionIfAbsent } from './run-mode.decisions.js'
+import {
+  deferDecision,
+  deleteDecision,
+  dropDecisionOfUnknownTag,
+  logDecisionResolved,
+  readDecision,
+  readDueDecision,
+  resolveDecision,
+  writeDecisionIfAbsent,
+} from './run-mode.decisions.js'
 import { RunModeProcessingState } from './run-mode-processing-state.model.js'
 
 export interface RunModeSample {
@@ -125,12 +139,10 @@ export async function replayStoredSamples(
   let replayed = 0
   let after: Date | undefined
   for (let page = 0; page < MAX_REPLAY_PAGES; page++) {
-    const { segments, hasMore, nextCursor } = await getStateDurations(
-      target.runModeTagId,
-      from,
-      to,
-      { after },
-    )
+    const stored = await getStateDurations(target.runModeTagId, from, to, { after })
+    // Telemetry does not know the tag, so it stored nothing to replay
+    if (!stored) return { replayed, complete: true }
+    const { segments, hasMore, nextCursor } = stored
     for (const segment of segments) {
       const occurredAt = new Date(segment.start)
       if (occurredAt.getTime() <= from.getTime()) continue
@@ -178,7 +190,9 @@ async function handleRunning(sample: RunModeSample): Promise<void> {
     ) {
       await recordClosedFromRunMode(sample.workCenterId, firstStoppedAt, sample.occurredAt)
     }
-    await deleteDecision('debounce', sample.workCenterId, sample.runModeTagId)
+    if (await deleteDecision('debounce', sample.workCenterId, sample.runModeTagId)) {
+      logDecisionResolved(sample, candidate, new Date())
+    }
   }
 
   // Closes the stop the tick may have opened at T0, or deletes it if the signal shows it too short
@@ -192,27 +206,73 @@ export interface ConfirmationTarget {
   runModeTagId: string
 }
 
-export async function confirmCandidate(target: ConfirmationTarget): Promise<void> {
-  const candidate = await readDecision('debounce', target.workCenterId, target.runModeTagId)
+// Rule 3: once D has run out, a candidate whose stopped sample is still the tag's latest one in
+// telemetry has stood since T0, and its stop opens at T0
+export async function confirmCandidate(
+  target: ConfirmationTarget,
+  now: Date = new Date(),
+): Promise<void> {
+  const candidate = await readDueDecision('debounce', target, now)
   if (!candidate) return
 
+  let latest: LatestSample | null
+  try {
+    latest = await getLatest(target.runModeTagId)
+  } catch (err) {
+    await deferDecision(target, candidate, now, err)
+    return
+  }
+  if (!latest) {
+    await dropDecisionOfUnknownTag(target, candidate)
+    return
+  }
+
   const firstStoppedAt = new Date(candidate.since)
-  const maturedAt = firstStoppedAt.getTime() + candidate.debounceMs
-  if (Date.now() < maturedAt) return
+  // A newer sample is one performance has not processed yet; rules 1 and 2 decide when it arrives
+  if (latest.value >= 1 || new Date(latest.occurredAt).getTime() !== firstStoppedAt.getTime()) {
+    return
+  }
+  if (!(await plannedStopCovers(target.workCenterId, firstStoppedAt))) {
+    await openUnplannedFromRunMode(target.workCenterId, firstStoppedAt)
+  }
+  await resolveDecision(target, candidate, now)
+}
 
-  const latest = await getLatest(target.runModeTagId)
-  if (!latest || latest.value >= 1) {
-    await deleteDecision('debounce', target.workCenterId, target.runModeTagId)
+// Rule 4: a planned stop that closed at E while the run mode could not be read left this check.
+// Telemetry's history since E decides it, without a debounce
+export async function confirmAfterPlannedCheck(
+  target: ConfirmationTarget,
+  now: Date = new Date(),
+): Promise<void> {
+  const check = await readDueDecision('after_planned', target, now)
+  if (!check) return
+
+  const endedAt = new Date(check.since)
+  // The history since E holds nothing until E has passed
+  if (now.getTime() <= endedAt.getTime()) return
+  let history: StateDurationsPage | null
+  try {
+    history = await getStateDurations(target.runModeTagId, endedAt, now)
+  } catch (err) {
+    await deferDecision(target, check, now, err)
+    return
+  }
+  if (!history) {
+    await dropDecisionOfUnknownTag(target, check)
     return
   }
 
-  if (await plannedStopCovers(target.workCenterId, firstStoppedAt)) {
-    await deleteDecision('debounce', target.workCenterId, target.runModeTagId)
-    return
+  // The segment that starts at E holds the state at E; a history that starts later cannot tell it
+  const [atEnd, ...later] = history.segments
+  if (atEnd && new Date(atEnd.start).getTime() === endedAt.getTime() && atEnd.state < 1) {
+    const running = later.find(segment => segment.state >= 1)
+    if (running) {
+      await recordClosedFromRunMode(target.workCenterId, endedAt, new Date(running.start))
+    } else {
+      await openUnplannedFromRunMode(target.workCenterId, endedAt)
+    }
   }
-
-  await openUnplannedFromRunMode(target.workCenterId, firstStoppedAt)
-  await deleteDecision('debounce', target.workCenterId, target.runModeTagId)
+  await resolveDecision(target, check, now)
 }
 
 export interface MonitoredWorkCenter {

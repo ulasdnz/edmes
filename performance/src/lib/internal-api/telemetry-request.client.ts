@@ -3,10 +3,15 @@ import { CustomError, getTraceId } from '@mes/core'
 import { config } from '../../config/index.js'
 import { logger } from '../logger.js'
 
+// A telemetry that accepts the connection and never answers counts as unreachable after this long,
+// instead of after undici's 300 s default
+const REQUEST_TIMEOUT_MS = 5000
+
 export async function request<T>(path: string, init?: RequestInit): Promise<T | null> {
   try {
     const res = await fetch(`${config.INTERNAL_API_TELEMETRY}${path}`, {
       ...init,
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       headers: {
         ...(init?.headers ?? {}),
         'x-trace-id': getTraceId() ?? '',
