@@ -236,6 +236,8 @@ and the number `replayed`. Then it decides the signal.
   other dependency failure. The samples replayed before the failure keep the cursor they advanced.
 - The replay reaches its page limit before the signal: the signal fails the same way, and its
   redelivery goes on from the replayed samples.
+- Telemetry does not know the tag, or answers that it is not binary: nothing is replayed and the signal
+  is decided.
 
 Unlike the rejected periodic reconciliation, it runs only when a gap is proven, in the same writer
 that processes the signals, with one telemetry request per gap.
@@ -278,14 +280,46 @@ Covers the debounce candidate and the check after a planned stop.
 ### Tag map
 
 - On a `work_center.*` event, work-center is read first. On success the mapping is updated, and the work
-  center is reconciled when its tag changed or it is new.
+  center is reconciled when its tag changed or it is new. A work center is monitored when it is
+  physical, active and has a run-mode tag, the same test work-center's monitor list applies; an
+  archived or deleted work center is read like any other and stops being monitored.
 - When work-center cannot answer, the old mapping stays and its signals keep being processed. The event
   is acknowledged, so it does not end up dead-lettered, and a full refresh starts.
 - The full refresh reads the monitored work centers from work-center and retries until it succeeds, on
-  the schedule above. It then updates the mapping and reconciles new or changed work centers. Startup
-  runs the same refresh.
-- The run-mode monitors client throws when work-center cannot answer, like the other internal clients.
-  Today it returns an empty list, so a refresh could not tell "no monitors" from "could not read them".
+  the schedule above. It then updates the mapping and reconciles new or changed work centers. One
+  refresh runs at a time: an event that comes while it runs leaves the work center to it, and the
+  refresh reads the list once more when such an event came after its read.
+- Startup maps the work centers that have a cursor before the stream consumer starts, so their signals
+  are processed while work-center is down, and then runs the same refresh in the background.
+- A work center reconciled by the tag map is retried on its own until it succeeds, as in boot
+  reconciliation, with the same log lines.
+- Logs mark changes, not attempts: `run_mode.tag_map.refresh_failed` (warn) at the refresh's first
+  failure, with the cause, and `run_mode.tag_map.refresh_recovered` (info, with `attempts`) once it
+  succeeds after failing. Its requests log their failures at debug.
+- A work center stops being monitored when it loses its run-mode tag, its tag changes, or it leaves the
+  monitor list. Its cursor and the old tag's pending decisions of both kinds are then deleted, under the
+  tag's lock and after any reconciliation of that tag is cancelled, and `run_mode.tag_map.unmonitored`
+  (info) is logged. The old tag never decides for the machine again, and monitoring that resumes starts
+  from the latest sample: neither rule 6 nor the reconciler replays the time it was not monitored, which
+  the performance service spec puts outside run-mode scope.
+- The run-mode monitors client throws when work-center cannot answer, like the other internal clients,
+  so a refresh tells "no monitors" from "could not read them".
+- Shutdown stops the refresh and the tag map's reconciliations before the data connections close, as it
+  stops boot reconciliation.
+
+### A run-mode tag that is not binary
+
+Work-center binds any tag as a work center's run-mode tag, but only a binary one says whether the machine
+runs. Validating the binding is work-center's concern.
+
+- A `tag.value.recorded` sample whose `behavior` is present and not binary skips the run-mode rules.
+  `run_mode.sample.not_binary` (warn, with `workCenterId`, `runModeTagId` and `behavior`) is logged once
+  per tag, and again only after the tag has sent binary samples in between.
+- Telemetry answers 400 `historian.binary_only` when asked for the states of such a tag. A pending check
+  that gets this answer is dropped with `run_mode.decision.not_binary` (warn), as a 404 drops a decision
+  with `unknown_tag`. Rule 6's replay and the reconciler treat it as a tag telemetry does not know:
+  nothing is replayed, with no retry and no dead letter. Every other failed answer still counts as
+  telemetry not answering.
 
 ### Boot reconciliation
 
@@ -436,8 +470,10 @@ the decision rules, with whatever signals survived.
 | `performance/src/lib/internal-api/run-mode-telemetry.client.ts` | State-durations segments in the shape telemetry answers (`state`, `start`, `end`); a caller's signal aborts a request before its timeout |
 | `performance/src/modules/planned-stop/planned-stop.service.ts` | Rule 4: the run-mode tag from work-center or the cursor; leave a check when the run mode cannot be read; a failed check does not fail the close |
 | `performance/src/modules/unplanned-stop/` | Insert a closed run-mode stop, unique index, duplicate counts as recorded; no close ends a stop before it starts |
-| `performance/src/jobs/subscribers.ts` | Read work-center before changing the map, full refresh with retries; pass `previousOccurredAt` on |
-| `performance/src/lib/internal-api/run-mode-monitors.client.ts` | Throw when work-center cannot answer |
+| `performance/src/jobs/subscribers.ts` | Every `work_center.*` event goes to the tag map; pass `previousOccurredAt` on; skip a run-mode sample that is not binary, with one warning per tag |
+| `performance/src/jobs/tag-map.ts` | Read work-center before changing the map, full refresh with retries, seeded from the cursors at startup; a work center that stops being monitored loses its cursor and pending decisions; new and changed work centers reconciled with retries; stopped at shutdown |
+| `performance/src/lib/internal-api/run-mode-monitors.client.ts` | Throw when work-center cannot answer; the caller's log level and abort signal |
+| `performance/src/lib/internal-api/telemetry-request.client.ts` | A 400 `historian.binary_only` is its own error, not telemetry being unreachable |
 | `telemetry/src/lib/mqtt.ts`, telemetry config | Client id and session expiry from config; dropped-message check on connect |
 | `telemetry/src/jobs/events.ts`, `telemetry/src/modules/ingestion/ingestion.pipeline.ts` | `tag.value.recorded` carries the previous stored sample's time |
 | `infra/mosquitto/mosquitto.conf`, `docker-compose.yml` | Queue ceiling, autosave interval, broker memory and CPU limits |

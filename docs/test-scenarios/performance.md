@@ -277,25 +277,27 @@ While a planned stop over 10:00 to 11:00 is active, every sample is processed an
 ---
 
 ## TagMap.updateWhileWorkCenterDown
-> target: performance/src/jobs/tag-map.test.ts
+> target: performance/src/jobs/__contract__/tag-map.contract.test.ts
 > plan-task: 8
 > scenario: 9
-> see-also: RunModeMonitorsClient.list (plan Task 8: the client the refresh reads through)
+> see-also: RunModeMonitorsClient.list (plan Task 8: the client the refresh reads through), TagMap.monitoringStops
 
 ### happy path
-- work-center answers on `work_center.updated` and the run-mode tag changed → the new tag maps to the work center (the old tag no longer does) and the work center is reconciled
+- work-center answers on `work_center.updated` and the run-mode tag changed → the new tag maps to the work center (the old tag no longer does), the old tag's cursor is deleted, and the work center is reconciled from the new tag's latest sample
 - work-center answers for a work center that is new to the map → it is mapped and reconciled
 - work-center answers and the tag is unchanged → the mapping stays as it is and the work center is not reconciled again
 
 ### edge cases
-- [CRITICAL] work-center cannot answer on `work_center.updated` → the old mapping stays (`workCenterForTag(oldTag)` still returns the work center, so its signals keep being processed), `syncWorkCenter` resolves without throwing (the event is acknowledged, not dead-lettered), and a full refresh is requested
-- [HIGH] after that failed update work-center answers the refresh's monitor list → the mapping is replaced by the list (the new tag is mapped) and the work center is reconciled
-- [HIGH] several updates fail while work-center is down → only one refresh loop runs at a time
+- [CRITICAL] work-center cannot answer on `work_center.updated` → the old mapping stays (`workCenterForTag(oldTag)` still returns the work center, so its signals keep being processed), `syncWorkCenter` resolves without throwing (the event is acknowledged, not dead-lettered), and a full refresh is requested; the only warn lines are the work center read's own failure and one `run_mode.tag_map.refresh_failed` with the cause
+- [HIGH] after that failed update work-center answers the refresh's monitor list → the mapping is replaced by the list (the new tag is mapped), the old tag's cursor and candidate are deleted, the work center is reconciled, and one `run_mode.tag_map.refresh_recovered` (info, with `attempts`) is logged
+- [HIGH] several updates fail while work-center is down → only one refresh loop runs at a time, on the retry schedule; the updates that come while it runs leave work-center to it instead of reading it themselves
+- [HIGH] an update comes while the refresh waits for the monitor list, and the list it gets predates the update → the update does not read work-center itself; the refresh reads the list once more after applying the first answer, and the work center's new tag is mapped
+- [HIGH] the reconciliation of a new work center fails because telemetry cannot answer → it is retried on the retry schedule until telemetry answers; its only warn line is one `run_mode.reconciler.failed` with the cause, followed by one `run_mode.reconciler.recovered` (info)
 
 ---
 
 ## TagMap.startupWhileWorkCenterDown
-> target: performance/src/jobs/tag-map.test.ts
+> target: performance/src/jobs/__contract__/tag-map.contract.test.ts
 > plan-task: 8
 > scenario: 10
 > see-also: RunMode.bootReconciliation (plan Task 7: the second half, telemetry down at boot)
@@ -303,6 +305,32 @@ While a planned stop over 10:00 to 11:00 is active, every sample is processed an
 ### edge cases
 - [HIGH] work-center cannot answer at startup → work centers that have a cursor are mapped from their cursors and their signals are processed, while the monitor list is retried on the retry schedule until it arrives
 - [HIGH] the list arrives after some failed attempts → work centers without a cursor (never had a signal processed) are mapped and reconciled; work centers already known with an unchanged tag are not reconciled again
+- the refresh logs one `run_mode.tag_map.refresh_failed` (warn, with the cause) at its first failure and one `run_mode.tag_map.refresh_recovered` (info, with `attempts`) once the list arrives; its requests log their failures at debug
+
+---
+
+## TagMap.monitoringStops
+> target: performance/src/jobs/__contract__/tag-map.contract.test.ts
+> plan-task: 8
+> spec: Errors and retries, Tag map (a work center that stops being monitored loses its run-mode state)
+
+### state transitions
+- [CRITICAL] a work center with a cursor at 10:00 loses its run-mode tag, the machine stops at 10:05 and runs at 10:10 while it is unbound, and the tag is bound again → the cursor was deleted when it was unbound; monitoring starts from the latest sample (cursor at 10:10), the next signal 0@10:30 replays nothing, and no stop is recorded for `[10:05, 10:10]`
+- [HIGH] a work center with a cursor and a candidate is archived, or deleted (work-center answers 404) → its tag is no longer mapped, and its cursor and candidate are deleted
+- [HIGH] the refresh's monitor list no longer names a work center → its tag is no longer mapped and its cursor and candidate are deleted; a work center the list still names with the same tag keeps its mapping and state and is not reconciled again
+- [HIGH] a work center's reconciliation is waiting on telemetry when its tag is unbound → the reconciliation is cancelled before the state is deleted, so telemetry's late answer writes no candidate and no cursor
+- each work center that stops being monitored logs one `run_mode.tag_map.unmonitored` (info)
+
+---
+
+## TagMap.shutdown
+> target: performance/src/jobs/__contract__/tag-map.contract.test.ts
+> plan-task: 8
+> spec: Errors and retries, Tag map
+
+### edge cases
+- [HIGH] `stopRefresh` while the refresh waits for its next attempt → it resolves at once and no further attempt is made
+- [HIGH] `stopRefresh` while a reconciliation waits on telemetry → it resolves without waiting for telemetry or the request timeout, and telemetry's late answer writes nothing
 
 ---
 
@@ -397,12 +425,12 @@ While a planned stop over 10:00 to 11:00 is active, every sample is processed an
 ---
 
 ## TagMap.tagChangesWhilePending
-> target: performance/src/jobs/tag-map.test.ts
+> target: performance/src/jobs/__contract__/tag-map.contract.test.ts
 > plan-task: 8
 > review-focus: 3
 
 ### edge cases
-- [CRITICAL] a work center has pending decisions (a debounce candidate and an after-planned check) for its old run-mode tag and its run-mode tag changes → both pending decisions of the old tag are deleted, so the old tag never decides for the machine
+- [CRITICAL] a work center has pending decisions (a debounce candidate and an after-planned check) for its old run-mode tag and its run-mode tag changes → both pending decisions of the old tag and its cursor are deleted, so the old tag never decides for the machine
 - pending decisions of work centers whose run-mode tag did not change are kept
 
 ---
@@ -553,3 +581,21 @@ Samples reach performance as telemetry publishes them, with `previousOccurredAt`
 - [HIGH] work-center answers with a server error → `listRunModeMonitors()` throws `CustomError` 503 `error.work_center_unreachable`
 - [HIGH] work-center cannot be reached (network failure) → `listRunModeMonitors()` throws the same 503 error
 - a successful answer with an empty `data` → returns `[]` (no monitors is not an error)
+- a caller that logs the failure itself passes `failureLogLevel: 'debug'` → the client's own line is logged at debug, not warn, and the error carries the cause (`HTTP <status>` or the fetch error)
+- the caller's signal aborts while work-center has not answered → the request stops and throws the same 503 error
+
+---
+
+## RunMode.tagNotBinary
+> target: performance/src/modules/run-mode/__contract__/run-mode-not-binary.contract.test.ts
+> plan-task: 8
+> spec: Errors and retries, A run-mode tag that is not binary
+
+### edge cases
+- [HIGH] a `tag.value.recorded` sample of a mapped run-mode tag whose `behavior` is not `binary` → the run-mode rules skip it (no candidate, the cursor does not move), and one `run_mode.sample.not_binary` (warn, with `workCenterId`, `runModeTagId` and `behavior`) is logged for the tag, not one per sample
+- a tag that sends a binary sample between two samples that are not binary → the binary sample is decided and the warning is logged again for the second
+- a sample that carries no `behavior` → it is decided as before
+- [HIGH] an after-planned check is due and telemetry answers 400 `historian.binary_only` → the check is deleted, one `run_mode.decision.not_binary` (warn) is logged, no stop is created, and telemetry is not asked again
+- a check is due and telemetry answers any other 400 → the check is deferred as when telemetry cannot answer (`run_mode.decision.deferred` with cause `HTTP 400`)
+- [HIGH] rule 6's replay gets 400 `historian.binary_only` → nothing is replayed, as for a tag telemetry does not know, and the signal is decided, so it is neither redelivered nor dead-lettered
+- [HIGH] a reconciliation's replay gets 400 `historian.binary_only` → `reconcileWorkCenter` resolves instead of throwing, so it is not retried
