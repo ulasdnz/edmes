@@ -187,6 +187,8 @@
 ### edge cases
 - [CRITICAL] D = 0, cursor at 1@09:00, a planned stop from 10:00 to 11:00 has closed at E = 10:30, then 0@10:05 is processed (from a backlog) → no stop opens inside the planned stop and the check since 10:30 is stored; the tick at 10:31 opens the stop at 10:30 and deletes the check
 - [HIGH] candidate since 10:05 (D = 60 s), a planned stop from 10:00 to 11:00 is entered afterwards and has closed at 10:30, then 1@10:40 arrives → no stop [10:05, 10:40], the candidate is deleted and the check since 10:30 is stored; the tick at 10:41 records [10:30, 10:40]
+- [HIGH] candidate since 10:00 (D = 60 s), a planned stop over 09:59 to 10:30 that ran from 09:59 to E = 10:00:30 is entered afterwards, then 1@10:00:50 arrives, shorter than D → no stop, the candidate is deleted and the check since 10:00:30 is stored; the tick at 10:01 records [10:00:30, 10:00:50] (planned time inside the planned stop, no debounce after its end)
+- the same with 1@10:00:20, before E → the check since 10:00:30 is stored and the tick at 10:01 records nothing and deletes it
 - [HIGH] the same candidate and planned stop, and the tick at 10:31 finds the 10:05 stopped sample still the tag's latest → no stop opens at 10:05, the candidate is deleted and the check since 10:30 is stored; the tick at 10:31:01 opens the stop at 10:30
 - [CRITICAL] performance lags telemetry: a planned stop from 10:00 covers 0@10:02, telemetry has stored 1@10:10 and 0@10:20 when the planned stop closes at E = 10:30, so the close reads 0@10:20 and opens the stop at 10:30; 1@10:10 is then processed and deletes that stop (rule 2), and 0@10:20 is processed → no candidate, the check since 10:30 is stored, and the tick at 10:31 opens the stop at 10:30 again
 

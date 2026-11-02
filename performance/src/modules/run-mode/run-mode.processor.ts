@@ -214,13 +214,13 @@ async function handleRunning(sample: RunModeSample): Promise<void> {
   if (candidate) {
     const firstStoppedAt = new Date(candidate.since)
     const stoppedMs = sample.occurredAt.getTime() - firstStoppedAt.getTime()
-    if (stoppedMs >= candidate.debounceMs) {
-      const covering = await plannedStopCovering(sample.workCenterId, firstStoppedAt)
-      if (!covering) {
-        await recordClosedFromRunMode(sample.workCenterId, firstStoppedAt, sample.occurredAt)
-      } else if (covering.endedAt) {
-        await writeCheckIfEarlier(sample, covering.endedAt)
-      }
+    const covering = await plannedStopCovering(sample.workCenterId, firstStoppedAt)
+    if (covering?.endedAt) {
+      // However short the stop: the time inside the planned stop is planned, and no debounce
+      // applies after its end
+      await writeCheckIfEarlier(sample, covering.endedAt)
+    } else if (!covering && stoppedMs >= candidate.debounceMs) {
+      await recordClosedFromRunMode(sample.workCenterId, firstStoppedAt, sample.occurredAt)
     }
     if (await deleteDecision('debounce', sample.workCenterId, sample.runModeTagId)) {
       logDecisionResolved(sample, candidate, new Date())

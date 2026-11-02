@@ -92,10 +92,11 @@ check is the one place that uses the clock, because the absence of a signal prov
 ### 2. Running signal at T1
 
 - A candidate exists and T1 − T0 ≥ D: the stop `[T0, T1]` is recorded closed, unless a planned stop
-  covers T0, and the candidate is deleted. *Today the candidate is deleted and the stop is lost.* A
-  planned stop that covered T0 and has closed since leaves the check at its end instead, as in
-  rule 1.
+  covers T0, and the candidate is deleted. *Today the candidate is deleted and the stop is lost.*
 - A candidate exists and T1 − T0 < D: no stop; the candidate is deleted (as today).
+- In both cases, a planned stop that covered T0 and has closed since leaves the check at its end, as
+  in rule 1, however short the stop: the time inside the planned stop is planned, and no debounce
+  applies after its end (rule 4).
 - An open unplanned stop of any source exists: it closes at T1 (as today). *New:* if it is the
   run-mode stop the tick opened from a candidate (rule 3), it would close shorter than the debounce
   that candidate carried, because the machine sent the running signal late, and no user has changed

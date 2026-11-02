@@ -1,8 +1,9 @@
 import '../../../test/contract-setup.js'
 
-import type { Types } from 'mongoose'
+import { Types } from 'mongoose'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { testRedis } from '../../../test/contract-setup.js'
+import { PlannedStop } from '../../planned-stop/planned-stop.model.js'
 import * as plannedStopService from '../../planned-stop/planned-stop.service.js'
 import { runDecisionTick } from '../run-mode.debounce-tick.js'
 import {
@@ -20,6 +21,7 @@ import {
   recorded,
   releaseHeld,
   runModeStop,
+  seedReason,
   stateDurations,
   stopsOf,
   storedCandidate,
@@ -37,6 +39,28 @@ function monitoredByWorkCenter(machine: Machine): void {
     _id: machine.workCenterId,
     type: 'physical',
     tagBindings: { runModeTagId: machine.runModeTagId },
+  })
+}
+
+// A planned stop that closed, planned for one window and run for another, as an operator enters it
+async function closedPlannedStop(
+  machine: Machine,
+  planned: [from: string, to: string],
+  ran: [from: string, to: string],
+) {
+  const reason = await seedReason('planned_stop')
+  return PlannedStop.create({
+    workCenterId: new Types.ObjectId(machine.workCenterId),
+    reasonId: reason._id,
+    plannedOwnerId: new Types.ObjectId(userId),
+    source: 'manual',
+    startMode: 'manual',
+    status: 'closed',
+    plannedStartAt: at(planned[0]),
+    plannedEndAt: at(planned[1]),
+    actualStartAt: at(ran[0]),
+    actualEndAt: at(ran[1]),
+    createdBy: new Types.ObjectId(userId),
   })
 }
 
@@ -356,6 +380,45 @@ describe('A stopped signal inside a planned stop that has since closed leaves th
     await tick('10:31:00')
 
     expect(await stopsOf(machine)).toEqual([openRunModeStop('10:30:00')])
+  })
+
+  // D = 60 s. The machine stops at 10:00; an operator then enters a planned stop over it that ran
+  // until E = 10:00:30
+  async function shortCandidateInsideClosedPlannedStop() {
+    const machine = await machineWithDebounce(60_000)
+    await deliver(machine, recorded(machine, 0, '10:00:00'))
+    await closedPlannedStop(machine, ['09:59:00', '10:30:00'], ['09:59:00', '10:00:30'])
+    return machine
+  }
+
+  it('leaves the check when a running signal shorter than the debounce finds the candidate covered by a planned stop that has since closed', async () => {
+    const machine = await shortCandidateInsideClosedPlannedStop()
+
+    await deliver(machine, recorded(machine, 1, '10:00:50'))
+
+    expect(await stopsOf(machine)).toEqual([])
+    expect(await storedCandidate(machine)).toBeNull()
+    expect(await storedCheck(machine)).toEqual(afterPlannedSince('10:00:30'))
+
+    await tick('10:01:00')
+
+    // The time inside the planned stop is planned, and no debounce applies after its end
+    expect(await stopsOf(machine)).toEqual([runModeStop('10:00:30', '10:00:50')])
+    expect(await storedCheck(machine)).toBeNull()
+  })
+
+  it('records nothing for such a candidate when the machine ran before the planned stop ended', async () => {
+    const machine = await shortCandidateInsideClosedPlannedStop()
+
+    await deliver(machine, recorded(machine, 1, '10:00:20'))
+
+    expect(await storedCandidate(machine)).toBeNull()
+    expect(await storedCheck(machine)).toEqual(afterPlannedSince('10:00:30'))
+
+    await tick('10:01:00')
+
+    expect(await stopsOf(machine)).toEqual([])
+    expect(await storedCheck(machine)).toBeNull()
   })
 })
 
