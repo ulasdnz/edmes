@@ -316,12 +316,15 @@ export async function confirmCandidate(
 }
 
 // Rule 4: a planned stop that closed at E while the run mode could not be read left this check.
-// Telemetry's history since E decides it, without a debounce
+// Telemetry's history since E decides it, without a debounce. A check dropped after 24 hours hands
+// the key on as a decided one does
 export async function confirmAfterPlannedCheck(
   target: ConfirmationTarget,
   now: Date = new Date(),
 ): Promise<void> {
-  const check = await readDueDecision('after_planned', target, now)
+  const check = await readDueDecision('after_planned', target, now, dropped =>
+    checkOfNextPlannedStop(target.workCenterId, new Date(dropped.since)),
+  )
   if (!check) return
 
   const endedAt = new Date(check.since)
@@ -357,10 +360,7 @@ export async function confirmAfterPlannedCheck(
           await openUnplannedFromRunMode(target.workCenterId, endedAt)
         }
       }
-      // One key holds one check, so a planned stop that closed after E could not leave its own
-      // while this one waited: the key goes on to it
-      const nextEnd = await nextPlannedStopEnd(target.workCenterId, endedAt)
-      const next = nextEnd ? afterPlannedCheck(nextEnd) : undefined
+      const next = await checkOfNextPlannedStop(target.workCenterId, endedAt)
       await resolveDecision(target, check, now, next)
     },
   )
@@ -379,8 +379,13 @@ async function nextPlannedStopStart(workCenterId: string, after: Date): Promise<
   return next?.actualStartAt ?? null
 }
 
-// The end of the work center's first planned stop that closed after E
-async function nextPlannedStopEnd(workCenterId: string, after: Date): Promise<Date | null> {
+// The check the key goes on to once the check at E is decided or dropped. One key holds one check,
+// so the work center's first planned stop that closed after E could not leave its own while this one
+// waited
+async function checkOfNextPlannedStop(
+  workCenterId: string,
+  after: Date,
+): Promise<PendingDecision | undefined> {
   const next = await PlannedStop.findOne({
     workCenterId: new Types.ObjectId(workCenterId),
     status: 'closed',
@@ -389,7 +394,7 @@ async function nextPlannedStopEnd(workCenterId: string, after: Date): Promise<Da
     .sort({ actualEndAt: 1 })
     .select({ actualEndAt: 1 })
     .lean()
-  return next?.actualEndAt ?? null
+  return next?.actualEndAt ? afterPlannedCheck(next.actualEndAt) : undefined
 }
 
 // Rule 4 as the planned stop closes at E: a stopped machine gets its stop at E. Telemetry's latest

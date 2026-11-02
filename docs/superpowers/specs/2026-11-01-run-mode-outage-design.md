@@ -164,8 +164,10 @@ and leaves nothing.
   can close twice within one outage, and a late signal of rule 1 can leave an earlier E than the
   pending one; overwriting or refusing either check would lose a stop. Deciding the check at E hands
   the key on, in the same compare-and-set that removes the record: the next planned stop that closed
-  after E gets a fresh check at its end, with 25 hours of its own. A check handed to a close that could
-  read the run mode records the same stop again, which the unique start index refuses.
+  after E gets a fresh check at its end, with 25 hours of its own. A check dropped after 24 hours
+  hands the key on the same way, so the checks refused while it waited are not lost with it. A check
+  handed to a close that could read the run mode records the same stop again, which the unique start
+  index refuses.
 - The planned stop is closed already when its run mode is checked, so a failure that leaves no check
   behind, such as Redis refusing the write, does not fail the close. It is logged at error level
   (`planned_stop.run_mode_check_failed`), because a stop may be lost.
@@ -247,7 +249,8 @@ Covers the debounce candidate and the check after a planned stop.
   (warn) once, when the listing starts failing, and `run_mode.debounce_tick.scan_recovered` (info)
   once, when it works again. The tick keeps ticking meanwhile.
 - A record still undecided after 24 hours is dropped with an error log
-  (`run_mode.decision.abandoned`), because a stop may have been lost. A 25-hour Redis TTL only clears
+  (`run_mode.decision.abandoned`), because a stop may have been lost. A dropped check hands its key
+  on to the next planned stop that closed after its E (rule 4). A 25-hour Redis TTL only clears
   orphaned keys.
 
 ### Tag map

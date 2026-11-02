@@ -623,6 +623,64 @@ describe('The check records nothing at an end that another planned stop covers (
   })
 })
 
+// ── Rule 4: a check dropped after 24 hours ───────────────────────────────────
+
+describe('A check dropped after 24 hours hands the key on (rule 4)', () => {
+  let logs: ReturnType<typeof watchDecisionLogs>
+
+  beforeEach(() => {
+    logs = watchDecisionLogs()
+  })
+
+  afterEach(() => {
+    logs.restore()
+  })
+
+  it('stores the check of the next planned stop when the pending one is dropped, and the next tick decides it', async () => {
+    const machine = await machineWithDebounce(60_000)
+    monitoredByWorkCenter(machine)
+    stubs.latest.mode = 'fail'
+    // The machine stood from 11:50 to 12:05
+    recorded(machine, 1, '09:00:00')
+    recorded(machine, 0, '11:50:00')
+    recorded(machine, 1, '12:05:00')
+    const first = await activePlannedStop(machine, '10:00:00', '10:30:00')
+    await closeAt(first, '10:30:00')
+    const second = await activePlannedStop(machine, '11:30:00', '12:00:00')
+    await closeAt(second, '12:00:00')
+
+    // The earlier end is kept; the later close could not leave its own check
+    expect(await storedCheck(machine)).toEqual(afterPlannedSince('10:30:00'))
+
+    // A day later the check since 10:30 is past its 24 hours, the one since 12:00 is not
+    const dayLater = at('10:30:00').getTime() + 24 * 3_600_000
+    await runDecisionTick(new Date(dayLater + 1000))
+
+    expect(await stopsOf(machine)).toEqual([])
+    expect(await storedCheck(machine)).toEqual(afterPlannedSince('12:00:00'))
+
+    await runDecisionTick(new Date(dayLater + 2000))
+
+    expect(await stopsOf(machine)).toEqual([runModeStop('12:00:00', '12:05:00')])
+    expect(await storedCheck(machine)).toBeNull()
+    expect(logs.lines()).toEqual([
+      ['warn', expect.objectContaining({ event: 'internal_api.telemetry.fetch_failed' })],
+      ['warn', expect.objectContaining({ event: 'internal_api.telemetry.fetch_failed' })],
+      [
+        'error',
+        {
+          event: 'run_mode.decision.abandoned',
+          kind: 'after_planned',
+          workCenterId: machine.workCenterId,
+          runModeTagId: machine.runModeTagId,
+          since: at('10:30:00').toISOString(),
+          attempts: 0,
+        },
+      ],
+    ])
+  })
+})
+
 // ── Rule 5: the tick decides a check only while it waits on the same end ─────
 
 describe('The tick decides a check only while it waits on the same end (rule 5)', () => {

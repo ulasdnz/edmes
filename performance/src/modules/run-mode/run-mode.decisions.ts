@@ -173,18 +173,21 @@ const logFields = (target: DecisionTarget, decision: PendingDecision) => ({
 
 // The decision the tick asks telemetry about now: its D has run out, which only the clock can tell
 // because the absence of a signal proves nothing, and the wait after its last failed attempt is
-// over. One still undecided after 24 hours is dropped instead
+// over. One still undecided after 24 hours is dropped instead, and hands its key on to the record
+// successor gives, in the same step, as a decided one does
 export async function readDueDecision(
   kind: DecisionKind,
   target: DecisionTarget,
   now: Date,
+  successor: (dropped: PendingDecision) => Promise<PendingDecision | undefined> = async () =>
+    undefined,
 ): Promise<PendingDecision | null> {
   const decision = await readDecision(kind, target.workCenterId, target.runModeTagId)
   if (!decision) return null
 
   const since = new Date(decision.since).getTime()
   if (now.getTime() - since > DECISION_LIMIT_MS) {
-    if (await replaceIfSameSince(target, decision)) {
+    if (await replaceIfSameSince(target, decision, await successor(decision))) {
       logger.error('Run-mode decision dropped undecided after 24 hours; a stop may be lost', {
         event: 'run_mode.decision.abandoned',
         ...logFields(target, decision),
