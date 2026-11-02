@@ -454,21 +454,21 @@ describe('run-mode.reconciler', () => {
     expect(stops[0].endAt?.toISOString()).toBe('2026-06-15T10:10:00.000Z')
   })
 
-  it('MAX_ITER cap: bails after 100 chunks; cursor stays at last successfully processed sample', async () => {
+  it('MAX_ITER cap: goes on from the cursor the replayed samples advanced until the replay is complete', async () => {
     const wcId = new Types.ObjectId().toString()
     const tagId = new Types.ObjectId().toString()
     await seedCursor(wcId, tagId, new Date('2026-06-15T10:00:00.000Z'), 1)
 
-    // Mock that always returns hasMore=true with a unique advancing nextCursor.
-    // The reconciler must bail at MAX_ITER (=100) instead of looping forever.
+    // 100 chunks that each have more after them, then the last one: one advancing sample each.
+    // A replay ends at MAX_ITER (=100) chunks; the reconciliation goes on from its cursor.
     let counter = 0
     getStateDurations.mockImplementation(async () => {
       counter += 1
       const ts = new Date(Date.UTC(2026, 5, 15, 10, 0, counter)).toISOString() // 10:00:01, 10:00:02, ...
       return {
         segments: [{ state: 1, start: ts, end: ts, durationMs: 0 }],
-        hasMore: true,
-        nextCursor: ts,
+        hasMore: counter <= 100,
+        nextCursor: counter <= 100 ? ts : null,
       }
     })
 
@@ -477,20 +477,15 @@ describe('run-mode.reconciler', () => {
       new Date('2026-06-15T11:00:00.000Z'),
     )
 
-    // Reconciler must have stopped exactly at MAX_ITER iterations, not infinite.
-    expect(getStateDurations).toHaveBeenCalledTimes(100)
+    expect(getStateDurations).toHaveBeenCalledTimes(101)
+    // The second replay starts from the cursor the first one left, at its 100th sample
+    expect(getStateDurations.mock.calls[100][1]).toEqual(new Date('2026-06-15T10:01:40.000Z'))
+    expect(getStateDurations.mock.calls[100][3]).toEqual({ failureLogLevel: 'debug' })
 
-    // Cursor must have advanced to the last sample successfully processed by
-    // handleRunModeSample (so a subsequent boot resumes from there). All segments
-    // in this scenario carry value=1 (running) which closes any open stop and
-    // updates the cursor; we just assert cursor is past the seed.
     const cursor = await RunModeProcessingState.findOne({
       workCenterId: new Types.ObjectId(wcId),
       runModeTagId: new Types.ObjectId(tagId),
     }).lean()
-    expect(cursor).not.toBeNull()
-    expect(cursor!.lastProcessedOccurredAt.getTime()).toBeGreaterThan(
-      new Date('2026-06-15T10:00:00.000Z').getTime(),
-    )
+    expect(cursor?.lastProcessedOccurredAt).toEqual(new Date('2026-06-15T10:01:41.000Z'))
   })
 })

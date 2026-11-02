@@ -10,7 +10,6 @@ import { withTagLock } from './run-mode.lock.js'
 import {
   handleRunModeSample,
   listMonitoredFromCursors,
-  MAX_REPLAY_PAGES,
   type MonitoredWorkCenter,
   replayStoredSamples,
 } from './run-mode.processor.js'
@@ -58,20 +57,17 @@ export async function reconcileWorkCenter(
   signal?: AbortSignal,
 ): Promise<void> {
   const request: RunModeRequestOptions = { failureLogLevel: 'debug', signal }
-  const cursor = await readCursor(target)
+  let cursor = await readCursor(target)
 
   if (cursor) {
-    const { complete } = await replayStoredSamples(target, cursor, now, request)
-    if (!complete) {
-      logger.warn(
-        'Run-mode reconciler hit MAX_ITER cap; remaining transitions deferred to next boot',
-        {
-          event: 'run_mode.reconciler.max_iter',
-          workCenterId: target.workCenterId,
-          runModeTagId: target.runModeTagId,
-          maxIter: MAX_REPLAY_PAGES,
-        },
-      )
+    // A replay that reaches its page limit goes on from the cursor its samples advanced, until it
+    // reaches now. One that advanced nothing would only ask for the same pages again
+    while (!(await replayStoredSamples(target, cursor, now, request)).complete) {
+      const advanced = await readCursor(target)
+      if (!advanced || advanced.getTime() <= cursor.getTime()) {
+        throw new Error('Run-mode replay reached its page limit without moving the cursor')
+      }
+      cursor = advanced
     }
     return
   }

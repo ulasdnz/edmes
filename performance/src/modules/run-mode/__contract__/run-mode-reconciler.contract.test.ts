@@ -1,6 +1,7 @@
 import '../../../test/contract-setup.js'
 
 import { setTimeout as sleep } from 'node:timers/promises'
+import type { Request } from 'express'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { PlannedStop } from '../../planned-stop/planned-stop.model.js'
 import {
@@ -19,6 +20,7 @@ import {
   received,
   recorded,
   releaseHeld,
+  runModeStop,
   stateDurations,
   stopsOf,
   storedCandidate,
@@ -205,6 +207,61 @@ describe('Boot reconciliation and the event path on one tag', () => {
     expect(await stopsOf(machine)).toEqual([])
     expect(logs.lines()).toEqual([])
   })
+})
+
+// ── A replay longer than its page limit ──────────────────────────────────────
+
+// The time of day so many seconds after 10:00
+const secondsAfterTen = (seconds: number): string =>
+  new Date(at('10:00:00').getTime() + seconds * 1_000).toISOString().slice(11, 19)
+
+describe('Boot reconciliation of a history longer than the replay page limit', () => {
+  it('goes on from the cursor its samples advanced until the replay reaches now', async () => {
+    const machine = await machineWithDebounce(0)
+    await deliver(machine, recorded(machine, 1, '10:00:00'))
+    // 150 changes performance never received, one every 10 s: more than the 100 pages a replay
+    // reads when telemetry pages them two at a time
+    for (let change = 1; change <= 150; change++) {
+      recorded(machine, change % 2 === 1 ? 0 : 1, secondsAfterTen(change * 10))
+    }
+    stubs.stateDurations.answer = req =>
+      stateDurations({
+        params: req.params,
+        query: { ...req.query, limit: '2' },
+      } as unknown as Request)
+
+    await reconcileWorkCenter(machine, at('11:00:00'))
+
+    // Every stop of the outage, each closed by the change after it (no debounce)
+    const stops = await stopsOf(machine)
+    expect(stops).toHaveLength(75)
+    expect(stops[0]).toEqual(runModeStop('10:00:10', '10:00:20'))
+    expect(stops.at(-1)).toEqual(runModeStop('10:24:50', '10:25:00'))
+    expect((await cursorOf(machine))?.lastProcessedOccurredAt).toEqual(at('10:25:00'))
+    // The first replay ended at its page limit; the second began where it left the cursor
+    expect(
+      historyRequestsOf(machine)
+        .filter(request => request.after === undefined)
+        .map(request => request.from),
+    ).toEqual([at('10:00:00').toISOString(), at('10:16:30').toISOString()])
+    expect(logs.lines()).toEqual([])
+  }, 30_000)
+
+  it('fails instead of asking for the same pages again when the replay cannot advance', async () => {
+    const machine = await stoppedWhilePerformanceWasDown()
+    // As only a fault would: every page has more, and the next one starts where it did
+    stubs.stateDurations.answer = req => ({
+      segments: [],
+      hasMore: true,
+      nextCursor: String(req.query.from),
+    })
+
+    await expect(reconcileWorkCenter(machine, at('11:00:00'))).rejects.toThrow(/page limit/)
+
+    expect(historyRequestsOf(machine)).toHaveLength(100)
+    expect((await cursorOf(machine))?.lastProcessedOccurredAt).toEqual(at('10:00:00'))
+    expect(logs.lines()).toEqual([])
+  }, 15_000)
 })
 
 // ── Shutdown ──────────────────────────────────────────────────────────────────
