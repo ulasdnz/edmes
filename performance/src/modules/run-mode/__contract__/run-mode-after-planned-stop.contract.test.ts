@@ -1011,6 +1011,17 @@ describe('A check dropped after 24 hours hands the key on (rule 4)', () => {
     }
 
     expect(await storedCheck(machine)).toEqual(afterPlannedSince('12:00:00'))
+    expect(logs.lines()).toEqual([
+      ['warn', expect.objectContaining({ event: 'internal_api.telemetry.fetch_failed' })],
+      ['warn', expect.objectContaining({ event: 'internal_api.telemetry.fetch_failed' })],
+      [
+        'error',
+        expect.objectContaining({
+          event: 'run_mode.decision.abandoned',
+          since: at('10:30:00').toISOString(),
+        }),
+      ],
+    ])
   })
 })
 

@@ -340,10 +340,11 @@ export const closePlannedStop = (plannedStopId: Types.ObjectId, time: string) =>
   )
 
 // Every line the service logs at warn and error, and its info lines about pending decisions and the
-// tick that decides them, in order, with the level of each line
+// tick that decides them, in order, with the level of each line. The lines are kept out of the
+// output: a test asserts the lines it expects instead of printing them
 export function watchDecisionLogs() {
   const spies = (['info', 'warn', 'error'] as const).map(level => {
-    const spy: MockInstance = vi.spyOn(logger, level)
+    const spy: MockInstance = vi.spyOn(logger, level).mockImplementation(() => logger)
     return { level, spy }
   })
   return {
