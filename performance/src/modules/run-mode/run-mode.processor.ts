@@ -5,6 +5,7 @@ import {
   type RunModeRequestOptions,
   type StateDurationsPage,
 } from '../../lib/internal-api/run-mode-telemetry.client.js'
+import { isTagNotBinary } from '../../lib/internal-api/telemetry-request.client.js'
 import { getById as getWorkCenter } from '../../lib/internal-api/work-center.client.js'
 import { logger } from '../../lib/logger.js'
 import { PlannedStop } from '../planned-stop/planned-stop.model.js'
@@ -18,6 +19,7 @@ import {
   afterPlannedCheck,
   deferDecision,
   deleteDecision,
+  dropDecisionOfNotBinaryTag,
   dropDecisionOfUnknownTag,
   logDecisionResolved,
   type PendingDecision,
@@ -163,6 +165,15 @@ async function replayGap(sample: RunModeSample, from: Date): Promise<void> {
   if (!complete) throw new Error('Run-mode replay reached its page limit before the sample')
 }
 
+// Telemetry's answer that the tag is not binary, as the given value: it keeps no states of such a
+// tag, and asking again would not change that. Any other failure goes on
+const notBinaryAs =
+  <const T>(value: T) =>
+  (err: unknown): T => {
+    if (isTagNotBinary(err)) return value
+    throw err
+  }
+
 export const MAX_REPLAY_PAGES = 100
 
 export interface ReplayResult {
@@ -185,8 +196,12 @@ export async function replayStoredSamples(
   let replayed = 0
   let after: Date | undefined
   for (let page = 0; page < MAX_REPLAY_PAGES; page++) {
-    const stored = await getStateDurations(target.runModeTagId, from, to, { ...request, after })
-    // Telemetry does not know the tag, so it stored nothing to replay
+    const stored = await getStateDurations(target.runModeTagId, from, to, {
+      ...request,
+      after,
+    }).catch(notBinaryAs(null))
+    // Telemetry does not know the tag, or keeps no states of it because it is not binary, so it
+    // stored nothing to replay
     if (!stored) return { replayed, complete: true }
     const { segments, hasMore, nextCursor } = stored
     for (const segment of segments) {
@@ -261,6 +276,9 @@ export interface ConfirmationTarget {
 
 // A decision logs its failure itself, once and with the cause, so its requests log theirs at debug
 const DECISION_REQUEST = { failureLogLevel: 'debug' } as const
+
+// The check's history when telemetry says the tag is not binary
+const NOT_BINARY = 'not_binary'
 
 // One attempt of the tick at a pending decision: telemetry is asked and its answer decides. Any
 // failure, of telemetry, MongoDB or Redis, defers the decision to its next attempt. The answer
@@ -356,8 +374,15 @@ export async function confirmAfterPlannedCheck(
     target,
     check,
     now,
-    () => getStateDurations(target.runModeTagId, endedAt, now, DECISION_REQUEST),
+    () =>
+      getStateDurations(target.runModeTagId, endedAt, now, DECISION_REQUEST).catch(
+        notBinaryAs(NOT_BINARY),
+      ),
     async history => {
+      if (history === NOT_BINARY) {
+        await dropDecisionOfNotBinaryTag(target, check)
+        return
+      }
       if (!history) {
         await dropDecisionOfUnknownTag(target, check)
         return

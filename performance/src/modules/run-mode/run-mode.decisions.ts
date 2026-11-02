@@ -286,3 +286,16 @@ export async function dropDecisionOfUnknownTag(
     ...logFields(target, decision),
   })
 }
+
+// The tag is not binary, so telemetry's history holds no run state to decide from, and asking
+// again would not change that
+export async function dropDecisionOfNotBinaryTag(
+  target: DecisionTarget,
+  decision: PendingDecision,
+): Promise<void> {
+  if (!(await replaceIfSameSince(target, decision))) return
+  logger.warn('Run-mode decision dropped: the run-mode tag is not binary', {
+    event: 'run_mode.decision.not_binary',
+    ...logFields(target, decision),
+  })
+}

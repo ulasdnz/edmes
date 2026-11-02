@@ -24,7 +24,9 @@ import { RunModeProcessingState } from '../run-mode-processing-state.model.js'
 
 // ── Stub servers: each endpoint answers, fails with 500 or never answers ─────
 
-type StubMode = 'answer' | 'fail' | 'hang'
+// not_binary answers 400 historian.binary_only, as telemetry does when asked for the states of a tag
+// that is not binary; bad_request answers any other 400
+type StubMode = 'answer' | 'fail' | 'hang' | 'not_binary' | 'bad_request'
 
 interface StubEndpoint {
   // For every request, or as each request picks
@@ -124,6 +126,16 @@ function serve(endpoint: Endpoint) {
     }
     if (mode === 'fail') {
       res.status(500).json({ error: { code: 'error.internal', message: 'Internal error' } })
+      return
+    }
+    if (mode === 'not_binary') {
+      res.status(400).json({
+        error: { code: 'historian.binary_only', message: 'Only binary tags have states' },
+      })
+      return
+    }
+    if (mode === 'bad_request') {
+      res.status(400).json({ error: { code: 'error.validation', message: 'Invalid query' } })
       return
     }
     const data = answer(req)

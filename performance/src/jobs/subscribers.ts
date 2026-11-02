@@ -10,6 +10,9 @@ import { requestRefresh, seedFromCursors, syncWorkCenter, workCenterForTag } fro
 const SERVICE_GROUP = 'performance-service'
 const CONSUMER_ID = `performance-${process.pid}`
 
+// Run-mode tags warned about as not binary, until one of their samples is binary again
+const notBinaryTags = new Set<string>()
+
 const streams = {
   'events.user': {
     'user.updated': async (data: { userId: string }) => {
@@ -38,12 +41,27 @@ const streams = {
   'events.telemetry': {
     'tag.value.recorded': async (data: {
       tagId: string
+      behavior?: string
       value: number
       occurredAt: string
       previousOccurredAt: string | null
     }) => {
       const workCenterId = workCenterForTag(data.tagId)
       if (!workCenterId) return
+      // Only a binary tag says whether the machine runs. Work-center binds any tag, and checking the
+      // binding is its own concern
+      if (data.behavior !== undefined && data.behavior !== 'binary') {
+        if (notBinaryTags.has(data.tagId)) return
+        notBinaryTags.add(data.tagId)
+        logger.warn('Run-mode tag is not binary; its samples are not decided', {
+          event: 'run_mode.sample.not_binary',
+          workCenterId,
+          runModeTagId: data.tagId,
+          behavior: data.behavior,
+        })
+        return
+      }
+      notBinaryTags.delete(data.tagId)
       await handleRunModeSample({
         workCenterId,
         runModeTagId: data.tagId,

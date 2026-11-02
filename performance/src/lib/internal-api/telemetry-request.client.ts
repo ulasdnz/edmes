@@ -9,6 +9,12 @@ export interface RequestOptions {
   failureLogLevel?: 'warn' | 'debug'
 }
 
+const TAG_NOT_BINARY = 'historian.binary_only'
+
+// Telemetry was asked for the states of a tag that is not binary
+export const isTagNotBinary = (err: unknown): boolean =>
+  err instanceof CustomError && err.message === TAG_NOT_BINARY
+
 // A caller that must not wait long passes a signal in init, such as AbortSignal.timeout(ms); an
 // aborted request counts as unreachable
 export async function request<T>(
@@ -27,6 +33,11 @@ export async function request<T>(
       },
     })
     if (res.status === 404) return null
+    // Telemetry keeps no states of a tag that is not binary: an answer about the tag, not a failure
+    // to reach telemetry, so the caller logs it
+    if (res.status === 400 && (await errorCode(res)) === TAG_NOT_BINARY) {
+      throw new CustomError(400, TAG_NOT_BINARY)
+    }
     // A failed answer is not an empty one; callers must not read it as no samples
     if (!res.ok) {
       logger[failureLogLevel]('Telemetry internal fetch failed', {
@@ -47,6 +58,11 @@ export async function request<T>(
     })
     throw unreachable(describeFetchError(err))
   }
+}
+
+async function errorCode(res: Response): Promise<string | undefined> {
+  const body = (await res.json().catch(() => null)) as { error?: { code?: string } } | null
+  return body?.error?.code
 }
 
 // The error's cause says why telemetry could not answer: the HTTP status, the fetch error or the
