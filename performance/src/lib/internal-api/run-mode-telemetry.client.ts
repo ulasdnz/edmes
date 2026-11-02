@@ -1,5 +1,10 @@
 import { request } from './telemetry-request.client.js'
 
+// The run-mode decisions and the stream consumer wait on these requests, so a telemetry that
+// accepts the connection and never answers counts as unreachable after this long, instead of
+// after undici's 300 s default
+const REQUEST_TIMEOUT_MS = 5000
+
 export interface LatestSample {
   tagId: string
   value: number
@@ -14,7 +19,9 @@ export interface StateDurationSegment {
 }
 
 export async function getLatest(tagId: string): Promise<LatestSample | null> {
-  return request<LatestSample>(`/internal/v1/historian/${tagId}/latest`)
+  return request<LatestSample>(`/internal/v1/historian/${tagId}/latest`, {
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  })
 }
 
 export interface StateDurationsPage {
@@ -36,5 +43,5 @@ export async function getStateDurations(
   if (opts?.limit !== undefined) params.set('limit', String(opts.limit))
   if (opts?.after !== undefined) params.set('after', opts.after.toISOString())
   const url = `/internal/v1/historian/${tagId}/state-durations?${params.toString()}`
-  return request<StateDurationsPage>(url)
+  return request<StateDurationsPage>(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) })
 }
