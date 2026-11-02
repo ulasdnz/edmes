@@ -46,6 +46,7 @@ vi.mock('../../lib/internal-api/work-center.client.js', () => ({
   invalidate: vi.fn(async () => {}),
 }))
 
+import { bootstrapSystemReasons } from '../reason/reason.bootstrap.js'
 import { Reason } from '../reason/reason.model.js'
 import { UnplannedStop } from '../unplanned-stop/unplanned-stop.model.js'
 import { PlannedStop } from './planned-stop.model.js'
@@ -238,6 +239,38 @@ describe('PlannedStopService', () => {
         endAt: null,
       })
       expect(remainingOpen).toBeNull()
+    })
+
+    it('leaves a stop that started after a retroactive start open', async () => {
+      await bootstrapSystemReasons()
+      const reason = await seedPlannedReason()
+      const wcId = new Types.ObjectId().toString()
+      const stop = await service.create(
+        {
+          workCenterId: wcId,
+          reasonId: reason._id.toString(),
+          plannedOwnerId: new Types.ObjectId().toString(),
+          plannedStartAt: new Date('2026-06-15T12:00:00.000Z'),
+          plannedEndAt: new Date('2026-06-15T13:00:00.000Z'),
+        },
+        userId,
+      )
+      // The machine stopped at 12:05; the planned stop is entered later as started at 12:00
+      await UnplannedStop.create({
+        workCenterId: new Types.ObjectId(wcId),
+        source: 'run_mode',
+        startAt: new Date('2026-06-15T12:05:00.000Z'),
+      })
+
+      await service.start(stop._id.toString(), userId, {
+        actualStartAt: new Date('2026-06-15T12:00:00.000Z'),
+      })
+
+      // No stop ends before it starts: this one closes at its own running signal
+      const stops = await UnplannedStop.find({ workCenterId: new Types.ObjectId(wcId) }).lean()
+      expect(stops.map(({ startAt, endAt }) => ({ startAt, endAt }))).toEqual([
+        { startAt: new Date('2026-06-15T12:05:00.000Z'), endAt: null },
+      ])
     })
 
     it('rejects concurrent start when another active planned exists (race guard)', async () => {
