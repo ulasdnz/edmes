@@ -140,7 +140,7 @@ const applyValue = async (
   }
   predecessorSet(tagId, newPred)
 
-  await emitTagValueRecorded(tagId, tag.behavior, value, occurredAt)
+  await emitTagValueRecorded(tagId, tag.behavior, value, occurredAt, pred?.occurredAt ?? null)
   return { applied: true, reason: 'history_inserted' }
 }
 

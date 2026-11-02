@@ -305,7 +305,7 @@
 - valid MQTT message for bound speed tag → sample persisted with prevValue, prevTs
 - valid MQTT message for bound binary tag, state change (0→1) → sample persisted
 - first sample for a tag (no predecessor) → prevValue=null, prevTs=null; counter: prev2Value=null, prev2Ts=null, reset=false
-- after persist → `tag.value.recorded` event emitted on `events.telemetry` with `{ tagId, behavior, value, occurredAt }`
+- after persist → `tag.value.recorded` event emitted on `events.telemetry` with `{ tagId, behavior, value, occurredAt, previousOccurredAt }`: `previousOccurredAt` is the time of the tag's sample stored before this one (ISO 8601 UTC with `Z`), null for the tag's first stored sample; a sample that was not stored (same value) is not a predecessor
 
 ### constraints
 - topic not matching `devices/{deviceKey}/nodes/{nodeId}` format → silently dropped

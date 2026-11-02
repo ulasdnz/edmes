@@ -60,6 +60,9 @@ machine ──MQTT (QoS 1, persistent session)──▶ telemetry ──events.t
   the last stored one. A machine that keeps running or keeps standing sends nothing new: **silence means
   "no change", not "stopped"**.
 - Every stored sample carries the device's timestamp (`msg.time`), not the time it reached a service.
+- Telemetry publishes every stored sample as `tag.value.recorded` with `previousOccurredAt`, the time of
+  the tag's sample stored before it (null for its first). A consumer whose last processed sample is
+  older than that knows it missed samples.
 - `GET /internal/v1/historian/:tagId/latest` returns the last stored change.
 - When telemetry restarts, the broker delivers the QoS 1 messages it queued for telemetry's session, and
   telemetry stores and publishes them with their own timestamps. That holds only within the broker's
@@ -264,6 +267,8 @@ the decision rules, with whatever signals survived.
   already holds two run-mode stops with the same start must be cleaned before the index can build.
 - **Telemetry config:** `MQTT_CLIENT_ID`, default `aimes-telemetry`; `MQTT_SESSION_EXPIRY_SECONDS`,
   default `1800`.
+- **Telemetry event:** `tag.value.recorded` gains `previousOccurredAt`, the ISO 8601 UTC time of the
+  tag's previous stored sample, or null for its first.
 - **Broker:** `max_queued_messages 0`, `max_queued_bytes` and `autosave_interval` in
   `infra/mosquitto/mosquitto.conf`, and the broker's memory and CPU limits in `docker-compose.yml`, all
   set from the capacity measurement.
@@ -280,6 +285,7 @@ the decision rules, with whatever signals survived.
 | `performance/src/jobs/subscribers.ts` | Read work-center before changing the map, full refresh with retries |
 | `performance/src/lib/internal-api/run-mode-monitors.client.ts` | Throw when work-center cannot answer |
 | `telemetry/src/lib/mqtt.ts`, telemetry config | Client id and session expiry from config; dropped-message check on connect |
+| `telemetry/src/jobs/events.ts`, `telemetry/src/modules/ingestion/ingestion.pipeline.ts` | `tag.value.recorded` carries the previous stored sample's time |
 | `infra/mosquitto/mosquitto.conf`, `docker-compose.yml` | Queue ceiling, autosave interval, broker memory and CPU limits |
 | `infra/grafana/provisioning/alerting/` | Alert rule on `mqtt.broker.messages_dropped` |
 | `packages/testing` | Redis test container helper using the image docker-compose.yml runs |
