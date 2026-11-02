@@ -216,6 +216,31 @@ describe('run-mode.processor', () => {
       const cacheCallArgs = vi.mocked(cacheSet).mock.calls.at(-1)!
       expect(cacheCallArgs[0]).toBe(`runmode:candidate:${wcId}:${tagId}`)
     })
+
+    it('stores the candidate with its first stop time for 25 hours', async () => {
+      const wcId = new Types.ObjectId().toString()
+      const tagId = new Types.ObjectId().toString()
+      await seedPolicyForWc(wcId, 30_000)
+      await processor.handleRunModeSample(
+        sample({
+          workCenterId: wcId,
+          runModeTagId: tagId,
+          value: 0,
+          occurredAt: new Date('2026-06-15T10:00:00.000Z'),
+        }),
+      )
+      expect(cacheSet).toHaveBeenCalledWith(
+        `runmode:candidate:${wcId}:${tagId}`,
+        {
+          kind: 'debounce',
+          since: '2026-06-15T10:00:00.000Z',
+          debounceMs: 30_000,
+          attempts: 0,
+          nextAttemptAt: null,
+        },
+        90_000,
+      )
+    })
   })
 
   describe('handleRunModeSample — running resolves candidate', () => {
@@ -288,9 +313,11 @@ describe('run-mode.processor', () => {
       await cacheSet(
         key,
         {
-          firstStoppedAt: firstStoppedAt.toISOString(),
-          runModeTagId: tagId,
+          kind: 'debounce',
+          since: firstStoppedAt.toISOString(),
           debounceMs: 5000,
+          attempts: 0,
+          nextAttemptAt: null,
         },
         60,
       )
@@ -317,9 +344,11 @@ describe('run-mode.processor', () => {
       await cacheSet(
         key,
         {
-          firstStoppedAt: firstStoppedAt.toISOString(),
-          runModeTagId: tagId,
+          kind: 'debounce',
+          since: firstStoppedAt.toISOString(),
           debounceMs: 5000,
+          attempts: 0,
+          nextAttemptAt: null,
         },
         60,
       )
@@ -345,9 +374,11 @@ describe('run-mode.processor', () => {
       await cacheSet(
         key,
         {
-          firstStoppedAt: firstStoppedAt.toISOString(),
-          runModeTagId: tagId,
+          kind: 'debounce',
+          since: firstStoppedAt.toISOString(),
           debounceMs: 30_000,
+          attempts: 0,
+          nextAttemptAt: null,
         },
         60,
       )

@@ -1,14 +1,15 @@
 import { Types } from 'mongoose'
-import { cacheDel, cacheGet, cacheSet } from '../../lib/cache.js'
 import { getLatest } from '../../lib/internal-api/run-mode-telemetry.client.js'
 import { getById as getWorkCenter } from '../../lib/internal-api/work-center.client.js'
 import { logger } from '../../lib/logger.js'
 import { PlannedStop } from '../planned-stop/planned-stop.model.js'
 import { resolveForWorkCenter } from '../policy/policy.service.js'
 import {
-  closeIfOpen as closeOpenUnplanned,
+  closeOnRunning,
   openFromRunMode as openUnplannedFromRunMode,
+  recordClosedFromRunMode,
 } from '../unplanned-stop/unplanned-stop.service.js'
+import { deleteDecision, readDecision, writeDecision } from './run-mode.decisions.js'
 import { RunModeProcessingState } from './run-mode-processing-state.model.js'
 
 export interface RunModeSample {
@@ -17,15 +18,6 @@ export interface RunModeSample {
   value: number
   occurredAt: Date
 }
-
-interface Candidate {
-  firstStoppedAt: string
-  runModeTagId: string
-  debounceMs: number
-}
-
-const candidateKey = (workCenterId: string, runModeTagId: string): string =>
-  `runmode:candidate:${workCenterId}:${runModeTagId}`
 
 async function plannedStopCovers(workCenterId: string, at: Date): Promise<boolean> {
   const hit = await PlannedStop.exists({
@@ -94,18 +86,35 @@ async function handleStopped(sample: RunModeSample): Promise<void> {
     return
   }
 
-  const candidate: Candidate = {
-    firstStoppedAt: sample.occurredAt.toISOString(),
-    runModeTagId: sample.runModeTagId,
+  // A redelivered sample leaves the candidate as it was first written
+  if (await readDecision('debounce', sample.workCenterId, sample.runModeTagId)) return
+  await writeDecision(sample.workCenterId, sample.runModeTagId, {
+    kind: 'debounce',
+    since: sample.occurredAt.toISOString(),
     debounceMs: policy.runModeDebounceMs,
-  }
-  const ttlSeconds = Math.max(1, Math.ceil((policy.runModeDebounceMs + 2000) / 1000))
-  await cacheSet(candidateKey(sample.workCenterId, sample.runModeTagId), candidate, ttlSeconds)
+    attempts: 0,
+    nextAttemptAt: null,
+  })
 }
 
 async function handleRunning(sample: RunModeSample): Promise<void> {
-  await cacheDel(candidateKey(sample.workCenterId, sample.runModeTagId))
-  await closeOpenUnplanned(sample.workCenterId, sample.occurredAt)
+  const candidate = await readDecision('debounce', sample.workCenterId, sample.runModeTagId)
+  if (candidate) {
+    const firstStoppedAt = new Date(candidate.since)
+    const stoppedMs = sample.occurredAt.getTime() - firstStoppedAt.getTime()
+    if (
+      stoppedMs >= candidate.debounceMs &&
+      !(await plannedStopCovers(sample.workCenterId, firstStoppedAt))
+    ) {
+      await recordClosedFromRunMode(sample.workCenterId, firstStoppedAt, sample.occurredAt)
+    }
+    await deleteDecision('debounce', sample.workCenterId, sample.runModeTagId)
+  }
+
+  // Closes the stop the tick may have opened at T0, or deletes it if the signal shows it too short
+  const debounceMs =
+    candidate?.debounceMs ?? (await resolveForWorkCenter(sample.workCenterId)).runModeDebounceMs
+  await closeOnRunning(sample.workCenterId, sample.occurredAt, debounceMs)
 }
 
 export interface ConfirmationTarget {
@@ -114,27 +123,26 @@ export interface ConfirmationTarget {
 }
 
 export async function confirmCandidate(target: ConfirmationTarget): Promise<void> {
-  const key = candidateKey(target.workCenterId, target.runModeTagId)
-  const candidate = await cacheGet<Candidate>(key)
+  const candidate = await readDecision('debounce', target.workCenterId, target.runModeTagId)
   if (!candidate) return
 
-  const firstStoppedAt = new Date(candidate.firstStoppedAt)
+  const firstStoppedAt = new Date(candidate.since)
   const maturedAt = firstStoppedAt.getTime() + candidate.debounceMs
   if (Date.now() < maturedAt) return
 
   const latest = await getLatest(target.runModeTagId)
   if (!latest || latest.value >= 1) {
-    await cacheDel(key)
+    await deleteDecision('debounce', target.workCenterId, target.runModeTagId)
     return
   }
 
   if (await plannedStopCovers(target.workCenterId, firstStoppedAt)) {
-    await cacheDel(key)
+    await deleteDecision('debounce', target.workCenterId, target.runModeTagId)
     return
   }
 
   await openUnplannedFromRunMode(target.workCenterId, firstStoppedAt)
-  await cacheDel(key)
+  await deleteDecision('debounce', target.workCenterId, target.runModeTagId)
 }
 
 export interface MonitoredWorkCenter {
