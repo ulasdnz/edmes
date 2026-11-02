@@ -249,6 +249,34 @@ describe('The tag map when work-center cannot answer an update (scenario 9)', ()
     expect(logs.lines()).toEqual([workCenterFetchFailed(machine), refreshFailed])
   })
 
+  it('reads the list once more for an update that comes while the refresh reads it', async () => {
+    const machine = await machineWithDebounce(60_000)
+    bind(machine)
+    await deliver(machine, recorded(machine, 1, '10:00:00'))
+    stubs.runModeMonitors.mode = 'hang'
+    requestRefresh()
+    await vi.waitFor(() => expect(held.size).toBe(1))
+
+    // Work-center binds another tag and publishes the update while the refresh waits for the list
+    const moved = withNewTag(machine)
+    bind(moved)
+    await workCenterEvent('work_center.updated', machine)
+    stubs.runModeMonitors.mode = 'answer'
+    // The list as work-center had it when the refresh asked
+    releaseHeld(res =>
+      res.json({
+        data: [{ workCenterId: machine.workCenterId, runModeTagId: machine.runModeTagId }],
+      }),
+    )
+
+    await vi.waitFor(() => expect(workCenterForTag(moved.runModeTagId)).toBe(machine.workCenterId))
+    expect(workCenterForTag(machine.runModeTagId)).toBeUndefined()
+    // The update left work-center to the refresh, which read the list a second time
+    expect(received.workCenter).toEqual([])
+    expect(received.runModeMonitors).toHaveLength(2)
+    expect(logs.lines()).toEqual([unmonitored(machine)])
+  })
+
   it('maps a work center that is new to the map and reconciles it', async () => {
     const machine = await machineWithDebounce(60_000)
     bind(machine)
