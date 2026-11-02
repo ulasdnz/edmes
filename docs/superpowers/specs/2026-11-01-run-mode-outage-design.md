@@ -134,6 +134,10 @@ Performance asks telemetry for the latest sample of the tag:
 
 ### 4. A planned stop closes at E
 
+As today, the close leaves nothing when another planned stop covers E. It asks that with rule 1's
+meaning of covers, as the check below does, so a planned stop that closed after E, such as one
+converted from an unplanned stop, covers E too.
+
 The run-mode tag comes from work-center; a work center it names no run-mode tag for is not
 monitored, and the close leaves nothing, as today. When work-center cannot answer, the work center's
 cursor names the tag; with no cursor either, the close logs `planned_stop.run_mode_unmonitored` (warn)

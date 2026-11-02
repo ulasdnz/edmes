@@ -41,7 +41,7 @@ export interface RunModeSample {
 // too: the check at that end then decides from the history whether the machine still stood there,
 // and its own coverage test there sorts out the overlap. endedAt is null while only planned or
 // active ones cover T
-async function plannedStopCovering(
+export async function plannedStopCovering(
   workCenterId: string,
   at: Date,
 ): Promise<{ endedAt: Date | null } | null> {

@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { testRedis } from '../../../test/contract-setup.js'
 import { PlannedStop } from '../../planned-stop/planned-stop.model.js'
 import * as plannedStopService from '../../planned-stop/planned-stop.service.js'
+import { Reason } from '../../reason/reason.model.js'
+import * as unplannedStopService from '../../unplanned-stop/unplanned-stop.service.js'
 import { runDecisionTick } from '../run-mode.debounce-tick.js'
 import {
   activePlannedStop,
@@ -62,6 +64,33 @@ async function closedPlannedStop(
     actualEndAt: at(ran[1]),
     createdBy: new Types.ObjectId(userId),
   })
+}
+
+// An operator records an unplanned stop and converts it into a planned stop, which the conversion
+// creates closed, with the stop's own window
+async function convertedPlannedStop(machine: Machine, from: string, to: string) {
+  const stop = await unplannedStopService.createManual(
+    { workCenterId: machine.workCenterId, startAt: at(from), endAt: at(to) },
+    userId,
+  )
+  const code = `R-${new Types.ObjectId().toString()}`
+  const reason = await Reason.create({
+    code,
+    name: code,
+    usages: ['planned_stop'],
+    canStartManually: false,
+    canBeScheduled: false,
+    canConvertFromUnplanned: true,
+    isSystemDefault: false,
+    isActive: true,
+    affectsOee: true,
+    createdBy: new Types.ObjectId(userId),
+  })
+  await unplannedStopService.convertToPlanned(
+    stop._id.toString(),
+    { reasonId: reason._id.toString() },
+    userId,
+  )
 }
 
 // A planned stop that was planned and never started
@@ -349,6 +378,25 @@ describe('The close decides from the latest sample only when it came at or befor
     await tick('10:40:00')
 
     expect(await stopsOf(machine)).toEqual([openRunModeStop('10:35:00')])
+    expect(await storedCheck(machine)).toBeNull()
+  })
+})
+
+describe('The close leaves no stop at an end that another planned stop covers (rule 4)', () => {
+  it('opens no stop at E inside a planned stop converted from an unplanned stop', async () => {
+    const machine = await machineWithDebounce(60_000)
+    monitoredByWorkCenter(machine)
+    const planned = await activePlannedStop(machine, '10:00:00', '10:30:00')
+    await deliver(machine, recorded(machine, 0, '10:02:00'))
+    // An operator records a stop from 10:20 to 10:45 and converts it into a planned stop
+    await convertedPlannedStop(machine, '10:20:00', '10:45:00')
+
+    await closeAt(planned, '10:30:00')
+
+    // The machine still stands, but the converted planned stop covers E, which had not closed by E
+    expect(await stopsOf(machine)).toEqual([
+      { source: 'manual', startAt: at('10:20:00'), endAt: at('10:45:00') },
+    ])
     expect(await storedCheck(machine)).toBeNull()
   })
 })

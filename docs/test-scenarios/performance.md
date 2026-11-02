@@ -178,6 +178,7 @@
 - [HIGH] the same with the running signal at 10:28, before E → the close opens no stop and leaves the check since 10:30; the tick at 10:33 records nothing and deletes the check
 - [CRITICAL] after 0@10:02 and 1@10:35 were processed, an operator closes a planned stop from 10:00 late, with the end it had, E = 10:30 → the close opens no stop and leaves the check since 10:30 (the latest sample, 1@10:35, came after E and says nothing about E); the tick at 10:40 records [10:30, 10:35]
 - [HIGH] D = 0, the machine ran at E, and telemetry has stored its stop 0@10:35 that performance has not processed yet when the planned stop closes late with E = 10:30 → no stop opens at 10:30 and the check since 10:30 is stored; 0@10:35 then opens its own stop at 10:35 (the planned stop had closed by then), and the tick at 10:40 records nothing at E and deletes the check
+- [HIGH] an operator converts a stop from 10:20 to 10:45 into a planned stop (closed at 10:45), and a planned stop from 10:00 closes at E = 10:30 while the run mode can be read and the machine stands → no stop opens at 10:30 and no check is stored: the converted planned stop covers E in rule 1's meaning
 
 ---
 

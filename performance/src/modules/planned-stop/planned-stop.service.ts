@@ -15,6 +15,7 @@ import { Reason } from '../reason/reason.model.js'
 import {
   checkRunModeAfterPlannedStop,
   leaveAfterPlannedCheck,
+  plannedStopCovering,
   runModeTagIdFromCursor,
 } from '../run-mode/run-mode.processor.js'
 import { closeIfOpen as closeOpenUnplanned } from '../unplanned-stop/unplanned-stop.service.js'
@@ -325,14 +326,10 @@ async function maybeOpenUnplannedAfterClose(
 
   // The planned stop is closed already; nothing here may fail the close
   try {
-    const covering = await PlannedStop.exists({
-      workCenterId: closed.workCenterId,
-      _id: { $ne: closed._id },
-      status: { $in: ['planned', 'active'] },
-      plannedStartAt: { $lte: actualEndAt },
-      plannedEndAt: { $gt: actualEndAt },
-    })
-    if (covering) return
+    // Another planned stop covers E, as the check after a planned stop finds it: one that is planned
+    // or active, or one that closed after E, such as a converted one. This one ended at E and covers
+    // it no longer
+    if (await plannedStopCovering(workCenterId, actualEndAt)) return
 
     // undefined when work-center cannot answer; its client logs why
     const workCenter = await getWorkCenter(workCenterId).catch(() => undefined)
