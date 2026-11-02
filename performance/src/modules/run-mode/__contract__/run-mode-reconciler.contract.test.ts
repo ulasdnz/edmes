@@ -3,12 +3,14 @@ import '../../../test/contract-setup.js'
 import { setTimeout as sleep } from 'node:timers/promises'
 import type { Request } from 'express'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { syncWorkCenter } from '../../../jobs/tag-map.js'
 import { PlannedStop } from '../../planned-stop/planned-stop.model.js'
 import {
   reconcileWorkCenter,
   startBootReconciliation,
   stopBootReconciliation,
 } from '../run-mode.reconciler.js'
+import { RunModeProcessingState } from '../run-mode-processing-state.model.js'
 import {
   at,
   candidateKeys,
@@ -262,6 +264,73 @@ describe('Boot reconciliation and the event path on one tag', () => {
     expect(await storedCandidate(machine)).toEqual(candidateSince('10:10:00'))
     expect((await cursorOf(machine))?.lastProcessedOccurredAt).toEqual(at('10:10:00'))
     expect(logs.lines()).toEqual([])
+  })
+})
+
+// ── A work center that stops being monitored while it is reconciled ──────────
+
+// The tag map stops monitoring the machine's work center: work-center, whose stub answers 404 by
+// default, no longer knows it
+const stopMonitoring = (machine: Machine) => syncWorkCenter(machine.workCenterId)
+
+const unmonitored = (machine: Machine) => [
+  'info',
+  {
+    event: 'run_mode.tag_map.unmonitored',
+    workCenterId: machine.workCenterId,
+    runModeTagId: machine.runModeTagId,
+  },
+]
+
+describe('Boot reconciliation of a work center that stops being monitored', () => {
+  it('skips a work center whose cursor is gone between the listing and its reconciliation', async () => {
+    const machine = await stoppedWhilePerformanceWasDown()
+    // The work center stops being monitored once the listing has named it
+    const find = RunModeProcessingState.find.bind(RunModeProcessingState) as (
+      ...args: unknown[]
+    ) => { exec: () => Promise<unknown> }
+    const spy = vi.spyOn(RunModeProcessingState, 'find').mockImplementationOnce(((
+      ...args: unknown[]
+    ) => {
+      const query = find(...args)
+      const exec = query.exec.bind(query)
+      query.exec = async () => {
+        const listed = await exec()
+        await stopMonitoring(machine)
+        return listed
+      }
+      return query
+    }) as never)
+    try {
+      await startBootReconciliation()
+    } finally {
+      spy.mockRestore()
+    }
+    await vi.waitFor(() => expect(logs.lines()).toContainEqual(reconcilerDone))
+
+    // Never started from its latest sample: no request, no cursor, no candidate
+    expect(received.latest).toEqual([])
+    expect(historyRequestsOf(machine)).toEqual([])
+    expect(await cursorOf(machine)).toBeNull()
+    expect(await storedCandidate(machine)).toBeNull()
+    expect(logs.lines()).toEqual([unmonitored(machine), reconcilerStarted(1), reconcilerDone])
+  })
+
+  it('decides nothing from a replay that was asking telemetry when the cursor was deleted', async () => {
+    const machine = await stoppedWhilePerformanceWasDown()
+    stubs.stateDurations.mode = 'hang'
+    await startBootReconciliation()
+    await vi.waitFor(() => expect(held.size).toBe(1))
+
+    // The work center stops being monitored while the replay waits on telemetry
+    await stopMonitoring(machine)
+    releaseHeld(res => res.json({ data: stateDurations(res.req) }))
+    await vi.waitFor(() => expect(logs.lines()).toContainEqual(reconcilerDone))
+
+    expect(await cursorOf(machine)).toBeNull()
+    expect(await storedCandidate(machine)).toBeNull()
+    expect(await stopsOf(machine)).toEqual([])
+    expect(logs.lines()).toEqual([reconcilerStarted(1), unmonitored(machine), reconcilerDone])
   })
 })
 

@@ -16,6 +16,7 @@ import {
   received,
   recorded,
   releaseHeld,
+  stateDurations,
   stopsOf,
   storedCandidate,
   storedCheck,
@@ -542,6 +543,44 @@ describe('A work center that stops being monitored loses its run-mode state', ()
     expect(await storedCandidate(machine)).toBeNull()
     expect(await cursorsOf(machine)).toEqual([])
     expect(logs.lines()).toEqual([unmonitored(machine)])
+  })
+
+  it('decides nothing from a gap replay that was asking telemetry when monitoring stopped', async () => {
+    const machine = await machineWithDebounce(60_000)
+    bind(machine)
+    await deliver(machine, recorded(machine, 1, '10:00:00'))
+    // Stored by telemetry, never received by performance
+    recorded(machine, 0, '10:05:00')
+    stubs.stateDurations.mode = 'hang'
+    // The next signal replays the gap before it is decided, and the replay waits on telemetry
+    const delivering = arrives(recorded(machine, 1, '10:10:00'))
+    await vi.waitFor(() => expect(held.size).toBe(1))
+
+    // Meanwhile the refresh finds the work center no longer monitored
+    unbind(machine)
+    requestRefresh()
+    await vi.waitFor(() => expect(logs.lines()).toEqual([unmonitored(machine)]))
+    releaseHeld(res => res.json({ data: stateDurations(res.req) }))
+    await delivering
+
+    // Neither the replayed stop nor the signal that started the replay brought the state back
+    expect(await cursorsOf(machine)).toEqual([])
+    expect(await storedCandidate(machine)).toBeNull()
+    expect(await stopsOf(machine)).toEqual([])
+    expect(logs.lines()).toEqual([
+      unmonitored(machine),
+      [
+        'warn',
+        {
+          event: 'run_mode.sample.gap_replayed',
+          workCenterId: machine.workCenterId,
+          runModeTagId: machine.runModeTagId,
+          from: at('10:00:00').toISOString(),
+          to: at('10:10:00').toISOString(),
+          replayed: 0,
+        },
+      ],
+    ])
   })
 })
 

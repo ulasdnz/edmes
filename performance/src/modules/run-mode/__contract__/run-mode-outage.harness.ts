@@ -209,8 +209,8 @@ export async function machineWithDebounce(debounceMs: number): Promise<Machine> 
 }
 
 // A run-mode value stamped with the machine's own time, as the telemetry subscriber passes it on
-export function signal(machine: Machine, value: number, time: string): Promise<void> {
-  return handleRunModeSample({ ...machine, value, occurredAt: at(time) })
+export async function signal(machine: Machine, value: number, time: string): Promise<void> {
+  await handleRunModeSample({ ...machine, value, occurredAt: at(time) })
 }
 
 // What telemetry publishes as tag.value.recorded

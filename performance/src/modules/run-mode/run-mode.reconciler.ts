@@ -46,6 +46,13 @@ async function initializeCursor(
   })
 }
 
+export interface ReconcileOptions {
+  // The target was listed from its cursor, as boot reconciliation lists them. Only stopping the work
+  // center's monitoring deletes a cursor, so a target whose cursor is gone is skipped: starting it
+  // from its latest sample would monitor it again
+  fromCursor?: boolean
+}
+
 // Brings one work center up to `now` from telemetry: the samples stored after its cursor go through
 // the same rules as delivered ones, and without a cursor its latest sample does. It throws when it
 // cannot, such as when telemetry cannot answer, and logs nothing itself, so its requests log their
@@ -55,9 +62,19 @@ export async function reconcileWorkCenter(
   target: MonitoredWorkCenter,
   now: Date = new Date(),
   signal?: AbortSignal,
+  { fromCursor = false }: ReconcileOptions = {},
 ): Promise<void> {
   const request: RunModeRequestOptions = { failureLogLevel: 'debug', signal }
   let cursor = await readCursor(target)
+
+  if (!cursor && fromCursor) {
+    logger.debug('Run-mode reconciliation skipped: the work center is no longer monitored', {
+      event: 'run_mode.reconciler.skipped',
+      workCenterId: target.workCenterId,
+      runModeTagId: target.runModeTagId,
+    })
+    return
+  }
 
   if (cursor) {
     // A replay that reaches its page limit goes on from the cursor its samples advanced, until it
@@ -100,11 +117,12 @@ export async function reconcileWorkCenter(
 export async function reconcileUntilDone(
   target: MonitoredWorkCenter,
   signal: AbortSignal,
+  options: ReconcileOptions = {},
 ): Promise<void> {
   let failures = 0
   while (!signal.aborted) {
     try {
-      await reconcileWorkCenter(target, new Date(), signal)
+      await reconcileWorkCenter(target, new Date(), signal, options)
       if (failures > 0) {
         logger.info('Run-mode reconciler recovered for work center', {
           event: 'run_mode.reconciler.recovered',
@@ -153,7 +171,7 @@ export async function startBootReconciliation(): Promise<void> {
   })
   const controller = new AbortController()
   const done = Promise.all(
-    monitored.map(target => reconcileUntilDone(target, controller.signal)),
+    monitored.map(target => reconcileUntilDone(target, controller.signal, { fromCursor: true })),
   ).then(() => {
     if (controller.signal.aborted) return
     logger.info('Run-mode reconciler completed', {

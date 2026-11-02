@@ -115,14 +115,21 @@ export interface SampleHandling {
   // deciding the latest sample would skip the samples before it that the event path has not
   // processed yet
   onlyWithoutCursor?: boolean
+  // Decide the sample only while the tag has a cursor. A replay goes on from the tag's cursor this
+  // way, so its samples are not taken for the tag's first once that cursor is gone
+  onlyWithCursor?: boolean
 }
 
+// Only stopping a work center's monitoring deletes its cursor. A sample whose handling started from a
+// cursor that is gone under the lock belongs to a tag no longer monitored, and decides nothing;
+// without one at its start, a sample is the tag's first. Resolves false when monitoring stopped, so
+// a replay ends there
 export async function handleRunModeSample(
   sample: RunModeSample,
-  { onlyWithoutCursor = false }: SampleHandling = {},
-): Promise<void> {
+  { onlyWithoutCursor = false, onlyWithCursor = false }: SampleHandling = {},
+): Promise<boolean> {
   const cursor = await readCursor(sample.workCenterId, sample.runModeTagId)
-  if (isProcessed(sample, cursor)) return
+  if (isProcessed(sample, cursor)) return true
 
   // Telemetry stored samples after the cursor that were never processed here; they come first.
   // The replay asks telemetry outside the tag's lock, and each sample it replays takes the lock
@@ -135,17 +142,22 @@ export async function handleRunModeSample(
     await replayGap(sample, cursor.lastProcessedOccurredAt)
   }
 
-  await withTagLock(sample, async () => {
+  return withTagLock(sample, async () => {
+    const current = await readCursor(sample.workCenterId, sample.runModeTagId)
+    if ((cursor !== null || onlyWithCursor) && current === null) {
+      logSkippedSample(sample, 'monitoring_stopped')
+      return false
+    }
     // Another path may have processed this sample, or a later one, while this one waited: the
     // cursor only moves forward
-    const current = await readCursor(sample.workCenterId, sample.runModeTagId)
-    if (onlyWithoutCursor ? current !== null : isProcessed(sample, current)) return
+    if (onlyWithoutCursor ? current !== null : isProcessed(sample, current)) return true
     if (sample.value < 1) {
       await handleStopped(sample)
     } else {
       await handleRunning(sample)
     }
     await updateCursor(sample)
+    return true
   })
 }
 
@@ -182,8 +194,9 @@ export interface ReplayResult {
   complete: boolean
 }
 
-// Replays the tag's samples telemetry stored after `from` and before `to`, in their order, through
-// the same rules as a delivered sample; each one advances the cursor. Every state-durations segment
+// Replays the tag's samples telemetry stored after `from`, the tag's cursor, and before `to`, in their
+// order, through the same rules as a delivered sample; each one advances the cursor, and the replay
+// ends once the cursor is gone. Every state-durations segment
 // starts at a stored sample, except the first, which starts at `from`. Pages bound the payload after
 // a long outage; the next page starts with the sample whose segment the page before left open.
 // Once the request's signal aborts, the replay stops before its next sample
@@ -208,12 +221,17 @@ export async function replayStoredSamples(
       const occurredAt = new Date(segment.start)
       if (occurredAt.getTime() <= from.getTime()) continue
       request.signal?.throwIfAborted()
-      await handleRunModeSample({
-        workCenterId: target.workCenterId,
-        runModeTagId: target.runModeTagId,
-        value: segment.state,
-        occurredAt,
-      })
+      const monitored = await handleRunModeSample(
+        {
+          workCenterId: target.workCenterId,
+          runModeTagId: target.runModeTagId,
+          value: segment.state,
+          occurredAt,
+        },
+        { onlyWithCursor: true },
+      )
+      // The work center stopped being monitored: nothing is left to replay
+      if (!monitored) return { replayed, complete: true }
       replayed++
     }
     if (!hasMore || !nextCursor) return { replayed, complete: true }
