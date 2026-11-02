@@ -2,6 +2,7 @@ import { Types } from 'mongoose'
 import {
   getLatest,
   getStateDurations,
+  type RunModeRequestOptions,
   type StateDurationsPage,
 } from '../../lib/internal-api/run-mode-telemetry.client.js'
 import { getById as getWorkCenter } from '../../lib/internal-api/work-center.client.js'
@@ -162,21 +163,24 @@ export interface ReplayResult {
 // the same rules as a delivered sample; each one advances the cursor. Every state-durations segment
 // starts at a stored sample, except the first, which starts at `from`. Pages bound the payload after
 // a long outage; the next page starts with the sample whose segment the page before left open.
+// Once the request's signal aborts, the replay stops before its next sample
 export async function replayStoredSamples(
   target: MonitoredWorkCenter,
   from: Date,
   to: Date,
+  request: RunModeRequestOptions = {},
 ): Promise<ReplayResult> {
   let replayed = 0
   let after: Date | undefined
   for (let page = 0; page < MAX_REPLAY_PAGES; page++) {
-    const stored = await getStateDurations(target.runModeTagId, from, to, { after })
+    const stored = await getStateDurations(target.runModeTagId, from, to, { ...request, after })
     // Telemetry does not know the tag, so it stored nothing to replay
     if (!stored) return { replayed, complete: true }
     const { segments, hasMore, nextCursor } = stored
     for (const segment of segments) {
       const occurredAt = new Date(segment.start)
       if (occurredAt.getTime() <= from.getTime()) continue
+      request.signal?.throwIfAborted()
       await handleRunModeSample({
         workCenterId: target.workCenterId,
         runModeTagId: target.runModeTagId,

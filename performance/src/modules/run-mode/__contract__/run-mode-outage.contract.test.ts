@@ -19,7 +19,7 @@ import {
   retryDelayMs,
   writeDecision,
 } from '../run-mode.decisions.js'
-import { reconcileOnBoot } from '../run-mode.reconciler.js'
+import { reconcileWorkCenter } from '../run-mode.reconciler.js'
 import { RunModeProcessingState } from '../run-mode-processing-state.model.js'
 import {
   activePlannedStop,
@@ -802,7 +802,7 @@ describe('Samples performance missed are replayed from telemetry first (rule 6)'
     await vi.waitFor(() => expect(held.size).toBe(1))
 
     stubs.stateDurations.mode = 'answer'
-    await reconcileOnBoot({ now: at('10:30:00'), monitored: [machine] })
+    await reconcileWorkCenter(machine, at('10:30:00'))
 
     const stops = [runModeStop('10:00:00', '10:05:00'), runModeStop('10:10:00', '10:20:00')]
     expect(await stopsOf(machine)).toEqual(stops)

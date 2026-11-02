@@ -74,7 +74,11 @@ vi.mock('../../lib/redis.js', async importOriginal => ({
 
 import { bootstrapSystemReasons } from '../reason/reason.bootstrap.js'
 import { UnplannedStop } from '../unplanned-stop/unplanned-stop.model.js'
-import { reconcileOnBoot } from './run-mode.reconciler.js'
+import {
+  reconcileWorkCenter,
+  startBootReconciliation,
+  stopBootReconciliation,
+} from './run-mode.reconciler.js'
 import { RunModeProcessingState } from './run-mode-processing-state.model.js'
 
 async function seedCursor(
@@ -104,7 +108,8 @@ describe('run-mode.reconciler', () => {
   })
 
   it('returns quickly with no monitored work centers', async () => {
-    await expect(reconcileOnBoot({ now: new Date() })).resolves.toBeUndefined()
+    await expect(startBootReconciliation()).resolves.toBeUndefined()
+    await stopBootReconciliation()
     expect(getLatest).not.toHaveBeenCalled()
     expect(getStateDurations).not.toHaveBeenCalled()
   })
@@ -136,7 +141,10 @@ describe('run-mode.reconciler', () => {
       nextCursor: null,
     })
 
-    await reconcileOnBoot({ now: new Date('2026-06-15T10:20:00.000Z') })
+    await reconcileWorkCenter(
+      { workCenterId: wcId, runModeTagId: tagId },
+      new Date('2026-06-15T10:20:00.000Z'),
+    )
 
     const openStops = await UnplannedStop.find({
       workCenterId: new Types.ObjectId(wcId),
@@ -168,7 +176,10 @@ describe('run-mode.reconciler', () => {
       occurredAt: '2026-06-15T10:30:00.000Z',
     })
 
-    await reconcileOnBoot({ now: new Date('2026-06-15T10:20:00.000Z') })
+    await reconcileWorkCenter(
+      { workCenterId: wcId, runModeTagId: tagId },
+      new Date('2026-06-15T10:20:00.000Z'),
+    )
 
     // Only one open should exist: from the state-durations segment, not from latest.
     const stops = await UnplannedStop.find({
@@ -185,7 +196,10 @@ describe('run-mode.reconciler', () => {
     await seedCursor(wcId, tagId, new Date('2026-06-15T10:00:00.000Z'), 1)
     getStateDurations.mockResolvedValue(emptyPage())
 
-    await reconcileOnBoot({ now: new Date('2026-06-15T10:20:00.000Z') })
+    await reconcileWorkCenter(
+      { workCenterId: wcId, runModeTagId: tagId },
+      new Date('2026-06-15T10:20:00.000Z'),
+    )
     const openCount = await UnplannedStop.countDocuments({
       workCenterId: new Types.ObjectId(wcId),
     })
@@ -203,10 +217,10 @@ describe('run-mode.reconciler', () => {
       occurredAt: '2026-06-15T10:00:00.000Z',
     })
 
-    await reconcileOnBoot({
-      now: new Date('2026-06-15T10:20:00.000Z'),
-      monitored: [{ workCenterId: wcId, runModeTagId: tagId }],
-    })
+    await reconcileWorkCenter(
+      { workCenterId: wcId, runModeTagId: tagId },
+      new Date('2026-06-15T10:20:00.000Z'),
+    )
 
     const open = await UnplannedStop.findOne({
       workCenterId: new Types.ObjectId(wcId),
@@ -226,10 +240,10 @@ describe('run-mode.reconciler', () => {
       occurredAt: '2026-06-15T10:00:00.000Z',
     })
 
-    await reconcileOnBoot({
-      now: new Date('2026-06-15T10:20:00.000Z'),
-      monitored: [{ workCenterId: wcId, runModeTagId: tagId }],
-    })
+    await reconcileWorkCenter(
+      { workCenterId: wcId, runModeTagId: tagId },
+      new Date('2026-06-15T10:20:00.000Z'),
+    )
 
     const open = await UnplannedStop.findOne({
       workCenterId: new Types.ObjectId(wcId),
@@ -249,10 +263,10 @@ describe('run-mode.reconciler', () => {
     const wcId = new Types.ObjectId().toString()
     const tagId = new Types.ObjectId().toString()
     getLatest.mockResolvedValue(null)
-    await reconcileOnBoot({
-      now: new Date('2026-06-15T10:20:00.000Z'),
-      monitored: [{ workCenterId: wcId, runModeTagId: tagId }],
-    })
+    await reconcileWorkCenter(
+      { workCenterId: wcId, runModeTagId: tagId },
+      new Date('2026-06-15T10:20:00.000Z'),
+    )
     const openCount = await UnplannedStop.countDocuments({
       workCenterId: new Types.ObjectId(wcId),
     })
@@ -282,7 +296,10 @@ describe('run-mode.reconciler', () => {
       hasMore: false,
       nextCursor: null,
     })
-    await reconcileOnBoot({ now: new Date('2026-06-15T10:20:00.000Z') })
+    await reconcileWorkCenter(
+      { workCenterId: wcId, runModeTagId: tagId },
+      new Date('2026-06-15T10:20:00.000Z'),
+    )
 
     const stopsAfterFirst = await UnplannedStop.find({
       workCenterId: new Types.ObjectId(wcId),
@@ -297,7 +314,10 @@ describe('run-mode.reconciler', () => {
       hasMore: false,
       nextCursor: null,
     })
-    await reconcileOnBoot({ now: new Date('2026-06-15T10:25:00.000Z') })
+    await reconcileWorkCenter(
+      { workCenterId: wcId, runModeTagId: tagId },
+      new Date('2026-06-15T10:25:00.000Z'),
+    )
 
     const stopsAfterSecond = await UnplannedStop.find({
       workCenterId: new Types.ObjectId(wcId),
@@ -349,15 +369,21 @@ describe('run-mode.reconciler', () => {
         nextCursor: null,
       })
 
-    await reconcileOnBoot({ now: new Date('2026-06-15T10:20:00.000Z') })
+    await reconcileWorkCenter(
+      { workCenterId: wcId, runModeTagId: tagId },
+      new Date('2026-06-15T10:20:00.000Z'),
+    )
 
     expect(getStateDurations).toHaveBeenCalledTimes(3)
-    // Second call should pass after = nextCursor of first chunk.
+    // Second call should pass after = nextCursor of first chunk. A failed request logs at debug:
+    // the caller that retries the reconciliation logs the failure once
     expect(getStateDurations.mock.calls[1][3]).toEqual({
       after: new Date('2026-06-15T10:05:00.000Z'),
+      failureLogLevel: 'debug',
     })
     expect(getStateDurations.mock.calls[2][3]).toEqual({
       after: new Date('2026-06-15T10:10:00.000Z'),
+      failureLogLevel: 'debug',
     })
 
     // Outcome: first stop opened at 10:05, closed at 10:10; second stop opened at 10:15.
@@ -414,7 +440,10 @@ describe('run-mode.reconciler', () => {
         nextCursor: null,
       })
 
-    await reconcileOnBoot({ now: new Date('2026-06-15T10:20:00.000Z') })
+    await reconcileWorkCenter(
+      { workCenterId: wcId, runModeTagId: tagId },
+      new Date('2026-06-15T10:20:00.000Z'),
+    )
 
     const stops = await UnplannedStop.find({
       workCenterId: new Types.ObjectId(wcId),
@@ -443,7 +472,10 @@ describe('run-mode.reconciler', () => {
       }
     })
 
-    await reconcileOnBoot({ now: new Date('2026-06-15T11:00:00.000Z') })
+    await reconcileWorkCenter(
+      { workCenterId: wcId, runModeTagId: tagId },
+      new Date('2026-06-15T11:00:00.000Z'),
+    )
 
     // Reconciler must have stopped exactly at MAX_ITER iterations, not infinite.
     expect(getStateDurations).toHaveBeenCalledTimes(100)

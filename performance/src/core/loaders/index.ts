@@ -4,7 +4,7 @@ import { initRedis } from '../../lib/redis.js'
 import { startPlannedStopScheduler } from '../../modules/planned-stop-schedule/planned-stop-schedule.scheduler.js'
 import { bootstrapSystemReasons } from '../../modules/reason/reason.bootstrap.js'
 import { startDebounceTick } from '../../modules/run-mode/run-mode.debounce-tick.js'
-import { reconcileOnBoot } from '../../modules/run-mode/run-mode.reconciler.js'
+import { startBootReconciliation } from '../../modules/run-mode/run-mode.reconciler.js'
 import { initExpress } from './express.js'
 import { initMongoose } from './mongoose.js'
 
@@ -19,7 +19,7 @@ export const initLoaders = async () => {
 
     const app = await initExpress()
 
-    await reconcileOnBoot()
+    await startBootReconciliation()
     await startPlannedStopScheduler()
     startDebounceTick()
 

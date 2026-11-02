@@ -26,7 +26,8 @@ import { RunModeProcessingState } from '../run-mode-processing-state.model.js'
 type StubMode = 'answer' | 'fail' | 'hang'
 
 interface StubEndpoint {
-  mode: StubMode
+  // For every request, or as each request picks
+  mode: StubMode | ((req: Request) => StubMode)
   // null answers 404, as the services do for an unknown work center or tag
   answer: (req: Request) => unknown
 }
@@ -114,7 +115,8 @@ export function releaseHeld(
 function serve(endpoint: Endpoint) {
   return (req: Request, res: Response): void => {
     received[endpoint].push({ ...req.params, ...req.query })
-    const { mode, answer } = stubs[endpoint]
+    const { mode: modeOf, answer } = stubs[endpoint]
+    const mode = typeof modeOf === 'function' ? modeOf(req) : modeOf
     if (mode === 'hang') {
       held.add(res)
       return
@@ -339,9 +341,9 @@ export const closePlannedStop = (plannedStopId: Types.ObjectId, time: string) =>
     { $set: { status: 'closed', actualEndAt: at(time) } },
   )
 
-// Every line the service logs at warn and error, and its info lines about pending decisions and the
-// tick that decides them, in order, with the level of each line. The lines are kept out of the
-// output: a test asserts the lines it expects instead of printing them
+// Every line the service logs at warn and error, and its info lines about pending decisions, the
+// tick that decides them and the boot reconciliation, in order, with the level of each line. The
+// lines are kept out of the output: a test asserts the lines it expects instead of printing them
 export function watchDecisionLogs() {
   const spies = (['info', 'warn', 'error'] as const).map(level => {
     const spy: MockInstance = vi.spyOn(logger, level).mockImplementation(() => logger)
@@ -359,7 +361,8 @@ export function watchDecisionLogs() {
         )
         .filter(
           ({ level, meta }) =>
-            level !== 'info' || /^run_mode\.(decision|debounce_tick)\./.test(String(meta?.event)),
+            level !== 'info' ||
+            /^run_mode\.(decision|debounce_tick|reconciler)\./.test(String(meta?.event)),
         )
         .sort((a, b) => a.order - b.order)
         .map(({ level, meta }) => [level, meta]),

@@ -5,6 +5,16 @@ import { type RequestOptions, request } from './telemetry-request.client.js'
 // after undici's 300 s default
 const REQUEST_TIMEOUT_MS = 5000
 
+export interface RunModeRequestOptions extends RequestOptions {
+  // Aborts the request before its timeout, such as when the caller stops at shutdown
+  signal?: AbortSignal
+}
+
+const requestSignal = (signal?: AbortSignal): AbortSignal => {
+  const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+  return signal ? AbortSignal.any([signal, timeout]) : timeout
+}
+
 export interface LatestSample {
   tagId: string
   value: number
@@ -20,11 +30,11 @@ export interface StateDurationSegment {
 
 export async function getLatest(
   tagId: string,
-  options?: RequestOptions,
+  options?: RunModeRequestOptions,
 ): Promise<LatestSample | null> {
   return request<LatestSample>(
     `/internal/v1/historian/${tagId}/latest`,
-    { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
+    { signal: requestSignal(options?.signal) },
     options,
   )
 }
@@ -40,7 +50,7 @@ export async function getStateDurations(
   tagId: string,
   from: Date,
   to: Date,
-  opts?: { limit?: number; after?: Date } & RequestOptions,
+  opts?: { limit?: number; after?: Date } & RunModeRequestOptions,
 ): Promise<StateDurationsPage | null> {
   const params = new URLSearchParams()
   params.set('from', from.toISOString())
@@ -50,7 +60,7 @@ export async function getStateDurations(
   const url = `/internal/v1/historian/${tagId}/state-durations?${params.toString()}`
   return request<StateDurationsPage>(
     url,
-    { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
+    { signal: requestSignal(opts?.signal) },
     { failureLogLevel: opts?.failureLogLevel },
   )
 }
