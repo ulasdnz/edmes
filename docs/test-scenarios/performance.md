@@ -319,6 +319,7 @@ While a planned stop over 10:00 to 11:00 is active, every sample is processed an
 - [HIGH] a work center with a cursor and a candidate is archived, or deleted (work-center answers 404) → its tag is no longer mapped, and its cursor and candidate are deleted
 - [HIGH] the refresh's monitor list no longer names a work center → its tag is no longer mapped and its cursor and candidate are deleted; a work center the list still names with the same tag keeps its mapping and state and is not reconciled again
 - [HIGH] a work center's reconciliation is waiting on telemetry when its tag is unbound → the reconciliation is cancelled before the state is deleted, so telemetry's late answer writes no candidate and no cursor
+- [HIGH] rule 6's replay is waiting on telemetry when the refresh stops monitoring the work center → once telemetry answers, neither the replayed stopped sample nor the signal that started the replay is decided: no cursor, no candidate and no stop for the old tag
 - each work center that stops being monitored logs one `run_mode.tag_map.unmonitored` (info)
 
 ---
@@ -354,6 +355,8 @@ While a planned stop over 10:00 to 11:00 is active, every sample is processed an
 - [HIGH] the replay reaches its page limit before `now` → the reconciliation goes on from the cursor the replayed samples advanced until it reaches `now`, and every stop of the history is recorded
 - a replay that reaches its page limit without moving the cursor (only a telemetry fault does that) → `reconcileWorkCenter` throws instead of asking for the same pages again
 - [HIGH] `stopBootReconciliation` → a retry still waiting never starts, and the stop does not wait for its time; a request in flight is aborted and its late answer writes nothing; a replay stops before its next sample, and the stop resolves once the sample being written is written
+- [HIGH] a work center listed from its cursor stops being monitored before it is reconciled → it is skipped: telemetry is not asked, and no cursor and no candidate are written (it never starts from its latest sample)
+- [HIGH] a work center stops being monitored while its replay waits on telemetry → once telemetry answers, the replayed stopped sample decides nothing: no cursor and no candidate
 
 ---
 

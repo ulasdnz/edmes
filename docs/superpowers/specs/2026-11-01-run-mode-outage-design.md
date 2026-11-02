@@ -302,6 +302,15 @@ Covers the debounce candidate and the check after a planned stop.
   (info) is logged. The old tag never decides for the machine again, and monitoring that resumes starts
   from the latest sample: neither rule 6 nor the reconciler replays the time it was not monitored, which
   the performance service spec puts outside run-mode scope.
+- Only stopping monitoring deletes a cursor, so a replay that was asking telemetry when the cursor was
+  deleted brings nothing back. A sample whose handling started from a cursor proceeds under the tag's
+  lock only while that cursor exists; otherwise it decides nothing (`run_mode.sample.skipped`, debug),
+  the replay ends there, and the signal that started rule 6's replay is not decided either. A sample
+  handled with no cursor at its start is still the tag's first.
+- Accepted boundary: at startup the map holds the tags the cursors name until the refresh answers, and
+  boot reconciliation replays each of them. A tag that changed or was removed while performance was down
+  therefore has its history replayed until the refresh stops monitoring it. The old mapping is kept on
+  purpose while work-center cannot answer.
 - The run-mode monitors client throws when work-center cannot answer, like the other internal clients,
   so a refresh tells "no monitors" from "could not read them".
 - Shutdown stops the refresh and the tag map's reconciliations before the data connections close, as it
@@ -329,6 +338,9 @@ up startup. Telemetry being down at boot only delays it.
 - A work center with a cursor replays telemetry's history since it through rule 6's paging loop. A
   replay that reaches its page limit goes on from the cursor its samples advanced until it reaches
   the attempt's time; one that advanced nothing fails and waits for its next attempt.
+- Boot reconciliation lists the work centers that have a cursor. One whose cursor is gone by the time it
+  is reconciled stopped being monitored and is skipped (`run_mode.reconciler.skipped`, debug); it never
+  starts from its latest sample.
 - A work center without a cursor starts from telemetry's latest sample, and only while the tag still
   has no cursor under the tag's lock: a stopped one goes through rule 1, a running one only sets the
   cursor. A cursor the event path wrote while telemetry was asked means it has taken the tag over,
@@ -463,10 +475,10 @@ the decision rules, with whatever signals survived.
 
 | Component | Change |
 |---|---|
-| `performance/src/modules/run-mode/run-mode.processor.ts` | Rules 1, 2 and 6, deleting a stop shorter than D, the replay loop rule 6 and the reconciler share, `now` parameter; a planned stop that has closed since covers a late signal; rule 4 at the close, the check's end at the next planned stop's start and its handover |
+| `performance/src/modules/run-mode/run-mode.processor.ts` | Rules 1, 2 and 6, deleting a stop shorter than D, the replay loop rule 6 and the reconciler share, `now` parameter; a planned stop that has closed since covers a late signal; rule 4 at the close, the check's end at the next planned stop's start and its handover; a handling that started from a cursor decides nothing once that cursor is gone |
 | `performance/src/modules/run-mode/run-mode.decisions.ts` | Pending decision records in Redis: keys, first-write-wins candidates, the earliest pending check in one step, compare-and-set on `since` for deferrals, decisions and the handover with a TTL of its own, the retry schedule, the 24-hour drop under the tag's lock with the handover of a check |
 | `performance/src/modules/run-mode/run-mode.debounce-tick.ts` | Rule 3, after-planned checks, retry schedule, 24-hour limit |
-| `performance/src/modules/run-mode/run-mode.reconciler.ts` | Retry per work center in the background, stopped at shutdown; replays through the shared loop, past its page limit; a tag without a cursor starts from its latest sample only while it still has none, under the tag's lock |
+| `performance/src/modules/run-mode/run-mode.reconciler.ts` | Retry per work center in the background, stopped at shutdown; replays through the shared loop, past its page limit; a tag without a cursor starts from its latest sample only while it still has none, under the tag's lock; a work center listed from its cursor is skipped once that cursor is gone |
 | `performance/src/lib/internal-api/run-mode-telemetry.client.ts` | State-durations segments in the shape telemetry answers (`state`, `start`, `end`); a caller's signal aborts a request before its timeout |
 | `performance/src/modules/planned-stop/planned-stop.service.ts` | Rule 4: the run-mode tag from work-center or the cursor; leave a check when the run mode cannot be read; a failed check does not fail the close |
 | `performance/src/modules/unplanned-stop/` | Insert a closed run-mode stop, unique index, duplicate counts as recorded; no close ends a stop before it starts |
