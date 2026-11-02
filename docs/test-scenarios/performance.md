@@ -176,6 +176,8 @@
 ### edge cases
 - [CRITICAL] a planned stop from 10:00 covers 0@10:02 and closes at E = 10:30; while the close asks telemetry for the latest sample, 1@10:32 is processed, and telemetry answers with 0@10:02, computed before it stored 1@10:32 → the close opens no stop (it would stay open: the running signal is processed already) and leaves the check since 10:30; the tick at 10:33 records [10:30, 10:32] and deletes the check
 - [HIGH] the same with the running signal at 10:28, before E → the close opens no stop and leaves the check since 10:30; the tick at 10:33 records nothing and deletes the check
+- [CRITICAL] after 0@10:02 and 1@10:35 were processed, an operator closes a planned stop from 10:00 late, with the end it had, E = 10:30 → the close opens no stop and leaves the check since 10:30 (the latest sample, 1@10:35, came after E and says nothing about E); the tick at 10:40 records [10:30, 10:35]
+- [HIGH] D = 0, the machine ran at E, and telemetry has stored its stop 0@10:35 that performance has not processed yet when the planned stop closes late with E = 10:30 → no stop opens at 10:30 and the check since 10:30 is stored; 0@10:35 then opens its own stop at 10:35 (the planned stop had closed by then), and the tick at 10:40 records nothing at E and deletes the check
 
 ---
 

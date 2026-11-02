@@ -137,11 +137,14 @@ monitored, and the close leaves nothing, as today. When work-center cannot answe
 cursor names the tag; with no cursor either, the close logs `planned_stop.run_mode_unmonitored` (warn)
 and leaves nothing.
 
-- The run mode can be read: as today, a stopped machine gets a stop opened at E. Telemetry's answer
-  decides only if it saw every processed sample, as the tick's does (rule 5): the close reads the
-  tag's cursor before it asks, and opens the stop under the tag's lock only while the cursor has not
-  moved. A running signal processed while it asked would otherwise leave a stop at E that no running
-  signal closes. When the cursor has moved, the close leaves the check below instead.
+- The run mode can be read: as today, a stopped machine gets a stop opened at E. The latest sample
+  decides only when it is the state at E, a sample from E or before. A later one says nothing about
+  E, as when an operator closes the planned stop late with the end it had: deciding from it would
+  lose `[E, T1]` when the machine ran only after E, or open a stop at E when the machine ran then.
+  The answer also decides only if it saw every processed sample, as the tick's does (rule 5): the
+  close reads the tag's cursor before it asks, and opens the stop under the tag's lock only while the
+  cursor has not moved. A running signal processed while it asked would otherwise leave a stop at E
+  that no running signal closes. Otherwise the close leaves the check below instead.
 - It cannot be read, or work-center could not name the tag: a "check after planned stop" record
   `{ since: E }` is left under its own key, apart from the debounce candidate. Once telemetry answers,
   the history since E (`state-durations`) decides:

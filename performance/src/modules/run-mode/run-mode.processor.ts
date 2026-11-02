@@ -388,10 +388,11 @@ async function nextPlannedStopEnd(workCenterId: string, after: Date): Promise<Da
   return next?.actualEndAt ?? null
 }
 
-// Rule 4 as the planned stop closes at E: a stopped machine gets its stop at E. Telemetry's answer
-// decides only if it saw every sample processed here, as the tick's does: a running signal
-// processed while telemetry was asked would leave a stop at E that nothing closes. Otherwise, and
-// when the run mode cannot be read, the check at E decides from the history
+// Rule 4 as the planned stop closes at E: a stopped machine gets its stop at E. Telemetry's latest
+// sample decides only if it is the state at E, a sample from E or before, and only if it saw every
+// sample processed here, as the tick's answer does: a running signal processed while telemetry was
+// asked would leave a stop at E that nothing closes. Otherwise, and when the run mode cannot be
+// read, the check at E decides from the history
 export async function checkRunModeAfterPlannedStop(
   target: ConfirmationTarget,
   endedAt: Date,
@@ -401,10 +402,12 @@ export async function checkRunModeAfterPlannedStop(
   const latest = await getLatest(target.runModeTagId).catch(() => undefined)
   // Telemetry does not know the tag
   if (latest === null) return
+  const stateAtEnd =
+    latest && new Date(latest.occurredAt).getTime() <= endedAt.getTime() ? latest.value : undefined
   await withTagLock(target, async () => {
     const cursor = await readCursor(target.workCenterId, target.runModeTagId)
-    if (latest && cursorAt(cursor) === cursorAt(cursorBefore)) {
-      if (latest.value < 1) await openUnplannedFromRunMode(target.workCenterId, endedAt)
+    if (stateAtEnd !== undefined && cursorAt(cursor) === cursorAt(cursorBefore)) {
+      if (stateAtEnd < 1) await openUnplannedFromRunMode(target.workCenterId, endedAt)
       return
     }
     await writeCheckIfEarlier(target, endedAt)

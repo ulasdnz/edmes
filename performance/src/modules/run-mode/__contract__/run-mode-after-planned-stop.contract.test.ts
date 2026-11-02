@@ -292,6 +292,51 @@ describe('The close opens the stop at its end only when no sample was processed 
   })
 })
 
+// ── Rule 4: the close decides only from the state at its end ─────────────────
+
+// An operator closes the planned stop late, with the end it had: E = 10:30. A sample telemetry stored
+// after E says nothing about the state at E
+describe('The close decides from the latest sample only when it came at or before the end (rule 4)', () => {
+  it('leaves the check when the machine stood at E and ran after it, and the check records the stop', async () => {
+    const machine = await machineWithDebounce(60_000)
+    monitoredByWorkCenter(machine)
+    const planned = await activePlannedStop(machine, '10:00:00', '11:00:00')
+    await deliver(machine, recorded(machine, 0, '10:02:00'))
+    await deliver(machine, recorded(machine, 1, '10:35:00'))
+
+    await closeAt(planned, '10:30:00')
+
+    expect(await stopsOf(machine)).toEqual([])
+    expect(await storedCheck(machine)).toEqual(afterPlannedSince('10:30:00'))
+
+    await tick('10:40:00')
+
+    expect(await stopsOf(machine)).toEqual([runModeStop('10:30:00', '10:35:00')])
+    expect(await storedCheck(machine)).toBeNull()
+  })
+
+  it('opens no stop at E when the machine ran at E and stopped after it', async () => {
+    const machine = await machineWithDebounce(0)
+    monitoredByWorkCenter(machine)
+    await deliver(machine, recorded(machine, 1, '09:00:00'))
+    const planned = await activePlannedStop(machine, '10:00:00', '11:00:00')
+    // Telemetry has stored the machine's stop at 10:35, which has not reached performance yet
+    const stopped = recorded(machine, 0, '10:35:00')
+
+    await closeAt(planned, '10:30:00')
+
+    expect(await stopsOf(machine)).toEqual([])
+    expect(await storedCheck(machine)).toEqual(afterPlannedSince('10:30:00'))
+
+    // The stopped signal's own rules decide it: the planned stop had closed by 10:35
+    await deliver(machine, stopped)
+    await tick('10:40:00')
+
+    expect(await stopsOf(machine)).toEqual([openRunModeStop('10:35:00')])
+    expect(await storedCheck(machine)).toBeNull()
+  })
+})
+
 // ── Rules 1-3: a stopped signal inside a planned stop that has since closed ──
 
 // The sample is judged as it would have been when it happened: the planned stop covered it then. Once
