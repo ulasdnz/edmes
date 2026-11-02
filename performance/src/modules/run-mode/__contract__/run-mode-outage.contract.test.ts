@@ -20,6 +20,7 @@ import { logger } from '../../../lib/logger.js'
 import { closeRedis, initRedis, redisClient } from '../../../lib/redis.js'
 import { testRedis } from '../../../test/contract-setup.js'
 import { PlannedStop } from '../../planned-stop/planned-stop.model.js'
+import * as plannedStopService from '../../planned-stop/planned-stop.service.js'
 import * as policyService from '../../policy/policy.service.js'
 import { bootstrapSystemReasons } from '../../reason/reason.bootstrap.js'
 import { Reason } from '../../reason/reason.model.js'
@@ -469,7 +470,11 @@ describe('A running signal decides a pending candidate on the machine times (sce
     const machine = await machineWithDebounce(60_000)
     await signal(machine, 0, '10:00:00')
     // The tick opened the stop at T0 and has not deleted the candidate yet
-    const open = await unplannedStopService.openFromRunMode(machine.workCenterId, at('10:00:00'))
+    const open = await unplannedStopService.openFromRunMode(
+      machine.workCenterId,
+      at('10:00:00'),
+      60_000,
+    )
 
     await signal(machine, 1, '10:05:00')
 
@@ -500,7 +505,8 @@ describe('A burst of signals after an outage (scenario 3)', () => {
 describe('A late running signal for a stop already open (scenario 6)', () => {
   it('deletes an untouched stop the late running signal shows was too short', async () => {
     const machine = await machineWithDebounce(60_000)
-    await unplannedStopService.openFromRunMode(machine.workCenterId, at('10:00:00'))
+    // As the tick opens it once its candidate's 60 s have run out
+    await unplannedStopService.openFromRunMode(machine.workCenterId, at('10:00:00'), 60_000)
 
     await signal(machine, 1, '10:00:20')
 
@@ -509,7 +515,11 @@ describe('A late running signal for a stop already open (scenario 6)', () => {
 
   it('a short run-mode stop a user has changed is closed and kept when the late running signal arrives', async () => {
     const machine = await machineWithDebounce(60_000)
-    const open = await unplannedStopService.openFromRunMode(machine.workCenterId, at('10:00:00'))
+    const open = await unplannedStopService.openFromRunMode(
+      machine.workCenterId,
+      at('10:00:00'),
+      60_000,
+    )
     const reason = await seedReason('unplanned_stop')
     await unplannedStopService.patch(
       open._id.toString(),
@@ -581,6 +591,84 @@ describe('A late running signal never closes a stop that started after it (rule 
   })
 })
 
+// ── Rule 2: only the stop the tick opened from a candidate is debounced ──────
+
+// A stop opened at the end of a planned stop, or at once with D = 0, closes at the running signal
+// however short; the tick's stop carries the debounce of the candidate it came from
+describe('Only the stop the tick opened from a candidate is debounced (rule 2)', () => {
+  it('keeps a short stop opened at the end of a planned stop whose run mode could be read', async () => {
+    const machine = await machineWithDebounce(60_000)
+    stubs.workCenter.answer = () => ({
+      _id: machine.workCenterId,
+      type: 'physical',
+      tagBindings: { runModeTagId: machine.runModeTagId },
+    })
+    const planned = await activePlannedStop(machine, '10:00:00', '11:00:00')
+    // The machine stops during the planned stop, which covers the sample
+    await deliver(machine, recorded(machine, 0, '10:02:00'))
+
+    await plannedStopService.close(planned._id.toString(), { actualEndAt: at('10:30:00') }, userId)
+
+    expect(await stopsOf(machine)).toEqual([openRunModeStop('10:30:00')])
+
+    await deliver(machine, recorded(machine, 1, '10:30:30'))
+
+    expect(await stopsOf(machine)).toEqual([runModeStop('10:30:00', '10:30:30')])
+  })
+
+  it('keeps a short stop the check after a planned stop opened', async () => {
+    const machine = await machineWithDebounce(60_000)
+    recorded(machine, 0, '10:10:00')
+    await writeDecision(machine.workCenterId, machine.runModeTagId, afterPlannedSince('10:30:00'))
+    // Telemetry answers before it has stored the machine's running signal
+    await tick('10:30:10')
+
+    expect(await stopsOf(machine)).toEqual([openRunModeStop('10:30:00')])
+
+    await deliver(machine, recorded(machine, 1, '10:30:30'))
+
+    // As when the check already sees the running signal
+    expect(await stopsOf(machine)).toEqual([runModeStop('10:30:00', '10:30:30')])
+  })
+
+  it('deletes the stop the tick opened once the running signal shows it shorter than its debounce', async () => {
+    const machine = await machineWithDebounce(60_000)
+    await deliver(machine, recorded(machine, 0, '10:00:00'))
+    // Telemetry has not stored the machine's running signal yet when the 60 s run out
+    await tick('10:01:00')
+
+    expect(await stopsOf(machine)).toEqual([openRunModeStop('10:00:00')])
+
+    await deliver(machine, recorded(machine, 1, '10:00:30'))
+
+    expect(await stopsOf(machine)).toEqual([])
+  })
+
+  it('deletes it under the debounce its candidate carried when the policy changes', async () => {
+    const machine = await machineWithDebounce(60_000)
+    await deliver(machine, recorded(machine, 0, '10:00:00'))
+    await tick('10:01:00')
+    await policyService.upsertForWorkCenter(
+      machine.workCenterId,
+      { runModeDebounceMs: 10_000 },
+      userId,
+    )
+
+    await deliver(machine, recorded(machine, 1, '10:00:30'))
+
+    expect(await stopsOf(machine)).toEqual([])
+  })
+
+  it('keeps a short stop opened at once with a debounce of 0', async () => {
+    const machine = await machineWithDebounce(0)
+    await deliver(machine, recorded(machine, 0, '10:00:00'))
+
+    await deliver(machine, recorded(machine, 1, '10:00:01'))
+
+    expect(await stopsOf(machine)).toEqual([runModeStop('10:00:00', '10:00:01')])
+  })
+})
+
 // ── Review focus 4: the same stopped sample delivered twice ──────────────────
 
 describe('The same stopped sample delivered twice (review focus 4)', () => {
@@ -646,7 +734,7 @@ describe('The debounce changes while a candidate is pending (review focus 5)', (
       userId,
     )
     // The tick opened the stop once the 60 s ran out and has not deleted the candidate yet
-    await unplannedStopService.openFromRunMode(machine.workCenterId, at('10:00:00'))
+    await unplannedStopService.openFromRunMode(machine.workCenterId, at('10:00:00'), 60_000)
 
     await signal(machine, 1, '10:02:00')
 

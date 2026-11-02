@@ -85,13 +85,27 @@
 > see-also: UnplannedStop.closeOnRunning (plan Task 3: the same rule at service level)
 
 ### happy path
-- [CRITICAL] untouched run-mode stop (updatedBy null) opened at 10:00 through `openFromRunMode`, D = 60 s, running signal at 10:00:20 (shorter than D) → the stop is deleted and no unplanned stop remains for the work center
-- [CRITICAL] run-mode stop a user has changed (updatedBy set, for example an operator gave it a reason) opened at 10:00, running signal at 10:00:20 → the stop is closed at 10:00:20 and kept, with the user's change intact
+- [CRITICAL] untouched run-mode stop (updatedBy null) the tick opened at 10:00 under its candidate's D = 60 s, running signal at 10:00:20 (shorter than D) → the stop is deleted and no unplanned stop remains for the work center
+- [CRITICAL] run-mode stop the tick opened at 10:00 under D = 60 s that a user has changed (updatedBy set, for example an operator gave it a reason), running signal at 10:00:20 → the stop is closed at 10:00:20 and kept, with the user's change intact
 
 ### edge cases
 - [CRITICAL] candidate since 10:00, an operator opens a manual stop at 10:30, then the late running signal at 10:25 is processed → [10:00, 10:25] is recorded and the manual stop stays open (a running signal never closes a stop that started after it)
 - [HIGH] untouched run-mode stop opened at 10:30 (as a planned stop's close opens one from a history without the 10:25 signal), late running signal at 10:25 → the stop is deleted, through the same path as a manual delete
 - [HIGH] run-mode stop opened at 10:30 that a user has changed, late running signal at 10:25 → the stop stays open with the user's change
+
+---
+
+## RunMode.debounceOnlyForTheTicksStop
+> target: performance/src/modules/run-mode/__contract__/run-mode-outage.contract.test.ts
+> plan-task: 5
+> spec: Decision rules 2 and 4 (Ruling 15: only the stop the tick opened from a candidate is debounced)
+
+### constraints
+- [CRITICAL] a planned stop from 10:00 closes at E = 10:30, the run mode can be read and the machine stands (D = 60 s) → a stop opens at E; running at E + 30 s → [E, E + 30 s] is closed and kept
+- [CRITICAL] the check after a planned stop opens the stop at E = 10:30 from a history without a running signal yet (D = 60 s), running at E + 30 s → [E, E + 30 s] is closed and kept, as when the check already sees the signal
+- [CRITICAL] the tick opened the stop at T0 = 10:00 from a candidate with D = 60 s, running at 10:00:30 → the stop is deleted
+- [HIGH] the same, with the policy's debounce set to 10 s after the tick opened the stop → the stop is still deleted: the debounce it was opened under decides
+- [HIGH] D = 0: the stop opened at once at 10:00, running at 10:00:01 → [10:00, 10:00:01] is closed and kept
 
 ---
 
@@ -366,7 +380,7 @@ Samples reach performance as telemetry publishes them, with `previousOccurredAt`
 > spec: Decision rules 2 (open unplanned stop); What this design does not do (deleted stops publish `unplanned_stop.updated`)
 
 ### happy path
-- [CRITICAL] untouched run-mode stop (updatedBy null) opened at 10:00:00, `closeOnRunning(..., 10:00:20, 60_000)` → returns `null` and no document remains
+- [CRITICAL] untouched run-mode stop (updatedBy null) opened at 10:00:00 under a debounce of 60 000 ms, `closeOnRunning(..., 10:00:20)` → returns `null` and no document remains
 - [CRITICAL] the same stop with `updatedBy` set → it is closed at 10:00:20, kept, and returned
 - [CRITICAL] a manual stop shorter than the debounce → it is closed at the running signal and kept, whatever its length
 
@@ -374,7 +388,7 @@ Samples reach performance as telemetry publishes them, with `previousOccurredAt`
 - run-mode stop lasting exactly the debounce (10:00:00 to 10:01:00, 60 000 ms) → closed and kept (only a stop shorter than the debounce is deleted)
 
 ### edge cases
-- [HIGH] debounceMs 0 (the built-in default) and an untouched run-mode stop of 20 s → closed and kept, nothing is deleted
+- [HIGH] an untouched run-mode stop of 20 s opened without a debounce (with D = 0, the built-in default, or at the end of a planned stop) → closed and kept, nothing is deleted
 - the deletion of an untouched short stop publishes `unplanned_stop.updated`, as a manual delete does (there is no dedicated "deleted" event)
 
 ---

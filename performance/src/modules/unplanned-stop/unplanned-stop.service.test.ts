@@ -335,15 +335,11 @@ describe('UnplannedStopService', () => {
   })
 
   describe('closeOnRunning', () => {
-    it('deletes an untouched run-mode stop that ends shorter than the debounce', async () => {
+    it('deletes an untouched run-mode stop that ends shorter than the debounce it was opened under', async () => {
       const wcId = new Types.ObjectId().toString()
-      await service.openFromRunMode(wcId, new Date('2026-06-15T10:00:00.000Z'))
+      await service.openFromRunMode(wcId, new Date('2026-06-15T10:00:00.000Z'), 60_000)
 
-      const result = await service.closeOnRunning(
-        wcId,
-        new Date('2026-06-15T10:00:20.000Z'),
-        60_000,
-      )
+      const result = await service.closeOnRunning(wcId, new Date('2026-06-15T10:00:20.000Z'))
 
       expect(result).toBeNull()
       expect(await stopsOf(wcId)).toHaveLength(0)
@@ -351,7 +347,7 @@ describe('UnplannedStopService', () => {
 
     it('publishes unplanned_stop.updated when it deletes a stop, as a manual delete does', async () => {
       const wcId = new Types.ObjectId().toString()
-      const stop = await service.openFromRunMode(wcId, new Date('2026-06-15T10:00:00.000Z'))
+      const stop = await service.openFromRunMode(wcId, new Date('2026-06-15T10:00:00.000Z'), 60_000)
       const manualWcId = new Types.ObjectId().toString()
       const manual = await service.createManual(
         { workCenterId: manualWcId, startAt: new Date('2026-06-15T10:00:00.000Z') },
@@ -359,7 +355,7 @@ describe('UnplannedStopService', () => {
       )
       const stopEvents = watchStopEvents()
 
-      await service.closeOnRunning(wcId, new Date('2026-06-15T10:00:20.000Z'), 60_000)
+      await service.closeOnRunning(wcId, new Date('2026-06-15T10:00:20.000Z'))
       await service.remove(manual._id.toString(), userId)
 
       expect(stopEvents.updated).toHaveBeenCalledTimes(2)
@@ -376,11 +372,7 @@ describe('UnplannedStopService', () => {
         new Date('2026-06-15T10:00:10.000Z'),
       )
 
-      const result = await service.closeOnRunning(
-        wcId,
-        new Date('2026-06-15T10:00:20.000Z'),
-        60_000,
-      )
+      const result = await service.closeOnRunning(wcId, new Date('2026-06-15T10:00:20.000Z'))
 
       expect(result).toBeNull()
       const stops = await stopsOf(wcId)
@@ -391,13 +383,13 @@ describe('UnplannedStopService', () => {
     it('leaves the open stop of another work center alone', async () => {
       const wcId = new Types.ObjectId().toString()
       const otherWcId = new Types.ObjectId().toString()
-      const other = await service.openFromRunMode(otherWcId, new Date('2026-06-15T10:00:00.000Z'))
-
-      const result = await service.closeOnRunning(
-        wcId,
-        new Date('2026-06-15T10:00:20.000Z'),
+      const other = await service.openFromRunMode(
+        otherWcId,
+        new Date('2026-06-15T10:00:00.000Z'),
         60_000,
       )
+
+      const result = await service.closeOnRunning(wcId, new Date('2026-06-15T10:00:20.000Z'))
 
       expect(result).toBeNull()
       const otherStops = await stopsOf(otherWcId)
@@ -407,15 +399,11 @@ describe('UnplannedStopService', () => {
 
     it('closes and keeps a short run-mode stop a user has changed', async () => {
       const wcId = new Types.ObjectId().toString()
-      const stop = await service.openFromRunMode(wcId, new Date('2026-06-15T10:00:00.000Z'))
+      const stop = await service.openFromRunMode(wcId, new Date('2026-06-15T10:00:00.000Z'), 60_000)
       const reason = await seedReason()
       await service.patch(stop._id.toString(), { reasonId: reason._id.toString() }, userId)
 
-      const result = await service.closeOnRunning(
-        wcId,
-        new Date('2026-06-15T10:00:20.000Z'),
-        60_000,
-      )
+      const result = await service.closeOnRunning(wcId, new Date('2026-06-15T10:00:20.000Z'))
 
       expect(result?._id.toString()).toBe(stop._id.toString())
       const stops = await stopsOf(wcId)
@@ -433,7 +421,7 @@ describe('UnplannedStopService', () => {
         expect(manual.updatedBy).toBeNull()
         const endAt = new Date(startAt.getTime() + durationMs)
 
-        const result = await service.closeOnRunning(wcId, endAt, 60_000)
+        const result = await service.closeOnRunning(wcId, endAt)
 
         expect(result?._id.toString()).toBe(manual._id.toString())
         const stops = await stopsOf(wcId)
@@ -444,14 +432,10 @@ describe('UnplannedStopService', () => {
 
     it('closes and keeps a run-mode stop lasting exactly the debounce', async () => {
       const wcId = new Types.ObjectId().toString()
-      const stop = await service.openFromRunMode(wcId, new Date('2026-06-15T10:00:00.000Z'))
+      const stop = await service.openFromRunMode(wcId, new Date('2026-06-15T10:00:00.000Z'), 60_000)
       const stopEvents = watchStopEvents()
 
-      const result = await service.closeOnRunning(
-        wcId,
-        new Date('2026-06-15T10:01:00.000Z'),
-        60_000,
-      )
+      const result = await service.closeOnRunning(wcId, new Date('2026-06-15T10:01:00.000Z'))
 
       expect(result?._id.toString()).toBe(stop._id.toString())
       const stops = await stopsOf(wcId)
@@ -461,11 +445,12 @@ describe('UnplannedStopService', () => {
       expect(stopEvents.updated).not.toHaveBeenCalled()
     })
 
-    it('closes and keeps an untouched run-mode stop when the debounce is 0', async () => {
+    // At the end of a planned stop, or at once with a debounce of 0
+    it('closes and keeps a short untouched run-mode stop opened without a debounce', async () => {
       const wcId = new Types.ObjectId().toString()
       const stop = await service.openFromRunMode(wcId, new Date('2026-06-15T10:00:00.000Z'))
 
-      const result = await service.closeOnRunning(wcId, new Date('2026-06-15T10:00:20.000Z'), 0)
+      const result = await service.closeOnRunning(wcId, new Date('2026-06-15T10:00:20.000Z'))
 
       expect(result?._id.toString()).toBe(stop._id.toString())
       const stops = await stopsOf(wcId)
@@ -478,11 +463,7 @@ describe('UnplannedStopService', () => {
       const wcId = new Types.ObjectId().toString()
       const stopEvents = watchStopEvents()
 
-      const result = await service.closeOnRunning(
-        wcId,
-        new Date('2026-06-15T10:00:20.000Z'),
-        60_000,
-      )
+      const result = await service.closeOnRunning(wcId, new Date('2026-06-15T10:00:20.000Z'))
 
       expect(result).toBeNull()
       expect(stopEvents.closed).not.toHaveBeenCalled()

@@ -88,10 +88,14 @@ check is the one place that uses the clock, because the absence of a signal prov
 - A candidate exists and T1 − T0 ≥ D: the stop `[T0, T1]` is recorded closed, unless a planned stop
   covers T0, and the candidate is deleted. *Today the candidate is deleted and the stop is lost.*
 - A candidate exists and T1 − T0 < D: no stop; the candidate is deleted (as today).
-- An open unplanned stop of any source exists: it closes at T1 (as today). *New:* if it is a run-mode
-  stop that would close shorter than D, because the machine sent the running signal late, and no user
-  has changed it (`updatedBy` is null), it is deleted instead of closed, through the same path as a
-  manual delete. A stop a user has changed is closed and kept, so no operator input is lost.
+- An open unplanned stop of any source exists: it closes at T1 (as today). *New:* if it is the
+  run-mode stop the tick opened from a candidate (rule 3), it would close shorter than the debounce
+  that candidate carried, because the machine sent the running signal late, and no user has changed
+  it (`updatedBy` is null), it is deleted instead of closed, through the same path as a manual
+  delete. The stop keeps that debounce, so a policy change after it opened does not apply to it. A
+  run-mode stop opened without a debounce (rule 1 with D = 0, or at the end of a planned stop,
+  rule 4) closes however short. A stop a user has changed is closed and kept, so no operator input
+  is lost.
 - An open stop that started after T1 is never closed: no stop ends before it starts. An operator's
   stop, or a run-mode stop a user has changed, stays as it is. An untouched run-mode stop that
   started after T1 is deleted, through the same path as a manual delete: every stop the processor
@@ -123,6 +127,8 @@ Performance asks telemetry for the latest sample of the tag:
 
   As today, no debounce applies to this check. If telemetry does not know the tag, the check is dropped
   with a warning log, as in rule 3.
+- In both cases the stop opened at E has no debounce: a running signal closes it however short, so the
+  check that opens the stop and the check that already sees the running signal record the same stop.
 
 ### 5. Two writers, one stop
 
@@ -344,13 +350,17 @@ production passes the real time.
 4. The tick sees a newer telemetry record: it opens nothing and the signal decides; no false stop, no
    duplicate.
 5. The tick and a running signal write the same candidate at once: one stop.
-6. The machine sends the running signal late: an untouched short stop is deleted; a stop an operator gave
-   a reason is closed and kept; a manual stop or a run-mode stop a user has changed that started after
-   the signal stays open, and an untouched run-mode stop that started after it is deleted.
+6. The machine sends the running signal late: an untouched short stop the tick opened is deleted, also
+   when the policy's debounce changed after it opened; a short stop opened without a debounce (D = 0) is
+   closed and kept; a stop an operator gave a reason is closed and kept; a manual stop or a run-mode
+   stop a user has changed that started after the signal stays open, and an untouched run-mode stop
+   that started after it is deleted.
 7. A planned stop closes while telemetry is down; once it is back, stopped at E records
-   `[E, first running signal]` and running at E records nothing. When telemetry answers before it has
-   stored a running signal from before E that the broker still holds, the stop opened at E is deleted
-   once that signal arrives, and a stopped signal after it opens a stop again through rule 1.
+   `[E, first running signal]` and running at E records nothing. A stop opened at E, by the close that
+   reads the run mode or by the check, closes at a later running signal however short. When telemetry
+   answers before it has stored a running signal from before E that the broker still holds, the stop
+   opened at E is deleted once that signal arrives, and a stopped signal after it opens a stop again
+   through rule 1.
 8. Retries come after 1, 2, 4 … 30 s; only the deferred and resolved lines are logged; after 24 hours the
    record is dropped with an error log.
 9. Work-center is down on `work_center.updated`: the old mapping stays and signals keep being processed;

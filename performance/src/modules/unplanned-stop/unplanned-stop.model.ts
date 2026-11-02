@@ -13,6 +13,9 @@ const unplannedStopSchema = new Schema(
     source: { type: String, enum: UNPLANNED_STOP_SOURCES, required: true },
     startAt: { type: Date, required: true },
     endAt: { type: Date, default: null },
+    // The debounce a run-mode stop was opened under, from the candidate the tick confirmed; null
+    // when none applied
+    debounceMs: { type: Number, default: null },
     convertedToPlannedStopId: { type: Schema.Types.ObjectId, default: null },
     operatorId: { type: Schema.Types.ObjectId, default: null },
     closedBy: { type: Schema.Types.ObjectId, default: null },

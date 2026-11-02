@@ -195,10 +195,9 @@ async function handleRunning(sample: RunModeSample): Promise<void> {
     }
   }
 
-  // Closes the stop the tick may have opened at T0, or deletes it if the signal shows it too short
-  const debounceMs =
-    candidate?.debounceMs ?? (await resolveForWorkCenter(sample.workCenterId)).runModeDebounceMs
-  await closeOnRunning(sample.workCenterId, sample.occurredAt, debounceMs)
+  // Closes the stop the tick may have opened at T0, or deletes it if the signal shows it shorter
+  // than the debounce it was opened under
+  await closeOnRunning(sample.workCenterId, sample.occurredAt)
 }
 
 export interface ConfirmationTarget {
@@ -233,7 +232,7 @@ export async function confirmCandidate(
     return
   }
   if (!(await plannedStopCovers(target.workCenterId, firstStoppedAt))) {
-    await openUnplannedFromRunMode(target.workCenterId, firstStoppedAt)
+    await openUnplannedFromRunMode(target.workCenterId, firstStoppedAt, candidate.debounceMs)
   }
   await resolveDecision(target, candidate, now)
 }

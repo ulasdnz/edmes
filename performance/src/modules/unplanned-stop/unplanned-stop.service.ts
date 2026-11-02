@@ -58,9 +58,12 @@ function isDuplicateKeyError(err: unknown): boolean {
   return typeof err === 'object' && err !== null && (err as { code?: number }).code === 11000
 }
 
+// debounceMs is the debounce the stop is opened under: a running signal that shows it shorter
+// deletes it. A stop opened without one closes at the running signal however short
 export async function openFromRunMode(
   workCenterId: string,
   startAt: Date,
+  debounceMs: number | null = null,
 ): Promise<IUnplannedStop> {
   const wcObjectId = new Types.ObjectId(workCenterId)
   try {
@@ -68,6 +71,7 @@ export async function openFromRunMode(
       workCenterId: wcObjectId,
       source: 'run_mode',
       startAt,
+      debounceMs,
     })
     emitUnplannedStopOpened(doc._id.toString(), workCenterId)
     return doc
@@ -157,19 +161,24 @@ export async function closeIfOpen(
 export async function closeOnRunning(
   workCenterId: string,
   endAt: Date,
-  debounceMs: number,
 ): Promise<IUnplannedStop | null> {
-  // One conditional delete, so a stop a user changes in the meantime is closed and kept. It also
-  // takes an untouched run-mode stop that started after the signal: every stop the processor opens
-  // starts at a sample it processed, so such a stop was opened at the end of a planned stop from a
-  // history that did not hold this signal yet. A late or replayed running signal never closes a
-  // stop that started after it
+  // One conditional delete, so a stop a user changes in the meantime is closed and kept. It takes
+  // an untouched run-mode stop the signal shows shorter than the debounce it was opened under, and
+  // one that started after the signal: every stop the processor opens starts at a sample it
+  // processed, so such a stop was opened at the end of a planned stop from a history that did not
+  // hold this signal yet. A late or replayed signal never closes a stop that started after it
   const deleted = await deleteStop({
     workCenterId: new Types.ObjectId(workCenterId),
     endAt: null,
     source: 'run_mode',
     updatedBy: null,
-    startAt: { $gt: new Date(endAt.getTime() - debounceMs) },
+    $or: [
+      { startAt: { $gt: endAt } },
+      {
+        debounceMs: { $gt: 0 },
+        $expr: { $gt: ['$startAt', { $subtract: [endAt, '$debounceMs'] }] },
+      },
+    ],
   })
   if (deleted) return null
   return closeIfOpen(workCenterId, endAt, { startedAtOrBefore: endAt })
