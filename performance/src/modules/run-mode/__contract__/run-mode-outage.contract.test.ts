@@ -1,29 +1,14 @@
 import '../../../test/contract-setup.js'
 
 import { once } from 'node:events'
-import type { Server } from 'node:http'
-import express, { type Request, type Response } from 'express'
 import mongoose, { Types } from 'mongoose'
-import {
-  afterAll,
-  afterEach,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  type MockInstance,
-  vi,
-} from 'vitest'
-import { __test__ as subscribers } from '../../../jobs/subscribers.js'
+import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest'
 import { logger } from '../../../lib/logger.js'
-import { closeRedis, initRedis, redisClient } from '../../../lib/redis.js'
+import { redisClient } from '../../../lib/redis.js'
 import { testRedis } from '../../../test/contract-setup.js'
 import { PlannedStop } from '../../planned-stop/planned-stop.model.js'
 import * as plannedStopService from '../../planned-stop/planned-stop.service.js'
 import * as policyService from '../../policy/policy.service.js'
-import { bootstrapSystemReasons } from '../../reason/reason.bootstrap.js'
-import { Reason } from '../../reason/reason.model.js'
 import { UnplannedStop } from '../../unplanned-stop/unplanned-stop.model.js'
 import * as unplannedStopService from '../../unplanned-stop/unplanned-stop.service.js'
 import { runDecisionTick, startDebounceTick, stopDebounceTick } from '../run-mode.debounce-tick.js'
@@ -34,280 +19,40 @@ import {
   retryDelayMs,
   writeDecision,
 } from '../run-mode.decisions.js'
-import { handleRunModeSample } from '../run-mode.processor.js'
 import { reconcileOnBoot } from '../run-mode.reconciler.js'
 import { RunModeProcessingState } from '../run-mode-processing-state.model.js'
-
-// ── Stub servers: each endpoint answers, fails with 500 or never answers ─────
-
-type StubMode = 'answer' | 'fail' | 'hang'
-
-interface StubEndpoint {
-  mode: StubMode
-  // null answers 404, as the services do for an unknown work center or tag
-  answer: (req: Request) => unknown
-}
-
-type Endpoint = 'workCenter' | 'runModeMonitors' | 'latest' | 'stateDurations'
-
-interface StoredSample {
-  occurredAt: Date
-  value: number
-}
-
-// The samples telemetry stored per tag, oldest first: a value only when it changed
-const telemetryHistory = new Map<string, StoredSample[]>()
-
-// state-durations as telemetry computes it (binary.calc.ts, with the validator's default limit of
-// 500): the samples in [after ?? from, to), the state before them as the baseline, and while hasMore
-// the segment still in progress left out, for the next page to start at nextCursor
-function stateDurations(req: Request) {
-  const from = new Date(String(req.query.from))
-  const to = new Date(String(req.query.to))
-  const after = req.query.after === undefined ? undefined : new Date(String(req.query.after))
-  const limit = req.query.limit === undefined ? 500 : Math.max(2, Number(req.query.limit))
-  const windowStart = after && after.getTime() > from.getTime() ? after : from
-  const samples = telemetryHistory.get(String(req.params.tagId)) ?? []
-  const baseline = samples.filter(s => s.occurredAt.getTime() < windowStart.getTime()).at(-1)
-  const inWindow = samples.filter(
-    s => s.occurredAt.getTime() >= windowStart.getTime() && s.occurredAt.getTime() < to.getTime(),
-  )
-  const hasMore = inWindow.length > limit
-  const docs = hasMore ? inWindow.slice(0, limit) : inWindow
-  if (!baseline && docs.length === 0) return { segments: [], hasMore, nextCursor: null }
-
-  const segments: { state: number; start: Date; end: Date; durationMs: number }[] = []
-  let state = baseline ? baseline.value : docs[0].value
-  let start = baseline ? windowStart : docs[0].occurredAt
-  for (const doc of baseline ? docs : docs.slice(1)) {
-    if (doc.value === state) continue
-    const durationMs = doc.occurredAt.getTime() - start.getTime()
-    if (durationMs > 0) segments.push({ state, start, end: doc.occurredAt, durationMs })
-    state = doc.value
-    start = doc.occurredAt
-  }
-  const lastMs = to.getTime() - start.getTime()
-  if (!hasMore && lastMs > 0) segments.push({ state, start, end: to, durationMs: lastMs })
-  return { segments, hasMore, nextCursor: hasMore ? docs[docs.length - 1].occurredAt : null }
-}
-
-// The tag's last stored sample, as telemetry's latest endpoint answers it
-function latestSample(req: Request) {
-  const tagId = String(req.params.tagId)
-  const last = telemetryHistory.get(tagId)?.at(-1)
-  return last ? { tagId, value: last.value, occurredAt: last.occurredAt } : null
-}
-
-let stubs: Record<Endpoint, StubEndpoint>
-// The requests each endpoint received, as their path parameters and query
-let received: Record<Endpoint, Record<string, unknown>[]>
-
-function resetStubs(): void {
-  stubs = {
-    workCenter: { mode: 'answer', answer: () => null },
-    runModeMonitors: { mode: 'answer', answer: () => [] },
-    latest: { mode: 'answer', answer: latestSample },
-    stateDurations: { mode: 'answer', answer: stateDurations },
-  }
-  received = { workCenter: [], runModeMonitors: [], latest: [], stateDurations: [] }
-  telemetryHistory.clear()
-}
-
-// Requests held by a hanging endpoint, released after each test
-const held = new Set<Response>()
-
-// A hanging endpoint answers the requests it holds at last: those `which` picks, or all of them
-function releaseHeld(
-  respond: (res: Response) => void,
-  which: (req: Request) => boolean = () => true,
-): void {
-  for (const res of held) {
-    if (!which(res.req)) continue
-    respond(res)
-    held.delete(res)
-  }
-}
-
-function serve(endpoint: Endpoint) {
-  return (req: Request, res: Response): void => {
-    received[endpoint].push({ ...req.params, ...req.query })
-    const { mode, answer } = stubs[endpoint]
-    if (mode === 'hang') {
-      held.add(res)
-      return
-    }
-    if (mode === 'fail') {
-      res.status(500).json({ error: { code: 'error.internal', message: 'Internal error' } })
-      return
-    }
-    const data = answer(req)
-    if (data === null) {
-      res.status(404).json({ error: { code: 'error.not_found', message: 'Not found' } })
-      return
-    }
-    res.json({ data })
-  }
-}
-
-function listen(app: express.Express, port: number): Promise<Server> {
-  return new Promise((resolve, reject) => {
-    const server = app.listen(port, err => (err ? reject(err) : resolve(server)))
-  })
-}
-
-const servers: Server[] = []
-
-beforeAll(async () => {
-  const workCenter = express()
-  // Ahead of /:id, which would take the path for an id
-  workCenter.get('/internal/v1/work-centers/run-mode-monitors', serve('runModeMonitors'))
-  workCenter.get('/internal/v1/work-centers/:id', serve('workCenter'))
-  const telemetry = express()
-  telemetry.get('/internal/v1/historian/:tagId/latest', serve('latest'))
-  telemetry.get('/internal/v1/historian/:tagId/state-durations', serve('stateDurations'))
-  servers.push(await listen(workCenter, 19902), await listen(telemetry, 19904))
-  // Pending decisions live in Redis behind the service's own clients, as in production
-  await initRedis()
-}, 30_000)
-
-afterAll(async () => {
-  for (const server of servers) server.closeAllConnections()
-  await Promise.all(
-    servers.map(s => new Promise<void>((res, rej) => s.close(e => (e ? rej(e) : res())))),
-  )
-  await closeRedis()
-})
-
-beforeEach(async () => {
-  resetStubs()
-  subscribers.runModeTagToWorkCenter.clear()
-  // contract-setup wipes MongoDB and flushes Redis after every test
-  await bootstrapSystemReasons()
-})
-
-afterEach(() => {
-  for (const res of held) res.destroy()
-  held.clear()
-})
-
-// ── Fixtures ──────────────────────────────────────────────────────────────────
-
-const userId = new Types.ObjectId().toString()
-
-// A clock time of one day in UTC, as the scenarios write it
-const at = (time: string): Date => new Date(`2026-06-15T${time}.000Z`)
-
-interface Machine {
-  workCenterId: string
-  runModeTagId: string
-}
-
-async function machineWithDebounce(debounceMs: number): Promise<Machine> {
-  const workCenterId = new Types.ObjectId().toString()
-  await policyService.upsertForWorkCenter(workCenterId, { runModeDebounceMs: debounceMs }, userId)
-  return { workCenterId, runModeTagId: new Types.ObjectId().toString() }
-}
-
-// A run-mode value stamped with the machine's own time, as the telemetry subscriber passes it on
-function signal(machine: Machine, value: number, time: string): Promise<void> {
-  return handleRunModeSample({ ...machine, value, occurredAt: at(time) })
-}
-
-// What telemetry publishes as tag.value.recorded
-interface RecordedValue {
-  tagId: string
-  behavior: string
-  value: number
-  occurredAt: string
-  previousOccurredAt: string | null
-}
-
-// Telemetry stores the machine's run-mode value and publishes it with the time of the sample it
-// stored before for the tag
-function recorded(machine: Machine, value: number, time: string): RecordedValue {
-  const history = telemetryHistory.get(machine.runModeTagId) ?? []
-  const previous = history.at(-1)
-  history.push({ occurredAt: at(time), value })
-  telemetryHistory.set(machine.runModeTagId, history)
-  return {
-    tagId: machine.runModeTagId,
-    behavior: 'binary',
-    value,
-    occurredAt: at(time).toISOString(),
-    previousOccurredAt: previous ? previous.occurredAt.toISOString() : null,
-  }
-}
-
-// The stream hands a recorded value to performance's subscriber, which knows the machine's tag
-function deliver(machine: Machine, event: RecordedValue): Promise<void> {
-  subscribers.runModeTagToWorkCenter.set(machine.runModeTagId, machine.workCenterId)
-  return subscribers.streams['events.telemetry']['tag.value.recorded'](event)
-}
-
-async function stopsOf(machine: Machine) {
-  const stops = await UnplannedStop.find({ workCenterId: new Types.ObjectId(machine.workCenterId) })
-    .sort({ startAt: 1 })
-    .lean()
-  return stops.map(({ source, startAt, endAt }) => ({ source, startAt, endAt }))
-}
-
-const runModeStop = (from: string, to: string) => ({
-  source: 'run_mode',
-  startAt: at(from),
-  endAt: at(to),
-})
-
-// Redis read directly, under the key prefix the tick scans
-const candidateKey = (machine: Machine): string =>
-  `performance:runmode:candidate:${machine.workCenterId}:${machine.runModeTagId}`
-
-function candidateKeys(machine: Machine): Promise<string[]> {
-  return testRedis.keys(`performance:runmode:candidate:${machine.workCenterId}:*`)
-}
-
-async function storedCandidate(machine: Machine): Promise<PendingDecision | null> {
-  const raw = await testRedis.get(candidateKey(machine))
-  return raw === null ? null : (JSON.parse(raw) as PendingDecision)
-}
-
-// The candidate rule 1 writes for a stop at the given time, D = 60 s
-const candidateSince = (time: string): PendingDecision => ({
-  kind: 'debounce',
-  since: at(time).toISOString(),
-  debounceMs: 60_000,
-  attempts: 0,
-  nextAttemptAt: null,
-})
-
-function seedReason(usage: 'planned_stop' | 'unplanned_stop') {
-  const code = `R-${new Types.ObjectId().toString()}`
-  return Reason.create({
-    code,
-    name: code,
-    usages: [usage],
-    canStartManually: true,
-    canBeScheduled: false,
-    canConvertFromUnplanned: false,
-    isSystemDefault: false,
-    isActive: true,
-    affectsOee: true,
-    createdBy: new Types.ObjectId(userId),
-  })
-}
-
-const cursorOf = (machine: Machine) =>
-  RunModeProcessingState.findOne({ workCenterId: new Types.ObjectId(machine.workCenterId) }).lean()
-
-// Redis answers one command with an error while it keeps serving the rest: the user the service
-// connects as loses the command until fn is done
-async function whileRedisRefuses<T>(command: string, fn: () => Promise<T>): Promise<T> {
-  await testRedis.call('ACL', 'SETUSER', 'default', `-${command}`)
-  try {
-    return await fn()
-  } finally {
-    await testRedis.call('ACL', 'SETUSER', 'default', `+${command}`)
-  }
-}
+import {
+  activePlannedStop,
+  afterPlannedSince,
+  at,
+  candidateKey,
+  candidateKeys,
+  candidateSince,
+  closePlannedStop,
+  cursorOf,
+  deliver,
+  held,
+  latestSample,
+  type Machine,
+  machineWithDebounce,
+  openRunModeStop,
+  received,
+  recorded,
+  releaseHeld,
+  runModeStop,
+  seedReason,
+  signal,
+  stateDurations,
+  stopsOf,
+  storedCandidate,
+  storedCheck,
+  stubs,
+  telemetryHistory,
+  tick,
+  userId,
+  watchDecisionLogs,
+  whileRedisRefuses,
+} from './run-mode-outage.harness.js'
 
 // The service's own cache client loses its connection, as when Redis goes away, and gets it back
 async function whileRedisIsUnreachable<T>(fn: () => Promise<T>): Promise<T> {
@@ -334,78 +79,6 @@ async function whileMongoRefusesStops<T>(fn: () => Promise<T>): Promise<T> {
     return await fn()
   } finally {
     await db.command({ collMod, validator: {} })
-  }
-}
-
-// The decision tick, as production runs it every second, at a time of the server's clock
-const tick = (time: string) => runDecisionTick(at(time))
-
-const openRunModeStop = (from: string) => ({ source: 'run_mode', startAt: at(from), endAt: null })
-
-// The check a planned stop that closed at the given time leaves when the run mode cannot be read
-const afterPlannedSince = (time: string): PendingDecision => ({
-  kind: 'after_planned',
-  since: at(time).toISOString(),
-  debounceMs: 0,
-  attempts: 0,
-  nextAttemptAt: null,
-})
-
-async function storedCheck(machine: Machine): Promise<PendingDecision | null> {
-  const raw = await testRedis.get(
-    `performance:runmode:after-planned:${machine.workCenterId}:${machine.runModeTagId}`,
-  )
-  return raw === null ? null : (JSON.parse(raw) as PendingDecision)
-}
-
-async function activePlannedStop(machine: Machine, from: string, to: string) {
-  const reason = await seedReason('planned_stop')
-  return PlannedStop.create({
-    workCenterId: new Types.ObjectId(machine.workCenterId),
-    reasonId: reason._id,
-    plannedOwnerId: new Types.ObjectId(userId),
-    source: 'manual',
-    startMode: 'manual',
-    status: 'active',
-    plannedStartAt: at(from),
-    plannedEndAt: at(to),
-    actualStartAt: at(from),
-    createdBy: new Types.ObjectId(userId),
-  })
-}
-
-const closePlannedStop = (plannedStopId: Types.ObjectId, time: string) =>
-  PlannedStop.updateOne(
-    { _id: plannedStopId },
-    { $set: { status: 'closed', actualEndAt: at(time) } },
-  )
-
-// Every line the service logs at warn and error, and its info lines about pending decisions and the
-// tick that decides them, in order, with the level of each line
-function watchDecisionLogs() {
-  const spies = (['info', 'warn', 'error'] as const).map(level => {
-    const spy: MockInstance = vi.spyOn(logger, level)
-    return { level, spy }
-  })
-  return {
-    lines: () =>
-      spies
-        .flatMap(({ level, spy }) =>
-          spy.mock.calls.map(([, meta], i) => ({
-            level,
-            meta,
-            order: spy.mock.invocationCallOrder[i],
-          })),
-        )
-        .filter(
-          ({ level, meta }) =>
-            level !== 'info' || /^run_mode\.(decision|debounce_tick)\./.test(String(meta?.event)),
-        )
-        .sort((a, b) => a.order - b.order)
-        .map(({ level, meta }) => [level, meta]),
-    restore: () => {
-      for (const { spy } of spies) spy.mockRestore()
-    },
   }
 }
 
