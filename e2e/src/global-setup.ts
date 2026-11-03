@@ -62,6 +62,15 @@ async function lastLines(file: string) {
   return log.trimEnd().split('\n').slice(-30).join('\n')
 }
 
+// A line that is gone or written differently fails the run at once, so e2e never runs a broker
+// without its changes
+function replaceLine(config: string, line: RegExp, replacement: string) {
+  if (!line.test(config)) {
+    throw new Error(`infra/mosquitto/mosquitto.conf has no line matching ${line}`)
+  }
+  return config.replace(line, replacement)
+}
+
 async function pruneOldRuns() {
   const runs = (await readdir(LOGS_ROOT, { withFileTypes: true }))
     .filter(entry => entry.isDirectory())
@@ -120,9 +129,15 @@ export default async function setup(project: TestProject) {
 
   // The repository's broker config, so e2e runs the queue and persistence settings production does.
   // Only the authentication goes: e2e has no password file.
-  const brokerConfig = (await readFile(resolve(ROOT, 'infra/mosquitto/mosquitto.conf'), 'utf8'))
-    .replace('allow_anonymous false', 'allow_anonymous true')
-    .replace(/^password_file .*\r?\n/m, '')
+  const repositoryBrokerConfig = await readFile(
+    resolve(ROOT, 'infra/mosquitto/mosquitto.conf'),
+    'utf8',
+  )
+  const brokerConfig = replaceLine(
+    replaceLine(repositoryBrokerConfig, /^allow_anonymous false$/m, 'allow_anonymous true'),
+    /^password_file .*$/m,
+    '',
+  )
 
   const [mongo, redis, broker] = await Promise.all([
     new GenericContainer(composeImage('mongodb'))
