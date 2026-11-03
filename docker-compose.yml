@@ -97,12 +97,13 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
-    # Memory for a queue at the ceiling and CPU for telemetry's catch-up, from a measured 30-minute
-    # outage plus 25%: docs/operations/mqtt-broker-capacity.md
+    # CPU: the limit the measured 30-minute outage ran under (its peak was 0.361 cores). Memory:
+    # computed for a queue at the ceiling from the measured cost per message, 691.5 B x 1,127,301
+    # x 1.25. See docs/operations/mqtt-broker-capacity.md
     deploy:
       resources:
         limits:
-          cpus: '0.5'
+          cpus: '1'
           memory: 960M
 
   user:
