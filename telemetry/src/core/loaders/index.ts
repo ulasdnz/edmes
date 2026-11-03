@@ -1,6 +1,6 @@
 import { CustomError } from '../../core/errors/index.js'
 import { logger } from '../../lib/logger.js'
-import { initMqtt, onMqttMessage } from '../../lib/mqtt.js'
+import { initMqtt } from '../../lib/mqtt.js'
 import { initRedis } from '../../lib/redis.js'
 import { discoverySetManifest } from '../../modules/discovery/discovery.cache.js'
 import EdgeDevice from '../../modules/edge-device/edge-device.model.js'
@@ -18,9 +18,7 @@ export const initLoaders = async () => {
     await initMongoose()
     await initRedis()
     await bindingCacheInit()
-    await initMqtt()
-
-    onMqttMessage((topic, payload) => {
+    await initMqtt((topic, payload) => {
       if (topic.startsWith('devices/')) {
         processMessage(topic, payload).catch(err => {
           if (err instanceof CustomError && err.message === 'historian.period_locked') {
