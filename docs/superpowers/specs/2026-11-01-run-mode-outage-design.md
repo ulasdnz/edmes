@@ -454,8 +454,9 @@ a customer's own rate replaces it by repeating the measurement:
     same node wait behind it, so the intake holds at its bound and the broker keeps the rest until
     MongoDB is back. Telemetry logs `ingestion.store.deferred` (warn) once when a message first waits
     and `ingestion.store.resolved` (info, with `waitedMs`) once it is handled; no line per attempt.
-  - Any other failed store drops its message with `ingestion.error` and frees its place. Manual
-    entries over HTTP fail at once when MongoDB is unreachable.
+  - Any other failed store drops its message with `ingestion.error` and frees its place. A manual
+    entry over HTTP is not retried: with MongoDB unreachable it fails, unless an MQTT message of its
+    tag is waiting ahead of it, in which case it waits in the tag's order too.
   - A store that waits longer than the MQTT keepalive, for a MongoDB that is down or a dependency that
     does not answer, holds MQTT.js's reading too: the keepalive times out, telemetry reconnects with
     its session and logs an error line, about every 100 s while the wait lasts. The broker delivers

@@ -127,7 +127,7 @@ const runInOrder = <T>(
   return result
 }
 
-// A manual entry fails at once when MongoDB is unreachable: the person entering it sees the error
+// A manual entry is not retried: the person entering it sees MongoDB's error
 export const ingestValue = (
   tag: ITag,
   rawValue: number,
