@@ -78,10 +78,10 @@ gives it.
 
 | Setting | Measured | Rule | Value | The run used |
 |---|---|---|---|---|
-| `max_queued_bytes` (`infra/mosquitto/mosquitto.conf`) | broker store 135,276,178 B | × 1.25 | `169095223` | `166219160`; the queue stayed 19% under it |
+| `max_queued_bytes` (`infra/mosquitto/mosquitto.conf`) | broker store 135,276,178 B | × 1.25 | `169095223` | `166219160`; the queue reached neither that nor `169095223`, and stayed 19% under the value the run used |
 | `max_queued_messages` | | the count is not the limit, the bytes are | `0` | `0` |
-| Broker memory limit (`docker-compose.yml`) | 691.5 B resident per queued message; the ceiling holds 1,127,301 payloads of 150 bytes | 691.5 B × 1,127,301 × 1.25 = 929.3 MiB, rounded up to a multiple of 64 MiB | `960M` | `960M` |
-| Broker CPU limit (`docker-compose.yml`) | 0.361 cores, the highest 5-second use while telemetry caught up | × 1.25 = 0.45, rounded up to a quarter CPU | `0.5` | `1` |
+| Broker memory limit (`docker-compose.yml`) | 691.5 B resident per queued message; the ceiling holds 1,127,301 payloads of 150 bytes | computed, not run: 691.5 B × 1,127,301 × 1.25 = 929.3 MiB, rounded up to a multiple of 64 MiB | `960M` | `960M`, with the queue at 80% of the ceiling |
+| Broker CPU limit (`docker-compose.yml`) | 0.361 cores, the highest 5-second use while telemetry caught up, under a limit of 1 CPU | the value the run measured under; × 1.25 would give 0.5, which no run used | `1` | `1` |
 | `autosave_interval` | a save of the full queue took 1.06 s | the shortest whole minute in which saving a full queue blocks the broker for less than 2% of the time (1.06 s in 60 s is 1.8%) | `60` | `60` |
 | Telemetry and performance limits (`docker-compose.yml`) | telemetry used its whole 0.5 CPU and at most 87.0 MiB, and caught up at three times the arrival rate; performance used at most 0.29 cores over 5 s and 64.5 MiB | kept: within them telemetry stores faster than the plant publishes, and no service came near its memory limit | 0.5 CPU and `512M` each | the same |
 
@@ -89,16 +89,19 @@ gives it.
   30-minute outage at up to 626 messages/s. Telemetry's session lasts a day, so an outage longer
   than the ceiling allows fills the queue to the ceiling, and the broker drops and counts what comes
   after (see [When an outage runs longer](#when-an-outage-runs-longer)).
-- **The memory limit** is sized for a queue at the ceiling, which a longer outage now reaches, and
-  from what a queued message measurably costs, not from the ceiling's bytes: `max_queued_bytes` counts
-  payload bytes only, and a queued message costs about 4.6 times its payload. At the ceiling the
-  broker's resident size would come to about 750 MiB by the measured cost. The container's cgroup
-  also counts the persistence file's page cache. In this run it reached the 960 MiB limit: 605 MiB
-  resident plus the cache the saves left. The kernel reclaimed cache, and the broker ran on;
-  `docker stats` leaves that cache out.
-- **The CPU limit** stays above everything the broker used. With telemetry's intake bounded, the broker
-  hands the queue over at telemetry's pace rather than all at once: its highest use was 0.361 cores,
-  where the comparison run's burst took 0.735.
+- **The memory limit** is computed for a queue at the ceiling, which a longer outage now reaches, from
+  what a queued message measurably costs, not from the ceiling's bytes: `max_queued_bytes` counts
+  payload bytes only, and a queued message costs about 4.6 times its payload. No run held a queue at
+  the ceiling under this limit. By the measured cost the broker's resident size there would come to
+  about 750 MiB. The container's cgroup also counts the persistence file's page cache, and in this
+  run, with the queue at 80% of the ceiling, the cgroup already reached 960.0 MiB: 605 MiB resident,
+  the rest page cache the saves left. That cache is reclaimable: the kernel reclaimed it at the limit,
+  and the broker ran on. `docker stats` leaves the cache out.
+- **The CPU limit** is the value the run measured under, 1 CPU. A CPU limit is a cap, not a
+  reservation, and a use measured under a cap cannot show demand above it, so the limit stays at the
+  value the measurement had: the × 1.25 rule would give 0.5, which no run used. With telemetry's intake
+  bounded, the broker hands the queue over at telemetry's pace rather than all at once: its highest use
+  was 0.361 cores, where the comparison run's burst took 0.735.
 
 ## Telemetry's intake
 
@@ -126,17 +129,38 @@ speed. Telemetry's memory stayed between 80 and 102 MiB at every bound.
   delivers it again.
 - **A clean stop** takes nothing more in and acknowledges nothing more, lets the stores in progress
   finish, and then closes MongoDB and Redis. The broker delivers again what was still arriving.
-- **A store that hangs**, because MongoDB does not answer, holds the intake: the broker keeps the
-  messages. MQTT.js counts its keepalive from acknowledgements and ping answers it has read, and while
-  the intake is held it reads neither. With telemetry's default keepalive of 60 s, a test with stores
-  hanging for 150 s showed:
+- **MongoDB unreachable.** A store or tag lookup that fails because MongoDB cannot be reached (the
+  driver's server-selection or network error, or Mongoose's buffering timeout) keeps its place and
+  tries again after 1 s, then twice as long each time, at most 30 s apart, for as long as the error
+  lasts. The messages after it for the same node wait behind it, the intake holds at its bound, and the
+  broker keeps the rest of the queue. Telemetry logs one `ingestion.store.deferred` warning when a
+  message first waits, and one `ingestion.store.resolved` line with `waitedMs` once it is handled. A
+  test stopped a standalone MongoDB while a machine published, and started it again: every message was
+  stored once and in the order published, and the broker held what telemetry had not taken in. Any
+  other store error, MongoDB rejecting the document for example, drops that message with
+  `ingestion.error`, and the messages after it are stored.
+- **A stop while MongoDB is unreachable** ends the waits at once, so it does not hold the stop:
+  telemetry logs one `ingestion.store.abandoned` error for each message it gives up, and closes. Like a
+  crash, it loses at most the messages it acknowledged and had not stored, fewer than
+  `MQTT_MAX_UNSTORED_MESSAGES`; one of the abandoned messages can be the one held back, which the
+  broker delivers again.
+- **A store that waits longer than the keepalive**, for a MongoDB that is down or a dependency that
+  does not answer, holds the intake past it. MQTT.js counts its keepalive from acknowledgements and ping
+  answers it has read, and while the intake is held it reads neither. With telemetry's default
+  keepalive of 60 s, a test with stores hanging for 150 s showed:
   - after 90 s, MQTT.js reported a keepalive timeout and reconnected 10 s later, with the session;
   - the broker delivered again the one message telemetry had held back unacknowledged, and once the
     stores finished, every message had arrived;
-  - telemetry logged `mqtt.error` and `mqtt.offline` for the timeout. The test's hang began before
-    telemetry's subscriptions were confirmed, and the timeout failed them too. At startup telemetry
-    stops on such a failure, so a store that hangs while telemetry starts into a backlog would make
-    Docker start it again.
+  - telemetry logged `mqtt.error` and `mqtt.offline` for the timeout.
+
+  So while the wait lasts, telemetry reconnects, with an error line, about every 100 s.
+- **At startup**, telemetry stops when its subscriptions fail. A wait that holds the intake while
+  telemetry starts into a backlog lets the keepalive timeout fail them (the test above began its hang
+  before the subscriptions were confirmed). Telemetry exits, Docker starts it again
+  (`restart: unless-stopped`), and the exit repeats about every 100 s while the wait lasts. Each exit
+  is a crash: it loses at most the messages telemetry acknowledged and had not stored, fewer than
+  `MQTT_MAX_UNSTORED_MESSAGES`. If MongoDB is unreachable when telemetry starts, telemetry exits before
+  it connects to the broker, so it takes nothing in, and Docker starts it again.
 - **Starting with a backlog**, the broker sends up to 2500 queued messages (telemetry's MQTT 5 Receive
   Maximum) ahead of the confirmation of telemetry's subscriptions, and telemetry reads the
   confirmation only after storing its way to it. Telemetry's memory stayed flat in every run, so the
@@ -224,8 +248,8 @@ Docker Desktop on a laptop is not a factory server. On a Linux server:
   server runs the same image with the same allocator. They are not expected to change, but they were
   not measured on Linux.
 - **CPU time and save time** depend on the server's CPU and disk. Telemetry's catch-up is bound by its
-  0.5 CPU, so a faster or slower server CPU changes the catch-up time in proportion. The CPU limit and
-  the autosave interval carry the margins stated above.
+  0.5 CPU, so a faster or slower server CPU changes the catch-up time in proportion. The broker's CPU
+  limit is 2.8 times its highest use, and the autosave interval carries the margin stated above.
 - **Network:** the services and the broker shared one Docker network, as on a server; only the plant
   crossed Docker Desktop's port forwarding.
 

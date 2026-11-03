@@ -380,7 +380,12 @@ the same rule as `closeIfOpen` and publishes the opened and then the closed even
 - A broker crash loses the messages it queued since its last autosave: up to one `autosave_interval`
   of the queue. The broker restarts from its last save, and nothing counts what was lost.
 - A telemetry crash loses the messages it acknowledged and had not yet stored: at most
-  `MQTT_MAX_UNSTORED_MESSAGES`.
+  `MQTT_MAX_UNSTORED_MESSAGES` − 1.
+- A telemetry stop or crash while MongoDB is unreachable loses the messages waiting for it that
+  telemetry had acknowledged: at most `MQTT_MAX_UNSTORED_MESSAGES` − 1. A stop logs each one it gives
+  up as `ingestion.store.abandoned`.
+- A store that fails for any reason other than an unreachable MongoDB, MongoDB rejecting the document
+  for example, drops its message, logged as `ingestion.error`.
 - One performance process writes the run-mode state, the writer rule 6 already assumes. The lock that
   makes the tick and the rules take turns (rule 5) lives in that process. A second performance
   instance would need a lock shared between processes, or one writer chosen among them.
@@ -425,8 +430,8 @@ a customer's own rate replaces it by repeating the measurement:
 
 - **Telemetry:** `MQTT_CLIENT_ID`, default `aimes-telemetry`, and `MQTT_SESSION_EXPIRY_SECONDS`, default
   `86400`.
-  - The session outlives the queue ceiling by far: at the design load the ceiling fills in about
-    37 minutes. An outage longer than the ceiling allows therefore ends with the broker dropping
+  - The session outlives the queue ceiling by far: at the design load the ceiling fills in
+    37.6 minutes. An outage longer than the ceiling allows therefore ends with the broker dropping
     messages, which it counts and telemetry alerts on (see
     [When an outage runs longer](#when-an-outage-runs-longer)), not with the session expiring, which
     discards the whole queue and counts nothing.
@@ -443,20 +448,40 @@ a customer's own rate replaces it by repeating the measurement:
     stops reading, and the rest of the backlog stays at the broker, which is sized for it. Without the
     bound the broker hands its whole queue to a reconnecting telemetry within seconds, and telemetry
     held 2 GB of it in memory in the measurement, four times its container limit.
-  - A failed store frees its place. A store that hangs, because MongoDB is down, holds the intake:
-    the broker keeps the messages until telemetry can store them.
-  - A telemetry crash loses at most `MQTT_MAX_UNSTORED_MESSAGES` messages: the ones it acknowledged
-    and had not stored. A message it holds back is not acknowledged, and the broker delivers it again.
+  - A store or tag lookup that fails because MongoDB cannot be reached (the driver's server-selection
+    or network error, or Mongoose's buffering timeout) keeps its place and tries again after 1 s,
+    doubling, at most 30 s apart, with no give-up while the error lasts. The messages after it for the
+    same node wait behind it, so the intake holds at its bound and the broker keeps the rest until
+    MongoDB is back. Telemetry logs `ingestion.store.deferred` (warn) once when a message first waits
+    and `ingestion.store.resolved` (info, with `waitedMs`) once it is handled; no line per attempt.
+  - Any other failed store drops its message with `ingestion.error` and frees its place. Manual
+    entries over HTTP fail at once when MongoDB is unreachable.
+  - A store that waits longer than the MQTT keepalive, for a MongoDB that is down or a dependency that
+    does not answer, holds MQTT.js's reading too: the keepalive times out, telemetry reconnects with
+    its session and logs an error line, about every 100 s while the wait lasts. The broker delivers
+    the held-back message again on each reconnect.
+  - At startup telemetry exits when its subscriptions fail, and a wait that holds the intake while it
+    starts into a backlog fails them through the keepalive. Docker starts telemetry again, the exit
+    repeats about every 100 s while the wait lasts, and each exit is a crash: it loses at most
+    `MQTT_MAX_UNSTORED_MESSAGES` − 1 acknowledged messages. With MongoDB unreachable at startup,
+    telemetry exits before it connects to the broker and takes nothing in.
+  - A telemetry crash loses at most `MQTT_MAX_UNSTORED_MESSAGES` − 1 messages: the ones it
+    acknowledged and had not stored. A message it holds back is not acknowledged, and the broker
+    delivers it again.
   - A clean stop takes nothing more in and acknowledges nothing more, lets the stores in progress
     finish, and only then closes MongoDB and Redis. The broker delivers again what was still
-    arriving.
+    arriving. Stores that wait for an unreachable MongoDB stop waiting at once, so they do not hold
+    the stop past its grace period: each logs `ingestion.store.abandoned` (error), and the stop loses
+    what a crash would.
 - **Broker** (`infra/mosquitto/mosquitto.conf`): `max_queued_messages 0`, so the message count is no
   longer the limit, and `max_queued_bytes` as the hard ceiling for the queue. Its value is the measured
   queue size of a 30-minute outage at the design load, plus 25%.
-- **Broker container:** memory and CPU limits sized from the same measurement, so that a full queue
+- **Broker container:** a memory limit computed from the same measurement, so that a full queue
   never gets the broker killed. With the session outliving the ceiling, a longer outage fills the
   queue to the ceiling, so the memory limit covers a queue at the ceiling: the measured memory per
-  queued message × the messages the ceiling holds × 1.25.
+  queued message × the messages the ceiling holds × 1.25. No run holds a queue at the ceiling, so
+  this limit is computed, not measured. The CPU limit is the one the measurement ran under: a CPU
+  measured under a cap cannot show demand above it.
 - **`autosave_interval`**, which bounds what a broker crash loses, is chosen from the measured cost of
   writing a full queue to disk.
 
@@ -532,8 +557,8 @@ whose memory was cleared. Either loss must not go unseen either.
 | `performance/src/lib/internal-api/run-mode-monitors.client.ts` | Throw when work-center cannot answer; the caller's log level and abort signal |
 | `performance/src/lib/internal-api/telemetry-request.client.ts` | A 400 `historian.binary_only` is its own error, not telemetry being unreachable |
 | `telemetry/src/lib/mqtt.ts`, telemetry config | Client id and session expiry from config; dropped-message check on connect; a bound on messages received but not stored; a lost session logged on connect |
-| `telemetry/src/app.ts` | Shutdown stops the intake and lets the stores finish before it closes MongoDB and Redis |
-| `telemetry/src/jobs/events.ts`, `telemetry/src/modules/ingestion/ingestion.pipeline.ts` | `tag.value.recorded` carries the previous stored sample's time |
+| `telemetry/src/app.ts`, `telemetry/src/core/loaders/index.ts` | Shutdown stops the intake, ends the waits for an unreachable MongoDB, and lets the stores finish before it closes MongoDB and Redis |
+| `telemetry/src/jobs/events.ts`, `telemetry/src/modules/ingestion/ingestion.pipeline.ts` | `tag.value.recorded` carries the previous stored sample's time; a store or tag lookup that cannot reach MongoDB waits for it in the node's and the tag's order |
 | `infra/mosquitto/mosquitto.conf`, `docker-compose.yml` | Queue ceiling, autosave interval, broker memory and CPU limits |
 | `infra/grafana/provisioning/alerting/` | Alert rules on `mqtt.broker.messages_dropped` and `mqtt.session.lost` |
 | `packages/testing` | Redis test container helper using the image docker-compose.yml runs |
@@ -629,6 +654,13 @@ These tests run against a real Mosquitto in a test container.
     - when the broker kept the session, it logs nothing.
 18. Telemetry closes while a machine publishes fast: it takes in nothing more after it starts to
     close, logs no MQTT error, and after a reconnect every message has arrived.
+19. Telemetry's MongoDB, a standalone server in a test container, stops while a machine publishes and
+    starts again:
+    - every message is stored once and in the order published, the first messages of a tag not
+      looked up yet included, and the broker holds what telemetry has not taken in meanwhile;
+    - a message MongoDB rejects is dropped with `ingestion.error`, and the ones after it are stored;
+    - telemetry stopping while MongoDB is down ends the waits at once and logs one
+      `ingestion.store.abandoned` per message it gives up.
 
 ### Capacity measurement (by hand)
 
