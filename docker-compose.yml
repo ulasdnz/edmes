@@ -1,10 +1,20 @@
 # Every image is pinned by exact tag and digest, so each start runs the same one; Dependabot
 # (docker-compose) proposes newer patches and minors, majors are upgraded by hand
+
+# Every container keeps at most 5 log files of 20 MB, the older ones compressed; Loki keeps the
+# history. Docker Engine's default json-file driver never rotates them.
+x-logging: &logging
+  driver: local
+  options:
+    max-size: 20m
+    max-file: '5'
+
 services:
   traefik:
     image: traefik:v3.7.16@sha256:1336e85aaed293bd63d005086e0dd013b04078b26aaeb1c18b26a2f928af7e65
     container_name: api_gateway
     restart: unless-stopped
+    logging: *logging
     security_opt:
       - no-new-privileges:true
     ports:
@@ -49,6 +59,7 @@ services:
     image: mongo:9.0.2@sha256:f5c6240ae8fccc21cf75acc6462929b3394a7a5a7abd934b6b0e7ada5eb5fe95
     container_name: mongodb_dev
     restart: unless-stopped
+    logging: *logging
     ports:
       - '127.0.0.1:27017:27017' # localhost only; services use mes_network
     volumes:
@@ -66,6 +77,7 @@ services:
     image: redis:7.4.12-alpine@sha256:8da19c7399dca900c6822a1cf30f9d2285585e2c4b457ff4095b0f4500054d3f
     container_name: redis_dev
     restart: unless-stopped
+    logging: *logging
     command: redis-server --maxmemory 1gb --maxmemory-policy noeviction --appendonly yes
     ports:
       - '127.0.0.1:6379:6379' # localhost only; services use mes_network
@@ -83,6 +95,7 @@ services:
     image: eclipse-mosquitto:2.1.2-alpine@sha256:860aeb5d63ce509508f6dcfb2bc8a1c1dd2bc60555b562b45ce90e52d8dabb0f
     container_name: mosquitto_dev
     restart: unless-stopped
+    logging: *logging
     ports:
       - "1883:1883"
     volumes:
@@ -111,6 +124,7 @@ services:
       dockerfile: user/Dockerfile
     container_name: user_app
     restart: unless-stopped
+    logging: *logging
     # Port dışarıya açılmıyor, sadece Traefik üzerinden erişilir
     volumes:
       - user_uploads:/app/uploads
@@ -168,6 +182,7 @@ services:
       dockerfile: telemetry/Dockerfile
     container_name: telemetry_app
     restart: unless-stopped
+    logging: *logging
     env_file:
       - ./telemetry/.env
     environment:
@@ -215,6 +230,7 @@ services:
       dockerfile: work-center/Dockerfile
     container_name: work_center_app
     restart: unless-stopped
+    logging: *logging
     env_file:
       - ./work-center/.env
     environment:
@@ -257,6 +273,7 @@ services:
       dockerfile: production/Dockerfile
     container_name: production_app
     restart: unless-stopped
+    logging: *logging
     env_file:
       - ./production/.env
     environment:
@@ -335,6 +352,7 @@ services:
       dockerfile: performance/Dockerfile
     container_name: performance_app
     restart: unless-stopped
+    logging: *logging
     env_file:
       - ./performance/.env
     environment:
@@ -379,6 +397,7 @@ services:
       dockerfile: realtime/Dockerfile
     container_name: realtime_app
     restart: unless-stopped
+    logging: *logging
     env_file:
       - ./realtime/.env
     environment:
@@ -414,6 +433,7 @@ services:
     image: grafana/loki:3.4.1@sha256:1d0c5ddc7644b88956aa0bd775ad796d9635180258a225d6ab3552751d5e2a66
     container_name: loki
     restart: unless-stopped
+    logging: *logging
     command: --config.file=/etc/loki/loki-config.yml
     volumes:
       - ./infra/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
@@ -437,6 +457,7 @@ services:
     image: grafana/alloy:v1.21.2@sha256:89a5a320168387336b9ac3c850609c3ba7757eadd4ae5f1d819deb35e9854b18
     container_name: alloy
     restart: unless-stopped
+    logging: *logging
     command:
       - run
       - --storage.path=/var/lib/alloy/data
@@ -467,6 +488,7 @@ services:
     image: grafana/grafana:11.6.0@sha256:62d2b9d20a19714ebfe48d1bb405086081bc602aa053e28cf6d73c7537640dfb
     container_name: grafana
     restart: unless-stopped
+    logging: *logging
     ports:
       - "3001:3000"
     volumes:
