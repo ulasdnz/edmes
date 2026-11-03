@@ -321,6 +321,7 @@ While a planned stop over 10:00 to 11:00 is active, every sample is processed an
 - [CRITICAL] a work center with a cursor at 10:00 loses its run-mode tag, the machine stops at 10:05 and runs at 10:10 while it is unbound, and the tag is bound again → the cursor was deleted when it was unbound; monitoring starts from the latest sample (cursor at 10:10), the next signal 0@10:30 replays nothing, and no stop is recorded for `[10:05, 10:10]`
 - [HIGH] a work center with a cursor and a candidate is archived, or deleted (work-center answers 404) → its tag is no longer mapped, and its cursor and candidate are deleted
 - [HIGH] the refresh's monitor list no longer names a work center → its tag is no longer mapped and its cursor and candidate are deleted; a work center the list still names with the same tag keeps its mapping and state and is not reconciled again
+- [CRITICAL] work-center answers the refresh's monitor list with a 2xx `{}` → the refresh counts it as a failure (`run_mode.tag_map.refresh_failed` with the cause `invalid body`) and retries; every tag stays mapped, and every cursor, candidate and check stays
 - [HIGH] a work center's reconciliation is waiting on telemetry when its tag is unbound → the reconciliation is cancelled before the state is deleted, so telemetry's late answer writes no candidate and no cursor
 - [HIGH] rule 6's replay is waiting on telemetry when the refresh stops monitoring the work center → once telemetry answers, neither the replayed stopped sample nor the signal that started the replay is decided: no cursor, no candidate and no stop for the old tag
 - [HIGH] a work center whose run-mode stop opened at 10:00 is archived, deleted (work-center answers 404), or loses its run-mode tag at 10:20 by the server's clock → the stop is closed at 10:20 and kept, and `run_mode.tag_map.unmonitored` names it in `closedStopId`; a work center whose run-mode tag changes meanwhile keeps its stop open, for the new tag's first running signal to close
@@ -588,6 +589,7 @@ Samples reach performance as telemetry publishes them, with `previousOccurredAt`
 - [HIGH] work-center answers with a server error → `listRunModeMonitors()` throws `CustomError` 503 `error.work_center_unreachable`
 - [HIGH] work-center cannot be reached (network failure) → `listRunModeMonitors()` throws the same 503 error
 - a successful answer with an empty `data` → returns `[]` (no monitors is not an error)
+- [CRITICAL] a successful answer without a `data` array (`{}` or `{ data: null }`) → `listRunModeMonitors()` throws the same 503 error with the cause `invalid body`, never "no monitors"
 - a caller that logs the failure itself passes `failureLogLevel: 'debug'` → the client's own line is logged at debug, not warn, and the error carries the cause (`HTTP <status>` or the fetch error)
 - the caller's signal aborts while work-center has not answered → the request stops and throws the same 503 error
 

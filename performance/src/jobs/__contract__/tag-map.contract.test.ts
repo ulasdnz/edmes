@@ -574,6 +574,34 @@ describe('A work center that stops being monitored loses its run-mode state', ()
     expect(telemetryAskedAbout(kept.runModeTagId)).toEqual([])
   })
 
+  it('keeps every cursor and pending decision when the monitor list comes without data', async () => {
+    const machine = await machineWithDebounce(60_000)
+    bind(machine)
+    await deliver(machine, recorded(machine, 0, '10:00:00'))
+    await leaveAfterPlannedCheck(machine, at('09:30:00'))
+    // A 2xx answer whose body holds no list: {}
+    stubs.runModeMonitors.answer = () => undefined
+
+    requestRefresh()
+    await listed(1)
+    await vi.waitFor(() => expect(logs.lines()).not.toEqual([]))
+
+    expect(workCenterForTag(machine.runModeTagId)).toBe(machine.workCenterId)
+    expect(await cursorsOf(machine)).toEqual([cursorAt(machine, '10:00:00')])
+    expect(await storedCandidate(machine)).toEqual(candidateSince('10:00:00'))
+    expect(await storedCheck(machine)).toEqual(afterPlannedSince('09:30:00'))
+    expect(logs.lines()).toEqual([
+      [
+        'warn',
+        {
+          event: 'run_mode.tag_map.refresh_failed',
+          error: 'error.work_center_unreachable',
+          cause: 'invalid body',
+        },
+      ],
+    ])
+  })
+
   it('cancels the reconciliation of a tag that stops being monitored before it forgets the tag', async () => {
     const machine = await machineWithDebounce(60_000)
     bind(machine)

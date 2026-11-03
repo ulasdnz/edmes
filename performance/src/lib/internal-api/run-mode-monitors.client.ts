@@ -44,7 +44,9 @@ export async function listRunModeMonitors({
       throw unreachable(`HTTP ${res.status}`)
     }
     const body = (await res.json()) as { data?: RunModeMonitor[] }
-    return body.data ?? []
+    // A body without the list is not an empty list either
+    if (!Array.isArray(body.data)) throw unreachable('invalid body')
+    return body.data
   } catch (err) {
     if (err instanceof CustomError) throw err
     logger[failureLogLevel]('Run-mode monitors fetch errored', {

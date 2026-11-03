@@ -70,6 +70,19 @@ describe('listRunModeMonitors', () => {
     expect(await listRunModeMonitors()).toEqual([])
   })
 
+  it.each([
+    ['{}', {}],
+    ['{ data: null }', { data: null }],
+  ])('fails with 503 when work-center answers %s, never "no monitors"', async (_, body) => {
+    answer = res => res.json(body)
+
+    await expect(listRunModeMonitors()).rejects.toMatchObject({
+      statusCode: 503,
+      message: 'error.work_center_unreachable',
+      cause: 'invalid body',
+    })
+  })
+
   it('fails with 503 when work-center answers with an error', async () => {
     answer = res => res.status(500).json({ error: { code: 'error.internal', message: 'x' } })
 

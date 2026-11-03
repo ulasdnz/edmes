@@ -320,7 +320,8 @@ Covers the debounce candidate and the check after a planned stop.
   therefore has its history replayed until the refresh stops monitoring it. The old mapping is kept on
   purpose while work-center cannot answer.
 - The run-mode monitors client throws when work-center cannot answer, like the other internal clients,
-  so a refresh tells "no monitors" from "could not read them".
+  so a refresh tells "no monitors" from "could not read them". A successful answer without a `data`
+  list throws the same way.
 - Shutdown stops the refresh and the tag map's reconciliations before the data connections close, as it
   stops boot reconciliation.
 
