@@ -305,6 +305,11 @@ Covers the debounce candidate and the check after a planned stop.
   (info) is logged. The old tag never decides for the machine again, and monitoring that resumes starts
   from the latest sample: neither rule 6 nor the reconciler replays the time it was not monitored, which
   the performance service spec puts outside run-mode scope.
+- A work center that is no longer monitored at all, because it was archived or deleted or lost its
+  run-mode tag, also gets its open run-mode stop closed at the moment monitoring stops, by the server's
+  clock, under the same lock, and the stop is kept; `run_mode.tag_map.unmonitored` names it
+  (`closedStopId`). Nothing tells the stop's end after that moment, and an operator can still edit it.
+  A work center whose tag changed keeps the stop open: the new tag's first running signal closes it.
 - Only stopping monitoring deletes a cursor, so a replay that was asking telemetry when the cursor was
   deleted brings nothing back. A sample whose handling started from a cursor proceeds under the tag's
   lock only while that cursor exists; otherwise it decides nothing (`run_mode.sample.skipped`, debug),

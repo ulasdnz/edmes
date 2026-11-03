@@ -18,6 +18,8 @@ import {
 } from '../modules/run-mode/run-mode.processor.js'
 import { reconcileUntilDone } from '../modules/run-mode/run-mode.reconciler.js'
 import { RunModeProcessingState } from '../modules/run-mode/run-mode-processing-state.model.js'
+import type { IUnplannedStop } from '../modules/unplanned-stop/unplanned-stop.model.js'
+import { closeIfOpen } from '../modules/unplanned-stop/unplanned-stop.service.js'
 
 // The work center each monitored run-mode tag belongs to; the stream's samples are routed by it.
 // Only an answer from work-center changes it: while work-center cannot answer, a work center keeps
@@ -67,7 +69,10 @@ export async function syncWorkCenter(workCenterId: string): Promise<void> {
     const runModeTagId = monitoredTagOf(await getWorkCenter(workCenterId))
     for (const [tagId, mapped] of [...workCenterByTag]) {
       if (mapped === workCenterId && tagId !== runModeTagId) {
-        await stopMonitoring({ workCenterId, runModeTagId: tagId })
+        await stopMonitoring(
+          { workCenterId, runModeTagId: tagId },
+          { closeOpenStop: runModeTagId === undefined },
+        )
       }
     }
     if (runModeTagId) await startMonitoring({ workCenterId, runModeTagId })
@@ -135,9 +140,13 @@ async function refreshUntilDone(signal: AbortSignal): Promise<void> {
 // it lists that the map does not hold yet starts
 async function replaceMapping(monitors: RunModeMonitor[]): Promise<void> {
   const listed = new Map(monitors.map(m => [m.runModeTagId, m.workCenterId]))
+  const monitored = new Set(listed.values())
   for (const [runModeTagId, workCenterId] of [...workCenterByTag]) {
     if (listed.get(runModeTagId) !== workCenterId) {
-      await stopMonitoring({ workCenterId, runModeTagId })
+      await stopMonitoring(
+        { workCenterId, runModeTagId },
+        { closeOpenStop: !monitored.has(workCenterId) },
+      )
     }
   }
   for (const [runModeTagId, workCenterId] of listed) {
@@ -168,20 +177,29 @@ async function startMonitoring(target: MonitoredWorkCenter): Promise<void> {
 // kinds: the tag no longer decides for it, and monitoring that resumes starts from the latest sample
 // instead of replaying the time between. A reconciliation of the tag still going on is cancelled
 // first, and the deletes take the tag's lock, so they come after a decision in flight. When they
-// fail, the tag stays mapped, so the refresh that retries finds it
-async function stopMonitoring(target: MonitoredWorkCenter): Promise<void> {
+// fail, the tag stays mapped, so the refresh that retries finds it. A work center no longer monitored
+// at all, archived, deleted or without a run-mode tag, also gets its open run-mode stop closed at that
+// moment and kept: nothing tells the stop's end after it. One whose tag changed keeps the stop open,
+// for the new tag's first running signal to close
+async function stopMonitoring(
+  target: MonitoredWorkCenter,
+  { closeOpenStop = false }: { closeOpenStop?: boolean } = {},
+): Promise<void> {
   workCenterByTag.delete(target.runModeTagId)
+  let closed: IUnplannedStop | null
   try {
     const reconciliation = reconciliations.get(keyOf(target))
     reconciliation?.abort.abort()
     await reconciliation?.done
-    await withTagLock(target, async () => {
+    closed = await withTagLock(target, async () => {
       await deleteDecision('debounce', target.workCenterId, target.runModeTagId)
       await deleteDecision('after_planned', target.workCenterId, target.runModeTagId)
       await RunModeProcessingState.deleteOne({
         workCenterId: new Types.ObjectId(target.workCenterId),
         runModeTagId: new Types.ObjectId(target.runModeTagId),
       })
+      if (!closeOpenStop) return null
+      return closeIfOpen(target.workCenterId, new Date(), { source: 'run_mode' })
     })
   } catch (err) {
     workCenterByTag.set(target.runModeTagId, target.workCenterId)
@@ -191,6 +209,7 @@ async function stopMonitoring(target: MonitoredWorkCenter): Promise<void> {
     event: 'run_mode.tag_map.unmonitored',
     workCenterId: target.workCenterId,
     runModeTagId: target.runModeTagId,
+    ...(closed ? { closedStopId: closed._id.toString() } : {}),
   })
 }
 

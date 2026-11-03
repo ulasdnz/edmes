@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   afterPlannedSince,
   at,
+  atServerTime,
   candidateSince,
   cursorOf,
   deliver,
@@ -13,9 +14,11 @@ import {
   latestSample,
   type Machine,
   machineWithDebounce,
+  openRunModeStop,
   received,
   recorded,
   releaseHeld,
+  runModeStop,
   stateDurations,
   stopsOf,
   storedCandidate,
@@ -25,6 +28,7 @@ import {
 } from '../../modules/run-mode/__contract__/run-mode-outage.harness.js'
 import { leaveAfterPlannedCheck } from '../../modules/run-mode/run-mode.processor.js'
 import { RunModeProcessingState } from '../../modules/run-mode/run-mode-processing-state.model.js'
+import { UnplannedStop } from '../../modules/unplanned-stop/unplanned-stop.model.js'
 import { __test__ as subscribers } from '../subscribers.js'
 import {
   requestRefresh,
@@ -500,6 +504,51 @@ describe('A work center that stops being monitored loses its run-mode state', ()
     expect(await storedCandidate(machine)).toBeNull()
     expect(await cursorsOf(machine)).toEqual([])
     expect(logs.lines()).toEqual([unmonitored(machine)])
+  })
+
+  it.each([
+    ['archived', 'work_center.archived', (machine: Machine) => bind(machine, 'archived')],
+    [
+      'deleted',
+      'work_center.deleted',
+      (machine: Machine) => workCenters.delete(machine.workCenterId),
+    ],
+    ['unbound', 'work_center.updated', unbind],
+  ] as const)('closes and keeps the open run-mode stop of a work center that is %s', async (_, event, change) => {
+    const machine = await machineWithDebounce(0)
+    bind(machine)
+    await deliver(machine, recorded(machine, 0, '10:00:00'))
+    // Another machine stands too, and its run-mode tag changes
+    const retagged = await machineWithDebounce(0)
+    bind(retagged)
+    await deliver(retagged, recorded(retagged, 0, '10:00:00'))
+    bind(withNewTag(retagged))
+    change(machine)
+
+    await atServerTime(at('10:20:00'), async () => {
+      await workCenterEvent(event, machine)
+      await workCenterEvent('work_center.updated', retagged)
+    })
+
+    // Nothing tells the stop's end once monitoring has stopped
+    expect(await stopsOf(machine)).toEqual([runModeStop('10:00:00', '10:20:00')])
+    // The new tag's first running signal closes the other one
+    expect(await stopsOf(retagged)).toEqual([openRunModeStop('10:00:00')])
+    const closed = await UnplannedStop.findOne({
+      workCenterId: new Types.ObjectId(machine.workCenterId),
+    })
+    expect(logs.lines()).toEqual([
+      [
+        'info',
+        {
+          event: 'run_mode.tag_map.unmonitored',
+          workCenterId: machine.workCenterId,
+          runModeTagId: machine.runModeTagId,
+          closedStopId: closed?._id.toString(),
+        },
+      ],
+      unmonitored(retagged),
+    ])
   })
 
   it('forgets a work center the monitor list no longer names', async () => {

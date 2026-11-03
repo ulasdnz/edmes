@@ -119,18 +119,24 @@ export async function recordClosedFromRunMode(
   }
 }
 
-// No stop ends before it starts: a stop that started after endAt stays open, to close at its own end
+// No stop ends before it starts: a stop that started after endAt stays open, to close at its own end.
+// With a source, only an open stop of that source closes
 export async function closeIfOpen(
   workCenterId: string,
   endAt: Date,
-  options: { closedBy?: string } = {},
+  options: { closedBy?: string; source?: IUnplannedStop['source'] } = {},
 ): Promise<IUnplannedStop | null> {
   const wcObjectId = new Types.ObjectId(workCenterId)
   const update: Record<string, unknown> = { endAt }
   if (options.closedBy) update.closedBy = new Types.ObjectId(options.closedBy)
 
   const closed = await UnplannedStop.findOneAndUpdate(
-    { workCenterId: wcObjectId, endAt: null, startAt: { $lte: endAt } },
+    {
+      workCenterId: wcObjectId,
+      endAt: null,
+      startAt: { $lte: endAt },
+      ...(options.source ? { source: options.source } : {}),
+    },
     { $set: update },
     { returnDocument: 'after' },
   )
