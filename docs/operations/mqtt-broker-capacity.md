@@ -30,6 +30,11 @@ The measured row (`pnpm test:capacity`, defaults, 3 November 2026). The broker r
 performance ran as containers built from their Dockerfiles, under their compose limits of 0.5 CPU
 and 512M each.
 
+The run measured telemetry as of commit `8e9955f`, before `9d1abe2` changed its ingestion: stores
+for one node run in order, and a store that cannot reach MongoDB waits for it. The numbers stand for
+the code after that change. Two 2-minute runs of the same test, back to back on the same machine,
+stored 1,028 messages/s with the change and 957 without it.
+
 | Rate | Payload | Outage | Queued messages | Broker store | Broker peak memory | Persistence file | Save | Telemetry caught up in | Transitions lost |
 |---|---|---|---|---|---|---|---|---|---|
 | 500 msg/s | 150 B | 30 min 11 s | 901,839 | 135,276,178 B (129.0 MiB) | 610.1 MiB (peak RSS 605.1 MiB) | 244.1 MiB | 1.06 s | 14 min 1 s | 0 of 198 (102 in the outage) |
@@ -62,7 +67,7 @@ Further measurements of the same run:
 | How the broker hands the backlog over | at telemetry's pace: its store fell by about 1,050 messages a second, and was empty 846 s after telemetry's restart |
 | Telemetry while it caught up | it stored the 905,000 messages published while it was disconnected within 9 min 30 s of its restart, and caught up 13 min 57 s after its reconnect: 1,574 messages/s, three times the arrival rate. It used its whole 0.5 CPU, and at most 87.0 MiB of its 512 MiB (cgroup 92.7 MiB; its health endpoint reported 144 MiB resident). |
 | Telemetry before the outage | 0.24 cores at 500 messages/s, 87.8 MiB |
-| Performance | 0.14 cores while telemetry caught up (0.08 before), at most 64.5 MiB; at most 3,483 entries behind telemetry's event stream |
+| Performance | 0.14 cores while telemetry caught up (0.08 before), at most 65.5 MiB (64.5 MiB while telemetry caught up); at most 3,483 entries behind telemetry's event stream |
 | `$SYS/broker/publish/messages/dropped` | 0 for the whole run, the catch-up included; telemetry logged no `mqtt.broker.messages_dropped` and no `mqtt.session.lost` |
 | Error lines in the service logs | none |
 
@@ -83,7 +88,7 @@ gives it.
 | Broker memory limit (`docker-compose.yml`) | 691.5 B resident per queued message; the ceiling holds 1,127,301 payloads of 150 bytes | computed, not run: 691.5 B × 1,127,301 × 1.25 = 929.3 MiB, rounded up to a multiple of 64 MiB | `960M` | `960M`, with the queue at 80% of the ceiling |
 | Broker CPU limit (`docker-compose.yml`) | 0.361 cores, the highest 5-second use while telemetry caught up, under a limit of 1 CPU | the value the run measured under; × 1.25 would give 0.5, which no run used | `1` | `1` |
 | `autosave_interval` | a save of the full queue took 1.06 s | the shortest whole minute in which saving a full queue blocks the broker for less than 2% of the time (1.06 s in 60 s is 1.8%) | `60` | `60` |
-| Telemetry and performance limits (`docker-compose.yml`) | telemetry used its whole 0.5 CPU and at most 87.0 MiB, and caught up at three times the arrival rate; performance used at most 0.29 cores over 5 s and 64.5 MiB | kept: within them telemetry stores faster than the plant publishes, and no service came near its memory limit | 0.5 CPU and `512M` each | the same |
+| Telemetry and performance limits (`docker-compose.yml`) | telemetry used its whole 0.5 CPU and at most 87.8 MiB, and caught up at three times the arrival rate; performance used at most 0.29 cores over 5 s and 65.5 MiB | kept: within them telemetry stores faster than the plant publishes, and no service came near its memory limit | 0.5 CPU and `512M` each | the same |
 
 - **The queue ceiling** holds 1,127,301 payloads of 150 bytes: 37.6 minutes at 500 messages/s, or a
   30-minute outage at up to 626 messages/s. Telemetry's session lasts a day, so an outage longer
