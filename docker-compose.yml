@@ -97,11 +97,13 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+    # Sized from the broker's peak memory and CPU in a measured 30-minute outage, plus 25%:
+    # docs/operations/mqtt-broker-capacity.md
     deploy:
       resources:
         limits:
-          cpus: '0.25'
-          memory: 128M
+          cpus: '1'
+          memory: 768M
 
   user:
     build:

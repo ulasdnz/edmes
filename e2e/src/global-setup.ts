@@ -40,6 +40,10 @@ declare module 'vitest' {
     admin: { email: string; password: string }
     logDir: string
     control: string
+    containerIds: { broker: string; redis: string }
+    // The capacity measurement sets it to false: its broker queues without a ceiling, so the run
+    // measures what the queue needs rather than the ceiling
+    brokerQueueCeiling?: boolean
   }
 }
 
@@ -128,16 +132,21 @@ export default async function setup(project: TestProject) {
   console.log(`Service logs: ${relative(ROOT, runDir)}`)
 
   // The repository's broker config, so e2e runs the queue and persistence settings production does.
-  // Only the authentication goes: e2e has no password file.
+  // Only the authentication goes: e2e has no password file. The container runs without the
+  // compose file's limits.
   const repositoryBrokerConfig = await readFile(
     resolve(ROOT, 'infra/mosquitto/mosquitto.conf'),
     'utf8',
   )
-  const brokerConfig = replaceLine(
+  const authenticatedBrokerConfig = replaceLine(
     replaceLine(repositoryBrokerConfig, /^allow_anonymous false$/m, 'allow_anonymous true'),
     /^password_file .*$/m,
     '',
   )
+  const brokerConfig =
+    project.getProvidedContext().brokerQueueCeiling === false
+      ? replaceLine(authenticatedBrokerConfig, /^max_queued_bytes \d+$/m, '')
+      : authenticatedBrokerConfig
 
   const [mongo, redis, broker] = await Promise.all([
     new GenericContainer(composeImage('mongodb'))
@@ -265,6 +274,7 @@ export default async function setup(project: TestProject) {
   project.provide('admin', ADMIN)
   project.provide('logDir', runDir)
   project.provide('control', `http://127.0.0.1:${(control.address() as AddressInfo).port}`)
+  project.provide('containerIds', { broker: broker.getId(), redis: redis.getId() })
 
   return async () => {
     const crashed = [...services.values()].filter(
