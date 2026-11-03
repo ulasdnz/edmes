@@ -97,13 +97,13 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
-    # Sized from the broker's peak memory and CPU in a measured 30-minute outage, plus 25%:
-    # docs/operations/mqtt-broker-capacity.md
+    # Memory for a queue at the ceiling and CPU for telemetry's catch-up, from a measured 30-minute
+    # outage plus 25%: docs/operations/mqtt-broker-capacity.md
     deploy:
       resources:
         limits:
-          cpus: '1'
-          memory: 768M
+          cpus: '0.5'
+          memory: 960M
 
   user:
     build:
@@ -180,6 +180,8 @@ services:
       - MQTT_URL=${MQTT_URL:-mqtt://mosquitto:1883}
       - MQTT_USERNAME=${MQTT_USERNAME:-mes_service}
       - MQTT_PASSWORD=${MQTT_PASSWORD:-dev123}
+      # Outlives the broker's queue ceiling, so a longer outage ends with counted drops
+      - MQTT_SESSION_EXPIRY_SECONDS=${MQTT_SESSION_EXPIRY_SECONDS:-86400}
     depends_on:
       mongodb:
         condition: service_healthy

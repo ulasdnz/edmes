@@ -5,7 +5,7 @@ import { resolve } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { promisify } from 'node:util'
 import mqtt from 'mqtt'
-import { describe, expect, inject, it } from 'vitest'
+import { describe, expect, inject, it, type ProvidedContext } from 'vitest'
 import { Api, loginAsAdmin } from '../support/api.js'
 import { startService, stopService } from '../support/services.js'
 
@@ -18,7 +18,7 @@ const OUTAGE_MS = Number(process.env.CAPACITY_OUTAGE_MINUTES ?? 30) * 60_000
 const PAYLOAD_BYTES = Number(process.env.CAPACITY_PAYLOAD_BYTES ?? 150)
 // The broker keeps telemetry's queue this long after it disconnects. The harness passes the same
 // environment on to telemetry, so a longer outage is measured with a longer session.
-const SESSION_EXPIRY_MS = Number(process.env.MQTT_SESSION_EXPIRY_SECONDS ?? 1800) * 1000
+const SESSION_EXPIRY_MS = Number(process.env.MQTT_SESSION_EXPIRY_SECONDS ?? 86400) * 1000
 
 // Each machine reports whether it runs and 9 counters, every tag read once a second
 const NODES = ['run', ...Array.from({ length: 9 }, (_, k) => `counter-${k + 1}`)]
@@ -32,10 +32,9 @@ const CYCLE_SECONDS = 1800
 const STOPPED_SECONDS = 180
 
 const WARM_UP_SECONDS = 30
-// The full queue is measured and saved this long before the outage reaches its length, so the
-// restarted telemetry reconnects within its session
-const FULL_QUEUE_LEAD_MS = 30_000
 const SAMPLE_INTERVAL_MS = 5_000
+// Telemetry has caught up with the plant once every counter's latest sample is this recent
+const CAUGHT_UP_WITHIN_MS = 5_000
 
 const SYS = {
   count: '$SYS/broker/store/messages/count',
@@ -245,6 +244,36 @@ async function sampleBroker(id: string) {
 }
 type BrokerSample = Awaited<ReturnType<typeof sampleBroker>>
 
+// `docker stats` and the cgroup of a service's container, or null while it is stopped. Its cgroup
+// starts again with the container, so peaks are taken over the samples.
+async function sampleService(id: string) {
+  try {
+    const [stats, inside] = await Promise.all([
+      docker('stats', '--no-stream', '--format', '{{.MemUsage}}|{{.CPUPerc}}', id),
+      docker(
+        'exec',
+        id,
+        'sh',
+        '-c',
+        'echo "cgroup_current $(cat /sys/fs/cgroup/memory.current)"; echo "cgroup_peak $(cat /sys/fs/cgroup/memory.peak)"; grep usage_usec /sys/fs/cgroup/cpu.stat',
+      ),
+    ])
+    const [memoryUsage, cpu] = stats.trim().split('|')
+    const field = (name: string) => Number(new RegExp(`^${name}\\s+(\\d+)`, 'm').exec(inside)?.[1])
+    return {
+      at: Date.now(),
+      dockerStatsMemoryBytes: bytesOf(memoryUsage.split('/')[0]),
+      dockerStatsCpuPercent: Number.parseFloat(cpu),
+      cgroupMemoryBytes: field('cgroup_current'),
+      cgroupPeakBytes: field('cgroup_peak'),
+      cpuUsec: field('usage_usec'),
+    }
+  } catch {
+    return null
+  }
+}
+type ServiceSample = NonNullable<Awaited<ReturnType<typeof sampleService>>>
+
 // Has the broker write its in-memory database now (SIGUSR1) and times the write inside the
 // container: Mosquitto writes a new file and renames it over the old one
 async function saveBrokerDatabase(id: string) {
@@ -354,29 +383,37 @@ type Sampled = BrokerSample & {
   phase: string
   telemetryRssMiB: number | null
   performanceLag: number | false | null
+  telemetry: ServiceSample | null
+  performance: ServiceSample | null
 }
 
-// Samples the broker, telemetry and performance's place in telemetry's event stream until stopped.
-// A sample that fails is recorded and skipped, so one slow docker call does not end a long run.
-function startSampling(containerIds: { broker: string; redis: string }) {
+// Samples the broker, the telemetry and performance containers and performance's place in
+// telemetry's event stream until stopped. A sample that fails is recorded and skipped, so one slow
+// docker call does not end a long run.
+function startSampling(containerIds: ProvidedContext['containerIds']) {
   const samples: Sampled[] = []
   const failures: Array<{ at: number; error: string }> = []
   let phase = 'warm-up'
   let sampling = true
+  const service = (id?: string) => (id ? sampleService(id) : Promise.resolve(null))
   const loop = (async () => {
     while (sampling) {
       const started = Date.now()
       try {
-        const [broker, telemetryRss, streams] = await Promise.all([
+        const [broker, telemetryRss, streams, telemetry, performance] = await Promise.all([
           sampleBroker(containerIds.broker),
           telemetryRssMiB(),
           snapshotStreams(containerIds.redis),
+          service(containerIds.telemetry),
+          service(containerIds.performance),
         ])
         samples.push({
           ...broker,
           phase,
           telemetryRssMiB: telemetryRss,
           performanceLag: performanceGroup(streams)?.lag ?? null,
+          telemetry,
+          performance,
         })
       } catch (err) {
         failures.push({ at: started, error: err instanceof Error ? err.message : String(err) })
@@ -397,15 +434,34 @@ function startSampling(containerIds: { broker: string; redis: string }) {
   }
 }
 
-// The broker's CPU use in cores from its cgroup's CPU time: the average over a phase, and the
-// highest over one sample interval
-function brokerCpu(samples: Sampled[], phase: string) {
-  const inPhase = samples.filter(s => s.phase === phase)
-  const cores = (from: Sampled, to: Sampled) =>
-    (to.cpuUsec - from.cpuUsec) / 1000 / (to.at - from.at)
+// CPU use in cores from a cgroup's CPU time: the average over the samples, and the highest over one
+// sample interval. A container that started again counts from zero, so that interval is left out.
+function cpuCores(samples: Array<{ at: number; cpuUsec: number }>) {
+  const intervals = samples
+    .slice(1)
+    .map((to, i) => ({ from: samples[i], to }))
+    .filter(({ from, to }) => to.cpuUsec >= from.cpuUsec)
+  const usec = intervals.reduce((sum, { from, to }) => sum + to.cpuUsec - from.cpuUsec, 0)
+  const ms = intervals.reduce((sum, { from, to }) => sum + to.at - from.at, 0)
   return {
-    average: cores(inPhase[0], inPhase[inPhase.length - 1]),
-    peak: peak(inPhase.slice(1).map((s, i) => cores(inPhase[i], s))),
+    average: usec / 1000 / ms,
+    peak: peak(
+      intervals.map(({ from, to }) => (to.cpuUsec - from.cpuUsec) / 1000 / (to.at - from.at)),
+    ),
+  }
+}
+
+// A service container's memory and CPU over the samples of a phase
+function serviceUse(samples: Sampled[], name: 'telemetry' | 'performance', phase: string) {
+  const inPhase = samples
+    .filter(s => s.phase === phase)
+    .map(s => s[name])
+    .filter((s): s is ServiceSample => s !== null)
+  if (inPhase.length === 0) return null
+  return {
+    peakDockerStatsBytes: peak(inPhase.map(s => s.dockerStatsMemoryBytes)),
+    peakCgroupBytes: peak(inPhase.map(s => s.cgroupPeakBytes)),
+    cpuCores: cpuCores(inPhase),
   }
 }
 
@@ -419,18 +475,22 @@ async function latestOccurredAt(tagId: string) {
   return latest ? new Date(latest.occurredAt).getTime() : 0
 }
 
-// Resolves once telemetry has stored a sample published at or after `since` for every counter:
-// the broker delivers each tag's samples in order, so telemetry has then worked off the backlog
-async function backlogWorkedOff(machines: Machine[], since: number, deadline: number) {
+// Resolves once telemetry has stored, for every counter, a sample published at or after the time
+// `since` gives when a check starts: the broker delivers each tag's samples in order, so every
+// sample published before that time is stored too. Resolves with that time and when it was reached.
+async function storedSince(machines: Machine[], since: () => number, deadline: number) {
   const counters = machines.flatMap(m => m.counterTagIds)
   while (Date.now() < deadline) {
-    if ((await latestOccurredAt(counters[0])) >= since) {
-      const behind = await inBatches(counters, 10, async id => (await latestOccurredAt(id)) < since)
-      if (!behind.includes(true)) return Date.now()
+    const from = since()
+    if ((await latestOccurredAt(counters[0])) >= from) {
+      const behind = await inBatches(counters, 10, async id => (await latestOccurredAt(id)) < from)
+      if (!behind.includes(true)) return { from, at: Date.now() }
     }
     await sleep(1000)
   }
-  throw new Error(`telemetry had not worked off the backlog by ${new Date(deadline).toISOString()}`)
+  throw new Error(
+    `telemetry had not stored the samples published by ${new Date(since()).toISOString()} at ${new Date(deadline).toISOString()}`,
+  )
 }
 
 // The run-mode transitions performance has not decided: a stopped signal it opened no stop at, or a
@@ -481,13 +541,29 @@ describe('MQTT broker capacity', () => {
           `CAPACITY_RATE must be a multiple of ${NODES.length}, the tags of one machine`,
         )
       }
-      if (OUTAGE_MS <= FULL_QUEUE_LEAD_MS || OUTAGE_MS > SESSION_EXPIRY_MS) {
+      if (OUTAGE_MS >= SESSION_EXPIRY_MS) {
         throw new Error(
-          `CAPACITY_OUTAGE_MINUTES must be over ${FULL_QUEUE_LEAD_MS / 60_000} and at most telemetry's session, MQTT_SESSION_EXPIRY_SECONDS=${SESSION_EXPIRY_MS / 1000}`,
+          `CAPACITY_OUTAGE_MINUTES must be shorter than telemetry's session, MQTT_SESSION_EXPIRY_SECONDS=${SESSION_EXPIRY_MS / 1000}`,
         )
       }
       const containerIds = inject('containerIds')
       const reportFile = resolve(inject('logDir'), 'capacity.json')
+      // The image and the limits each container ran with
+      const containerSettings = Object.fromEntries(
+        await Promise.all(
+          Object.entries(containerIds).map(async ([name, id]) => [
+            name,
+            (
+              await docker(
+                'inspect',
+                '--format',
+                '{{.Config.Image}}, memory {{.HostConfig.Memory}} bytes, {{.HostConfig.NanoCpus}} nanocpus',
+                id as string,
+              )
+            ).trim(),
+          ]),
+        ),
+      )
       const report: Record<string, unknown> = {
         load: {
           rate: RATE,
@@ -506,9 +582,7 @@ describe('MQTT broker capacity', () => {
               '{{.OperatingSystem}}, {{.KernelVersion}}, {{.NCPU}} CPUs, {{.MemTotal}} bytes',
             )
           ).trim(),
-          brokerImage: (
-            await docker('inspect', '--format', '{{.Config.Image}}', containerIds.broker)
-          ).trim(),
+          containers: containerSettings,
         },
       }
 
@@ -527,8 +601,9 @@ describe('MQTT broker capacity', () => {
         await stopService('telemetry')
         const outageStart = Date.now()
         sampling.enter('outage')
-        await sleep(outageStart + OUTAGE_MS - FULL_QUEUE_LEAD_MS - Date.now())
+        await sleep(outageStart + OUTAGE_MS - Date.now())
 
+        // The queue as the broker reports it next, then saved, before telemetry comes back
         const full = { store: await broker.next(), broker: await sampleBroker(containerIds.broker) }
         const save = await saveBrokerDatabase(containerIds.broker)
         const streamsBefore = await snapshotStreams(containerIds.redis)
@@ -536,10 +611,14 @@ describe('MQTT broker capacity', () => {
         const restartAt = Date.now()
         sampling.enter('drain')
         await startService('telemetry')
-        const drainedAt = await backlogWorkedOff(
+        const deadline = restartAt + Math.max(2 * OUTAGE_MS, 10 * 60_000)
+        // What queued during the outage is stored once telemetry has reached the restart; the plant
+        // publishes on meanwhile, and telemetry has caught up once it is within seconds of it
+        const outageBacklogStored = await storedSince(machines, () => restartAt, deadline)
+        const caughtUp = await storedSince(
           machines,
-          restartAt,
-          restartAt + Math.max(2 * OUTAGE_MS, 10 * 60_000),
+          () => plant.seconds[plant.seconds.length - 1].getTime() - CAUGHT_UP_WITHIN_MS,
+          deadline,
         )
         sampling.enter('after')
         await sleep(2 * SAMPLE_INTERVAL_MS)
@@ -547,7 +626,7 @@ describe('MQTT broker capacity', () => {
 
         // Telemetry stores the last second and performance reads every event published for it
         const lastSecond = plant.seconds[plant.seconds.length - 1].getTime()
-        await backlogWorkedOff(machines, lastSecond, Date.now() + 60_000)
+        await storedSince(machines, () => lastSecond, Date.now() + 60_000)
         let streamsAfter = await snapshotStreams(containerIds.redis)
         for (let waited = 0; waited < 120; waited++) {
           const group = performanceGroup(streamsAfter)
@@ -635,23 +714,40 @@ describe('MQTT broker capacity', () => {
             rssPerQueuedMessage: (full.broker.rssBytes - before.broker.rssBytes) / queued,
             heapPerQueuedMessage: (full.store.heap - before.store.heap) / queued,
             cpuCores: {
-              warmUp: brokerCpu(samples, 'warm-up'),
-              outage: brokerCpu(samples, 'outage'),
-              drain: brokerCpu(samples, 'drain'),
+              warmUp: cpuCores(samples.filter(s => s.phase === 'warm-up')),
+              outage: cpuCores(samples.filter(s => s.phase === 'outage')),
+              drain: cpuCores(samples.filter(s => s.phase === 'drain')),
             },
           },
+          telemetry: {
+            warmUp: serviceUse(samples, 'telemetry', 'warm-up'),
+            drain: serviceUse(samples, 'telemetry', 'drain'),
+          },
+          performance: {
+            warmUp: serviceUse(samples, 'performance', 'warm-up'),
+            drain: serviceUse(samples, 'performance', 'drain'),
+          },
           save,
-          drainMs: drainedAt - restartAt,
-          drainFromReconnectMs: reconnectAt ? drainedAt - reconnectAt : null,
+          outageBacklogStoredMs: outageBacklogStored.at - restartAt,
+          caughtUpMs: caughtUp.at - restartAt,
+          caughtUpFromReconnectMs: reconnectAt ? caughtUp.at - reconnectAt : null,
+          // Every sample published up to the caught-up check was stored from telemetry's reconnect on
+          telemetryStoredPerSecond: reconnectAt
+            ? (plant.seconds.filter(t => t.getTime() >= outageStart && t.getTime() <= caughtUp.from)
+                .length *
+                RATE) /
+              ((caughtUp.at - reconnectAt) / 1000)
+            : null,
           telemetryPeakRssMiB: peak(samples.map(s => s.telemetryRssMiB ?? 0)),
           performancePeakLag: peak(samples.map(s => Number(s.performanceLag || 0))),
           droppedCounter: {
             max: peak(dropped.map(r => r.value)),
             duringDrain: dropped
-              .filter(r => r.at >= restartAt && r.at <= drainedAt)
+              .filter(r => r.at >= restartAt && r.at <= caughtUp.at)
               .map(r => r.value),
           },
           droppedLogs: telemetryLog.filter(l => l.event === 'mqtt.broker.messages_dropped').length,
+          sessionLostLogs: telemetryLog.filter(l => l.event === 'mqtt.session.lost').length,
           eventStream: {
             added:
               telemetryStream(streamsAfter).entriesAdded -
@@ -681,19 +777,25 @@ describe('MQTT broker capacity', () => {
         }
         report.results = results
 
-        const { cpuCores } = results.broker
+        const brokerCores = results.broker.cpuCores
+        const use = (name: string, measured: ReturnType<typeof serviceUse>) =>
+          measured
+            ? `${name} peak memory ${MiB(measured.peakDockerStatsBytes)} (cgroup ${MiB(measured.peakCgroupBytes)}), CPU ${measured.cpuCores.average.toFixed(3)} cores (peak ${measured.cpuCores.peak.toFixed(3)})`
+            : `${name} not sampled`
         console.log(
           [
-            '| Rate | Payload | Outage | Queued messages | Broker store | Broker peak memory | Persistence file | Save | Backlog worked off in | Transitions lost |',
+            '| Rate | Payload | Outage | Queued messages | Broker store | Broker peak memory | Persistence file | Save | Telemetry caught up in | Transitions lost |',
             `|${'---|'.repeat(10)}`,
-            `| ${RATE} msg/s | ${PAYLOAD_BYTES} B | ${minutes(results.outageMs)} | ${count(queued)} | ${count(full.store.bytes)} B (${MiB(full.store.bytes)}) | ${MiB(results.broker.peakDockerStatsBytes)} (peak RSS ${MiB(results.broker.peakRssBytes)}) | ${MiB(save.fileBytes)} | ${save.seconds} s | ${minutes(results.drainMs)} | ${transitionsLost.length} of ${results.transitions.published} (${results.transitions.inOutage} in the outage) |`,
+            `| ${RATE} msg/s | ${PAYLOAD_BYTES} B | ${minutes(results.outageMs)} | ${count(queued)} | ${count(full.store.bytes)} B (${MiB(full.store.bytes)}) | ${MiB(results.broker.peakDockerStatsBytes)} (peak RSS ${MiB(results.broker.peakRssBytes)}) | ${MiB(save.fileBytes)} | ${save.seconds} s | ${minutes(results.caughtUpMs)} | ${transitionsLost.length} of ${results.transitions.published} (${results.transitions.inOutage} in the outage) |`,
             '',
             `counter samples lost: ${count(samplesLost)} of ${count(results.samples.counters)}; messages published: ${count(results.samples.published)}`,
             `queue read ${minutes(results.fullQueueReadAtMs)} into the outage; ${count(results.publishedWhileDisconnected)} published while telemetry was disconnected`,
             `per queued message: store ${results.storeBytesPerQueuedMessage.toFixed(1)} B, broker RSS ${results.broker.rssPerQueuedMessage.toFixed(1)} B, broker heap ${results.broker.heapPerQueuedMessage.toFixed(1)} B`,
-            `broker CPU in cores, average (peak over ${SAMPLE_INTERVAL_MS / 1000} s): warm-up ${cpuCores.warmUp.average.toFixed(3)} (${cpuCores.warmUp.peak.toFixed(3)}), outage ${cpuCores.outage.average.toFixed(3)} (${cpuCores.outage.peak.toFixed(3)}), drain ${cpuCores.drain.average.toFixed(3)} (${cpuCores.drain.peak.toFixed(3)})`,
-            `backlog worked off ${results.drainFromReconnectMs === null ? 'n/a' : minutes(results.drainFromReconnectMs)} after telemetry reconnected; telemetry peak RSS ${results.telemetryPeakRssMiB} MiB; performance peak lag ${results.performancePeakLag}`,
-            `dropped counter: max ${results.droppedCounter.max}, during the drain [${results.droppedCounter.duringDrain.join(', ')}]; mqtt.broker.messages_dropped lines: ${results.droppedLogs}`,
+            `broker CPU in cores, average (peak over ${SAMPLE_INTERVAL_MS / 1000} s): warm-up ${brokerCores.warmUp.average.toFixed(3)} (${brokerCores.warmUp.peak.toFixed(3)}), outage ${brokerCores.outage.average.toFixed(3)} (${brokerCores.outage.peak.toFixed(3)}), drain ${brokerCores.drain.average.toFixed(3)} (${brokerCores.drain.peak.toFixed(3)})`,
+            `during the drain: ${use('telemetry', results.telemetry.drain)}; ${use('performance', results.performance.drain)}`,
+            `during the warm-up: ${use('telemetry', results.telemetry.warmUp)}; ${use('performance', results.performance.warmUp)}`,
+            `outage backlog stored ${minutes(results.outageBacklogStoredMs)} after the restart; caught up ${results.caughtUpFromReconnectMs === null ? 'n/a' : minutes(results.caughtUpFromReconnectMs)} after telemetry reconnected, storing ${results.telemetryStoredPerSecond?.toFixed(0) ?? 'n/a'} messages/s; telemetry peak RSS ${results.telemetryPeakRssMiB} MiB; performance peak lag ${results.performancePeakLag}`,
+            `dropped counter: max ${results.droppedCounter.max}, during the drain [${results.droppedCounter.duringDrain.join(', ')}]; mqtt.broker.messages_dropped lines: ${results.droppedLogs}; mqtt.session.lost lines: ${results.sessionLostLogs}`,
             `events.telemetry: ${count(results.eventStream.added)} entries added from telemetry's restart, ${count(results.eventStream.trimmedBeforeRead)} trimmed before performance read them; ${results.gapReplays.lines} run_mode.sample.gap_replayed lines replaying ${results.gapReplays.replayed} samples`,
             `run-mode transitions performance has not decided: ${undecided.length} ${JSON.stringify(undecided)}`,
             `error lines per service: ${JSON.stringify(errorLines)}; failed samples: ${sampling.failures.length}`,
@@ -704,6 +806,14 @@ describe('MQTT broker capacity', () => {
         expect(transitionsLost).toEqual([])
         expect(samplesLost).toBe(0)
         expect(results.droppedCounter.max).toBe(0)
+        expect(results.sessionLostLogs).toBe(0)
+        expect(errorLines).toEqual({
+          user: 0,
+          'work-center': 0,
+          production: 0,
+          telemetry: 0,
+          performance: 0,
+        })
       } finally {
         // A failed run keeps what it measured; the run's own error is the one reported
         await Promise.allSettled([plant.stop(), sampling.stop(), broker.stop()])
