@@ -224,9 +224,10 @@ The consumers of `tag.value.recorded` depend on the entries differently:
 - **Performance's run-mode rules rely on the replay.** When a run-mode sample arrives whose
   predecessor in telemetry's history is newer than the last sample performance processed, rule 6
   replays the gap from telemetry's history first (`run_mode.sample.gap_replayed`). A tag whose last
-  sample was trimmed is decided only when its next sample arrives. In this run nothing was trimmed:
-  rule 6 logged no `run_mode.sample.gap_replayed` line, and all 198 run-mode transitions were decided
-  by the end of the run.
+  sample was trimmed is decided only when its next sample arrives. In this run nothing was trimmed,
+  and rule 6 logged no `run_mode.sample.gap_replayed` line. The run also reported all 198 run-mode
+  transitions decided by its end. That is a figure this run printed, not a condition the test
+  asserts: a run that leaves transitions undecided still passes.
 - **The realtime gateway** forwards the events to screens and has no replay. A trimmed entry is a live
   update a screen never shows; the next value replaces it. The harness does not run realtime, so this
   run did not measure it.
