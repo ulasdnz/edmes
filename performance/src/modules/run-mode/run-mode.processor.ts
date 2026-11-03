@@ -244,7 +244,7 @@ export async function replayStoredSamples(
 async function handleStopped(sample: RunModeSample): Promise<void> {
   const covering = await plannedStopCovering(sample.workCenterId, sample.occurredAt)
   if (covering) {
-    if (covering.endedAt) await writeCheckIfEarlier(sample, covering.endedAt)
+    if (covering.endedAt) await writeCheckIfEarlier(sample, covering.endedAt, new Date())
     return
   }
 
@@ -258,6 +258,7 @@ async function handleStopped(sample: RunModeSample): Promise<void> {
   await writeDecisionIfAbsent(sample.workCenterId, sample.runModeTagId, {
     kind: 'debounce',
     since: sample.occurredAt.toISOString(),
+    pendingSince: new Date().toISOString(),
     debounceMs: policy.runModeDebounceMs,
     attempts: 0,
     nextAttemptAt: null,
@@ -273,7 +274,7 @@ async function handleRunning(sample: RunModeSample): Promise<void> {
     if (covering?.endedAt) {
       // However short the stop: the time inside the planned stop is planned, and no debounce
       // applies after its end
-      await writeCheckIfEarlier(sample, covering.endedAt)
+      await writeCheckIfEarlier(sample, covering.endedAt, new Date())
     } else if (!covering && stoppedMs >= candidate.debounceMs) {
       await recordClosedFromRunMode(sample.workCenterId, firstStoppedAt, sample.occurredAt)
     }
@@ -366,7 +367,7 @@ export async function confirmCandidate(
       if (!covering) {
         await openUnplannedFromRunMode(target.workCenterId, firstStoppedAt, candidate.debounceMs)
       } else if (covering.endedAt) {
-        await writeCheckIfEarlier(target, covering.endedAt)
+        await writeCheckIfEarlier(target, covering.endedAt, now)
       }
       await resolveDecision(target, candidate, now)
     },
@@ -381,7 +382,7 @@ export async function confirmAfterPlannedCheck(
   now: Date = new Date(),
 ): Promise<void> {
   const check = await readDueDecision('after_planned', target, now, dropped =>
-    checkOfNextPlannedStop(target.workCenterId, new Date(dropped.since)),
+    checkOfNextPlannedStop(target.workCenterId, new Date(dropped.since), now),
   )
   if (!check) return
 
@@ -425,8 +426,8 @@ export async function confirmAfterPlannedCheck(
           await openUnplannedFromRunMode(target.workCenterId, endedAt)
         }
       }
-      await decideRunsAfterEnd(target, endedAt, history)
-      const next = await checkOfNextPlannedStop(target.workCenterId, endedAt)
+      await decideRunsAfterEnd(target, endedAt, history, now)
+      const next = await checkOfNextPlannedStop(target.workCenterId, endedAt, now)
       await resolveDecision(target, check, now, next)
     },
   )
@@ -444,6 +445,7 @@ async function decideRunsAfterEnd(
   target: ConfirmationTarget,
   endedAt: Date,
   { segments, hasMore }: StateDurationsPage,
+  now: Date,
 ): Promise<void> {
   const [ended, cursor] = await Promise.all([
     PlannedStop.findOne({
@@ -486,6 +488,7 @@ async function decideRunsAfterEnd(
       await writeDecisionIfAbsent(target.workCenterId, target.runModeTagId, {
         kind: 'debounce',
         since: stoppedAt.toISOString(),
+        pendingSince: now.toISOString(),
         debounceMs,
         attempts: 0,
         nextAttemptAt: null,
@@ -509,10 +512,11 @@ async function nextPlannedStopStart(workCenterId: string, after: Date): Promise<
 
 // The check the key goes on to once the check at E is decided or dropped. One key holds one check,
 // so the work center's first planned stop that closed after E could not leave its own while this one
-// waited
+// waited. It is pending from the handover
 async function checkOfNextPlannedStop(
   workCenterId: string,
   after: Date,
+  now: Date,
 ): Promise<PendingDecision | undefined> {
   const next = await PlannedStop.findOne({
     workCenterId: new Types.ObjectId(workCenterId),
@@ -522,7 +526,7 @@ async function checkOfNextPlannedStop(
     .sort({ actualEndAt: 1 })
     .select({ actualEndAt: 1 })
     .lean()
-  return next?.actualEndAt ? afterPlannedCheck(next.actualEndAt) : undefined
+  return next?.actualEndAt ? afterPlannedCheck(next.actualEndAt, now) : undefined
 }
 
 // Rule 4 as the planned stop closes at E: a stopped machine gets its stop at E. Telemetry's latest
@@ -547,7 +551,7 @@ export async function checkRunModeAfterPlannedStop(
       if (stateAtEnd < 1) await openUnplannedFromRunMode(target.workCenterId, endedAt)
       return
     }
-    await writeCheckIfEarlier(target, endedAt)
+    await writeCheckIfEarlier(target, endedAt, new Date())
   })
 }
 
@@ -557,7 +561,7 @@ export async function leaveAfterPlannedCheck(
   target: ConfirmationTarget,
   endedAt: Date,
 ): Promise<void> {
-  await withTagLock(target, () => writeCheckIfEarlier(target, endedAt))
+  await withTagLock(target, () => writeCheckIfEarlier(target, endedAt, new Date()))
 }
 
 export interface MonitoredWorkCenter {

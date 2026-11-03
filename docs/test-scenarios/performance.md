@@ -154,7 +154,7 @@
 > note: the plan named planned-stop.service.test.ts; the check is a Redis record written through the service's raw Redis client, which lets every Redis error reach the caller instead of turning it into "not stored", so these tests run in the contract suite on real Redis and MongoDB
 
 ### happy path
-- [CRITICAL] a planned stop closes at E and telemetry cannot be reached to read the run mode → the check `{ kind: 'after_planned', since: E (ISO 8601 UTC with Z), debounceMs: 0, attempts: 0, nextAttemptAt: null }` is stored under `runmode:after-planned:{workCenterId}:{runModeTagId}` with a TTL of 25 hours, and no stop is opened at that moment; the only warn line is the failed request's `internal_api.telemetry.fetch_failed` with its status
+- [CRITICAL] a planned stop closes at E and telemetry cannot be reached to read the run mode → the check `{ kind: 'after_planned', since: E (ISO 8601 UTC with Z), pendingSince: the server's time of the write (ISO 8601 UTC with Z), debounceMs: 0, attempts: 0, nextAttemptAt: null }` is stored under `runmode:after-planned:{workCenterId}:{runModeTagId}` with a TTL of 25 hours, and no stop is opened at that moment; the only warn line is the failed request's `internal_api.telemetry.fetch_failed` with its status
 - [HIGH] work-center cannot be reached when the planned stop closes → the run-mode tag is taken from the work center's `RunModeProcessingState` (its cursor) and the check is stored for that tag
 
 ### constraints
@@ -228,7 +228,7 @@ While a planned stop over 10:00 to 11:00 is active, every sample is processed an
 - [HIGH] the first planned stop closes at 10:30 while telemetry answers without the machine's 0@10:05 (the broker still holds it), so the close leaves nothing; the second closes at 10:50 while telemetry cannot answer and leaves the check since 10:50; then the backlog 0@10:05, 1@10:35, 0@10:45, 1@10:55 is processed → 0@10:05 replaces the pending check with the check since 10:30 (0@10:45 cannot replace it with the later 10:50), and the ticks record [10:30, 10:35] and [10:50, 10:55]
 - [HIGH] the check since 10:30 has waited 23 hours (2 of its 25 hours of TTL left) when it is decided → the check since 10:50 it hands over has a TTL of 25 hours of its own (above 89 900 s)
 - [HIGH] a planned stop planned until 10:20 ran until E = 10:30, into the window of a second planned stop planned from 10:25, started at 10:40 and closed at 10:50; the late 0@10:05 leaves the check since 10:30 and 1@10:55 follows → the tick at 10:56 records nothing at 10:30 (the second planned stop covers it, as the close would have found) and hands the key to the check since 10:50; the tick at 10:56:01 records [10:50, 10:55]
-- [HIGH] telemetry cannot answer while planned stops close at 10:30 and at 12:00, so the check since 10:30 is kept; the machine stood from 11:50 to 12:05 → the tick a day after 10:30 (24 h 1 s later) drops the check since 10:30 with one `run_mode.decision.abandoned` (error) and stores the check since 12:00 in its place; the next tick records [12:00, 12:05]
+- [HIGH] telemetry cannot answer while planned stops close at 10:30 and at 12:00, so the check since 10:30, written at 10:30, is kept; the machine stood from 11:50 to 12:05 → the tick a day after 10:30 (24 h 1 s later) drops the check since 10:30 with one `run_mode.decision.abandoned` (error) and stores the check since 12:00 in its place; the next tick records [12:00, 12:05]
 - [HIGH] the same two closes, and MongoDB cannot read planned stops when the check since 10:30 is due to be dropped → the drop waits: the record holds `attempts` 1 and a `nextAttemptAt` 1 s later, one `run_mode.decision.deferred` is logged with MongoDB's error, and a tick before that time tries nothing; once MongoDB reads again the next attempt drops it with `run_mode.decision.abandoned` (`attempts` 1) and stores the check since 12:00
 - [CRITICAL] the second planned stop closes while telemetry is down, after the drop of the expired check since 10:30 has read that no planned stop closed after 10:30 and before it swaps the key → the close's check, refused while the earlier one is stored, waits for the drop under the tag's lock and is stored afterwards: the check since 12:00 is not lost
 
@@ -258,6 +258,7 @@ While a planned stop over 10:00 to 11:00 is active, every sample is processed an
 > target: performance/src/modules/run-mode/__contract__/run-mode-outage.contract.test.ts
 > plan-task: 5
 > scenario: 8
+> note: the owner approved changing the first two edge cases on 2026-11-04. They counted the 24 hours from `since`, the stop's own time, so the record of a stop older than a day was dropped at its first tick and the stop was lost: a machine that had stood for days when monitoring started, or a planned stop closed a day late with its earlier end. The 24 hours now count from `pendingSince`, the server's time when the record became pending: set by its first write, kept by its deferrals, and set afresh when a check is handed on
 
 ### state transitions
 - [HIGH] telemetry keeps failing: the tick (which runs every second) asks again 1 s after the first failed attempt, then 2, 4, 8 and 16 s after the following failures, and every 30 s after that; the ticks in between skip the record without calling telemetry
@@ -271,8 +272,10 @@ While a planned stop over 10:00 to 11:00 is active, every sample is processed an
 - after each failed attempt the Redis record holds `attempts` increased by one and `nextAttemptAt` (ISO 8601 UTC with `Z`) set to the attempt time plus the delay of that attempt, and keeps the TTL it was written with
 
 ### edge cases
-- [HIGH] a record still undecided with its `since` more than 24 hours before the tick's `now` → the record is deleted, one `run_mode.decision.abandoned` is logged at error level, and no stop is created
-- a record undecided with its `since` just under 24 hours before `now` (23 h 59 min) → it is still pending and retried, and nothing is abandoned
+- [HIGH] a record still undecided with its `pendingSince` more than 24 hours before the tick's `now` → the record is deleted, one `run_mode.decision.abandoned` is logged at error level, and no stop is created
+- a record undecided with its `pendingSince` just under 24 hours before `now` (23 h 59 min) → it is still pending and retried, and nothing is abandoned
+- [CRITICAL] monitoring starts for a machine whose latest sample, 0@T0, is two days old, with D = 60 s → the reconciler's candidate since T0 is pending from the moment it is written, and the tick after it opens the stop at T0; nothing is abandoned
+- [CRITICAL] a planned stop that ended at E is closed 30 hours later with that end, and the tag's latest sample came after E, so the close leaves the check at E → the next tick decides it from the history since E: the machine stood at E and ran at T1, so `[E, T1]` is recorded; nothing is abandoned
 
 ---
 
@@ -549,7 +552,7 @@ Samples reach performance as telemetry publishes them, with `previousOccurredAt`
 > spec: Decision rules 1; Data and configuration changes (Redis)
 
 ### constraints
-- a stopped signal at T0 with D > 0 and no planned stop covering T0 → a candidate is stored under `runmode:candidate:{workCenterId}:{runModeTagId}` with `since` = T0 (ISO 8601 UTC with `Z`), the `debounceMs` it starts with, `attempts` 0 and no `nextAttemptAt`, and a TTL of 25 hours (90 000 s) instead of `debounce + 2 s`
+- a stopped signal at T0 with D > 0 and no planned stop covering T0 → a candidate is stored under `runmode:candidate:{workCenterId}:{runModeTagId}` with `since` = T0 (ISO 8601 UTC with `Z`), `pendingSince` = the server's time of the write (ISO 8601 UTC with `Z`), the `debounceMs` it starts with, `attempts` 0 and no `nextAttemptAt`, and a TTL of 25 hours (90 000 s) instead of `debounce + 2 s`
 - the candidate is written in one command only when none is stored (`SET key value EX 90000 NX`): the first write wins
 
 ---

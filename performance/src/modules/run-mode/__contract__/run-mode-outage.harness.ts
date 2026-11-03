@@ -3,7 +3,7 @@ import '../../../test/contract-setup.js'
 import type { Server } from 'node:http'
 import express, { type Request, type Response } from 'express'
 import { Types } from 'mongoose'
-import { afterAll, afterEach, beforeAll, beforeEach, type MockInstance, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, expect, type MockInstance, vi } from 'vitest'
 import { __test__ as subscribers } from '../../../jobs/subscribers.js'
 import { stopRefresh, __test__ as tagMap } from '../../../jobs/tag-map.js'
 import { logger } from '../../../lib/logger.js'
@@ -270,10 +270,18 @@ export async function storedCandidate(machine: Machine): Promise<PendingDecision
   return raw === null ? null : (JSON.parse(raw) as PendingDecision)
 }
 
+// A record is pending from the server's time of its write, which most scenarios leave open: without
+// that time, a fixture matches any time in ISO 8601 UTC, so a record written from one passes it
+const pendingFrom = (time?: string | Date): string =>
+  time === undefined
+    ? expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/)
+    : (typeof time === 'string' ? at(time) : time).toISOString()
+
 // The candidate rule 1 writes for a stop at the given time, D = 60 s
-export const candidateSince = (time: string): PendingDecision => ({
+export const candidateSince = (time: string, pendingSince?: string | Date): PendingDecision => ({
   kind: 'debounce',
   since: at(time).toISOString(),
+  pendingSince: pendingFrom(pendingSince),
   debounceMs: 60_000,
   attempts: 0,
   nextAttemptAt: null,
@@ -312,6 +320,17 @@ export async function whileRedisRefuses<T>(command: string, fn: () => Promise<T>
 // The decision tick, as production runs it every second, at a time of the server's clock
 export const tick = (time: string) => runDecisionTick(at(time))
 
+// Runs fn while the server's clock reads the given time, for a scenario that says when a record is
+// written: a pending decision counts its 24 hours from the time it was written
+export async function atServerTime<T>(time: Date, fn: () => Promise<T>): Promise<T> {
+  vi.setSystemTime(time)
+  try {
+    return await fn()
+  } finally {
+    vi.useRealTimers()
+  }
+}
+
 export const openRunModeStop = (from: string) => ({
   source: 'run_mode',
   startAt: at(from),
@@ -319,9 +338,10 @@ export const openRunModeStop = (from: string) => ({
 })
 
 // The check a planned stop that closed at the given time leaves when the run mode cannot be read
-export const afterPlannedSince = (time: string): PendingDecision => ({
+export const afterPlannedSince = (time: string, pendingSince?: string | Date): PendingDecision => ({
   kind: 'after_planned',
   since: at(time).toISOString(),
+  pendingSince: pendingFrom(pendingSince),
   debounceMs: 0,
   attempts: 0,
   nextAttemptAt: null,

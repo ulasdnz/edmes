@@ -183,10 +183,10 @@ and leaves nothing.
   can close twice within one outage, and a late signal of rule 1 can leave an earlier E than the
   pending one; overwriting or refusing either check would lose a stop. Deciding the check at E hands
   the key on, in the same compare-and-set that removes the record: the next planned stop that closed
-  after E gets a fresh check at its end, with 25 hours of its own. A check dropped after 24 hours
-  hands the key on the same way, so the checks refused while it waited are not lost with it. A check
-  handed to a close that could read the run mode records the same stop again, which the unique start
-  index refuses.
+  after E gets a fresh check at its end, pending from the handover, with 25 hours of its own. A
+  check dropped after 24 hours hands the key on the same way, so the checks refused while it waited
+  are not lost with it. A check handed to a close that could read the run mode records the same stop
+  again, which the unique start index refuses.
 - The planned stop is closed already when its run mode is checked, so a failure that leaves no check
   behind, such as Redis refusing the write, does not fail the close. It is logged at error level
   (`planned_stop.run_mode_check_failed`), because a stop may be lost.
@@ -270,12 +270,15 @@ Covers the debounce candidate and the check after a planned stop.
 - When Redis cannot list the pending decisions, the tick logs `run_mode.debounce_tick.scan_failed`
   (warn) once, when the listing starts failing, and `run_mode.debounce_tick.scan_recovered` (info)
   once, when it works again. The tick keeps ticking meanwhile.
-- A record still undecided after 24 hours is dropped with an error log
-  (`run_mode.decision.abandoned`), because a stop may have been lost. A dropped check hands its key
-  on to the next planned stop that closed after its E (rule 4), under the tag's lock, so a planned
-  stop that closes meanwhile cannot lose its check in between. When that planned stop cannot be
-  read, the drop waits for its next attempt on the same schedule. A 25-hour Redis TTL only clears
-  orphaned keys.
+- A record still undecided 24 hours after it became pending is dropped with an error log
+  (`run_mode.decision.abandoned`), because a stop may have been lost. A record becomes pending at its
+  first write, by the server's clock (`pendingSince`); its retries keep that time, and a check handed
+  on starts afresh. The stop's own time does not count, so the stop of a machine that has stood for
+  days when its monitoring starts, or of a planned stop closed a day late with its earlier end, is
+  still decided. A dropped check hands its key on to the next planned stop that closed after its E
+  (rule 4), under the tag's lock, so a planned stop that closes meanwhile cannot lose its check in
+  between. When that planned stop cannot be read, the drop waits for its next attempt on the same
+  schedule. A 25-hour Redis TTL only clears orphaned keys.
 
 ### Tag map
 
@@ -525,11 +528,11 @@ whose memory was cleared. Either loss must not go unseen either.
 ## Data and configuration changes
 
 - **Redis**
-  - `runmode:candidate:{workCenterId}:{runModeTagId}` gains `attempts` and `nextAttemptAt`; its TTL
-    becomes 25 hours.
+  - `runmode:candidate:{workCenterId}:{runModeTagId}` gains `pendingSince`, `attempts` and
+    `nextAttemptAt`; its TTL becomes 25 hours.
   - New `runmode:after-planned:{workCenterId}:{runModeTagId}`:
-    `{ since, attempts, nextAttemptAt }`, same TTL. It holds the earliest pending E; a decided check
-    hands the key to the next planned stop that closed after E (rule 4).
+    `{ since, pendingSince, attempts, nextAttemptAt }`, same TTL. It holds the earliest pending E; a
+    decided check hands the key to the next planned stop that closed after E (rule 4).
 - **MongoDB:** unique index on unplanned stops `{ workCenterId: 1, startAt: 1 }` with the partial filter
   `{ source: 'run_mode' }`. The product is not released, so there is no migration; a local database that
   already holds two run-mode stops with the same start must be cleaned before the index can build.
@@ -606,10 +609,11 @@ production passes the real time.
    planned stop covered after E (a machine down since 10:35 gets its stop at 10:35, a short stop
    below D gets none). At an end that another planned stop covers, neither the close nor the check
    records anything, and the check still hands the key on.
-8. Retries come after 1, 2, 4 … 30 s; only the deferred and resolved lines are logged; after 24 hours the
-   record is dropped with an error log, and a dropped check hands its key on to the next planned stop
-   that closed after its end, under the tag's lock: a planned stop that closes meanwhile keeps its
-   check, and a handover that cannot read the planned stops waits for its next attempt.
+8. Retries come after 1, 2, 4 … 30 s; only the deferred and resolved lines are logged; 24 hours after
+   it became pending the record is dropped with an error log, while a record for a stop older than a
+   day that has just become pending is still decided; a dropped check hands its key on to the next
+   planned stop that closed after its end, under the tag's lock: a planned stop that closes meanwhile
+   keeps its check, and a handover that cannot read the planned stops waits for its next attempt.
 9. Work-center is down on `work_center.updated`: the old mapping stays and signals keep being processed;
    once it is back the mapping is updated and the work center reconciled.
 10. Work-center is down at startup: the list is retried until it arrives, and work centers without a

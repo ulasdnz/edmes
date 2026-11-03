@@ -260,6 +260,7 @@ describe('run-mode.processor', () => {
       const wcId = new Types.ObjectId().toString()
       const tagId = new Types.ObjectId().toString()
       await seedPolicyForWc(wcId, 30_000)
+      const writtenFrom = Date.now()
       await processor.handleRunModeSample(
         sample({
           workCenterId: wcId,
@@ -271,13 +272,18 @@ describe('run-mode.processor', () => {
       expect(redisSet).toHaveBeenCalledTimes(1)
       const [key, value, ...options] = redisSet.mock.calls[0]
       expect(key).toBe(`runmode:candidate:${wcId}:${tagId}`)
-      expect(JSON.parse(value)).toEqual({
+      const candidate = JSON.parse(value)
+      expect(candidate).toEqual({
         kind: 'debounce',
         since: '2026-06-15T10:00:00.000Z',
+        pendingSince: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/),
         debounceMs: 30_000,
         attempts: 0,
         nextAttemptAt: null,
       })
+      // Pending from the server's time of the write, not from the stop's own time
+      expect(new Date(candidate.pendingSince).getTime()).toBeGreaterThanOrEqual(writtenFrom)
+      expect(new Date(candidate.pendingSince).getTime()).toBeLessThanOrEqual(Date.now())
       // Written only when no candidate is stored, in one command: the first write wins
       expect(options).toEqual(['EX', 90_000, 'NX'])
     })
@@ -397,6 +403,7 @@ describe('run-mode.processor', () => {
       await writeDecision(wcId, tagId, {
         kind: 'debounce',
         since: firstStoppedAt.toISOString(),
+        pendingSince: new Date().toISOString(),
         debounceMs: 5000,
         attempts: 0,
         nextAttemptAt: null,
@@ -424,6 +431,7 @@ describe('run-mode.processor', () => {
       await writeDecision(wcId, tagId, {
         kind: 'debounce',
         since: firstStoppedAt.toISOString(),
+        pendingSince: new Date().toISOString(),
         debounceMs: 5000,
         attempts: 0,
         nextAttemptAt: null,
@@ -451,6 +459,7 @@ describe('run-mode.processor', () => {
       await writeDecision(wcId, tagId, {
         kind: 'debounce',
         since: firstStoppedAt.toISOString(),
+        pendingSince: new Date().toISOString(),
         debounceMs: 30_000,
         attempts: 0,
         nextAttemptAt: null,

@@ -13,6 +13,7 @@ import {
   activePlannedStop,
   afterPlannedSince,
   at,
+  atServerTime,
   candidateSince,
   closePlannedStop,
   deliver,
@@ -819,7 +820,7 @@ describe('One check holds the earliest pending end and hands over to the next pl
     stubs.latest.mode = 'fail'
     recorded(machine, 1, '09:00:00')
     const first = await activePlannedStop(machine, '10:00:00', '10:30:00')
-    await closeAt(first, '10:30:00')
+    await atServerTime(at('10:30:00'), () => closeAt(first, '10:30:00'))
     const second = await activePlannedStop(machine, '10:40:00', '10:50:00')
     await closeAt(second, '10:50:00')
     // As if the first check had waited 23 hours: 2 of its 25 hours are left
@@ -885,19 +886,22 @@ describe('A check dropped after 24 hours hands the key on (rule 4)', () => {
     recorded(machine, 0, '11:50:00')
     recorded(machine, 1, '12:05:00')
     const first = await activePlannedStop(machine, '10:00:00', '10:30:00')
-    await closeAt(first, '10:30:00')
+    await atServerTime(at('10:30:00'), () => closeAt(first, '10:30:00'))
     const second = await activePlannedStop(machine, '11:30:00', '12:00:00')
-    await closeAt(second, '12:00:00')
+    await atServerTime(at('12:00:00'), () => closeAt(second, '12:00:00'))
 
     // The earlier end is kept; the later close could not leave its own check
-    expect(await storedCheck(machine)).toEqual(afterPlannedSince('10:30:00'))
+    expect(await storedCheck(machine)).toEqual(afterPlannedSince('10:30:00', '10:30:00'))
 
-    // A day later the check since 10:30 is past its 24 hours, the one since 12:00 is not
+    // A day later the check since 10:30 is past its 24 hours; the one since 12:00 it hands the key
+    // to is pending from the handover
     const dayLater = at('10:30:00').getTime() + 24 * 3_600_000
     await runDecisionTick(new Date(dayLater + 1000))
 
     expect(await stopsOf(machine)).toEqual([])
-    expect(await storedCheck(machine)).toEqual(afterPlannedSince('12:00:00'))
+    expect(await storedCheck(machine)).toEqual(
+      afterPlannedSince('12:00:00', new Date(dayLater + 1000)),
+    )
 
     await runDecisionTick(new Date(dayLater + 2000))
 
@@ -945,9 +949,9 @@ describe('A check dropped after 24 hours hands the key on (rule 4)', () => {
     stubs.latest.mode = 'fail'
     recorded(machine, 1, '09:00:00')
     const first = await activePlannedStop(machine, '10:00:00', '10:30:00')
-    await closeAt(first, '10:30:00')
+    await atServerTime(at('10:30:00'), () => closeAt(first, '10:30:00'))
     const second = await activePlannedStop(machine, '11:30:00', '12:00:00')
-    await closeAt(second, '12:00:00')
+    await atServerTime(at('12:00:00'), () => closeAt(second, '12:00:00'))
     const dayLater = at('10:30:00').getTime() + 24 * 3_600_000
 
     await whileMongoRefusesPlannedStopReads(async () => {
@@ -957,14 +961,16 @@ describe('A check dropped after 24 hours hands the key on (rule 4)', () => {
     })
 
     expect(await storedCheck(machine)).toEqual({
-      ...afterPlannedSince('10:30:00'),
+      ...afterPlannedSince('10:30:00', '10:30:00'),
       attempts: 1,
       nextAttemptAt: new Date(dayLater + 2000).toISOString(),
     })
 
     await runDecisionTick(new Date(dayLater + 2000))
 
-    expect(await storedCheck(machine)).toEqual(afterPlannedSince('12:00:00'))
+    expect(await storedCheck(machine)).toEqual(
+      afterPlannedSince('12:00:00', new Date(dayLater + 2000)),
+    )
     expect(logs.lines()).toEqual([
       ['warn', expect.objectContaining({ event: 'internal_api.telemetry.fetch_failed' })],
       ['warn', expect.objectContaining({ event: 'internal_api.telemetry.fetch_failed' })],
@@ -1025,7 +1031,7 @@ describe('A check dropped after 24 hours hands the key on (rule 4)', () => {
     stubs.latest.mode = 'fail'
     recorded(machine, 1, '09:00:00')
     const first = await activePlannedStop(machine, '10:00:00', '10:30:00')
-    await closeAt(first, '10:30:00')
+    await atServerTime(at('10:30:00'), () => closeAt(first, '10:30:00'))
     const second = await activePlannedStop(machine, '11:30:00', '12:00:00')
     // The second planned stop closes while telemetry is down, after the drop has read that no planned
     // stop closed after 10:30 and before it swaps the key. Its check is refused while the earlier one

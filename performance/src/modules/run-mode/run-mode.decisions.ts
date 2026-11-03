@@ -5,6 +5,9 @@ import { withTagLock } from './run-mode.lock.js'
 export interface PendingDecision {
   kind: 'debounce' | 'after_planned'
   since: string
+  // The server's time of the record's first write, kept by its deferrals; a check handed on starts
+  // afresh. The 24 hours count from it, not from the stop's own time
+  pendingSince: string
   debounceMs: number
   attempts: number
   nextAttemptAt: string | null
@@ -17,7 +20,8 @@ export interface DecisionTarget {
   runModeTagId: string
 }
 
-// A decision still open after 24 hours is dropped; the 25-hour TTL only clears orphaned keys
+// A decision still open 24 hours after it became pending is dropped; the 25-hour TTL only clears
+// orphaned keys
 export const DECISION_LIMIT_MS = 86_400_000
 const DECISION_TTL_SECONDS = 90_000
 
@@ -64,9 +68,10 @@ export async function writeDecisionIfAbsent(
 }
 
 // The check after a planned stop that ended at endedAt: the history since then decides it
-export const afterPlannedCheck = (endedAt: Date): PendingDecision => ({
+export const afterPlannedCheck = (endedAt: Date, now: Date): PendingDecision => ({
   kind: 'after_planned',
   since: endedAt.toISOString(),
+  pendingSince: now.toISOString(),
   debounceMs: 0,
   attempts: 0,
   nextAttemptAt: null,
@@ -82,8 +87,12 @@ redis.call('SET', KEYS[1], ARGV[2], 'EX', ARGV[3])
 return 1
 `
 
-export async function writeCheckIfEarlier(target: DecisionTarget, endedAt: Date): Promise<void> {
-  const check = afterPlannedCheck(endedAt)
+export async function writeCheckIfEarlier(
+  target: DecisionTarget,
+  endedAt: Date,
+  now: Date,
+): Promise<void> {
+  const check = afterPlannedCheck(endedAt, now)
   const key = decisionKey(check.kind, target.workCenterId, target.runModeTagId)
   await redisClient.eval(
     WRITE_IF_EARLIER,
@@ -174,7 +183,8 @@ const logFields = (target: DecisionTarget, decision: PendingDecision) => ({
 
 // The decision the tick asks telemetry about now: its D has run out, which only the clock can tell
 // because the absence of a signal proves nothing, and the wait after its last failed attempt is
-// over. One still undecided after 24 hours is dropped instead, once its next attempt has come
+// over. One still undecided 24 hours after it became pending is dropped instead, once its next
+// attempt has come
 export async function readDueDecision(
   kind: DecisionKind,
   target: DecisionTarget,
@@ -189,7 +199,7 @@ export async function readDueDecision(
   if (now.getTime() < retryAt) return null
 
   const since = new Date(decision.since).getTime()
-  if (now.getTime() - since > DECISION_LIMIT_MS) {
+  if (now.getTime() - new Date(decision.pendingSince).getTime() > DECISION_LIMIT_MS) {
     await withTagLock(target, () => dropDecision(target, decision, now, successor))
     return null
   }
