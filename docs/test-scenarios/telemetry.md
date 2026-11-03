@@ -731,6 +731,22 @@
 
 ---
 
+## Ingestion.mongoUnreachable
+> target: telemetry/src/modules/ingestion/mongo-outage.broker.test.ts
+> plan-task: 11 (fix round 2)
+> scenario: 19
+> added after implementation started: the review of Task 11 found that with MongoDB down a store failed within 5 s and the loader dropped a message telemetry had already acknowledged, while the spec said the intake was held. The owner chose to make a store that cannot reach MongoDB wait for it.
+
+### happy path
+- [CRITICAL] telemetry's MongoDB stops while a machine publishes, then starts again → every message is stored exactly once and in the order it was published; while MongoDB is down, the broker's store holds every message telemetry has not taken in, and no message is dropped; each store that waited logs one `ingestion.store.deferred` warn when it first fails and one `ingestion.store.resolved` info with `waitedMs` once it is stored
+- [HIGH] a tag telemetry has not looked up yet sends its first messages while MongoDB is down → the lookup waits as well, and its messages are stored in order once MongoDB is back
+
+### constraints
+- [HIGH] a store that fails for another reason (MongoDB rejects the document) → the message is dropped with `ingestion.error`, and the messages after it are stored
+- [HIGH] telemetry stops while stores wait for MongoDB → it stops waiting at once, logs one `ingestion.store.abandoned` error per waiting store, and its MQTT close finishes well within a stop grace period
+
+---
+
 ## Mqtt.sessionLost
 > target: telemetry/src/lib/mqtt.broker.test.ts
 > plan-task: 11 (fix round)

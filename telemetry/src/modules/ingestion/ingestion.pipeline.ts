@@ -1,4 +1,6 @@
+import { setTimeout as pause } from 'node:timers/promises'
 import { parseUtcZonedDateTime } from '@mes/core'
+import mongoose from 'mongoose'
 import { CustomError } from '../../core/errors/index.js'
 import { emitTagValueRecorded } from '../../jobs/events.js'
 import { getPeriodLock } from '../../jobs/subscribers.js'
@@ -6,7 +8,7 @@ import { logger } from '../../lib/logger.js'
 import type { ITag } from '../tag/tag.model.js'
 import { bindingCacheResolve } from './binding-cache.js'
 import { type HistorianSample, insertSample } from './historian.repository.js'
-import { predecessorLoad, predecessorSet } from './predecessor-cache.js'
+import { predecessorDelete, predecessorLoad, predecessorSet } from './predecessor-cache.js'
 
 interface IncomingMessage {
   time: string
@@ -20,14 +22,36 @@ export type IngestValueResult =
       reason: 'out_of_order' | 'same_value' | 'within_tolerance' | 'out_of_range'
     }
 
-export const processMessage = async (topic: string, payload: Buffer): Promise<void> => {
+// `stop` aborts when telemetry stops: a message still waiting for MongoDB is then abandoned
+export const processMessage = async (
+  topic: string,
+  payload: Buffer,
+  stop: AbortSignal,
+): Promise<void> => {
   const parts = topic.split('/')
   if (parts.length !== 4 || parts[0] !== 'devices' || parts[2] !== 'nodes') return
 
   const deviceKey = parts[1]
   const nodeId = parts[3]
 
-  const tag = await bindingCacheResolve(deviceKey, nodeId)
+  const wait: MongoWait = { topic, stop, takenAt: Date.now(), failures: 0 }
+  // A message that waits for MongoDB keeps its place: the next message for the same node waits behind
+  // it, from the tag lookup on
+  return runInOrder(nodeQueues, `${deviceKey}:${nodeId}`, () =>
+    storeMessage(wait, deviceKey, nodeId, payload),
+  )
+}
+
+const storeMessage = async (
+  wait: MongoWait,
+  deviceKey: string,
+  nodeId: string,
+  payload: Buffer,
+): Promise<void> => {
+  const { topic } = wait
+
+  const tag = await untilMongoAnswers(wait, () => bindingCacheResolve(deviceKey, nodeId))
+  if (tag === ABANDONED) return
   if (!tag) {
     logger.debug('MQTT sample dropped: no bound tag found', {
       event: 'ingestion.binding.not_found',
@@ -48,12 +72,32 @@ export const processMessage = async (topic: string, payload: Buffer): Promise<vo
   const occurredAt = parseUtcZonedDateTime(msg.time)
   if (!occurredAt) return
 
-  const result = await ingestValue(tag, msg.value, occurredAt)
+  const tagId = tag._id.toString()
+  // A failed store may have reached MongoDB, so the retry reads the predecessor from MongoDB again
+  const result = await runInOrder(tagQueues, tagId, () =>
+    untilMongoAnswers(
+      wait,
+      () => applyValue(tag, msg.value, occurredAt),
+      () => predecessorDelete(tagId),
+    ),
+  )
+  if (result === ABANDONED) return
+
+  if (wait.failures > 0) {
+    logger.info('Message handled after MongoDB came back', {
+      event: 'ingestion.store.resolved',
+      topic,
+      tagId,
+      waitedMs: Date.now() - wait.takenAt,
+      failedAttempts: wait.failures,
+    })
+  }
+
   if (!result.applied && result.reason === 'out_of_order') {
     logger.warn('Out-of-order MQTT telemetry sample dropped', {
       event: 'ingestion.sample.out_of_order',
       topic,
-      tagId: tag._id.toString(),
+      tagId,
       deviceKey,
       nodeId,
       occurredAt: occurredAt.toISOString(),
@@ -64,26 +108,105 @@ export const processMessage = async (topic: string, payload: Buffer): Promise<vo
 // Samples for one tag can overlap (MQTT handlers are not awaited, manual entries arrive via HTTP).
 // Each sample must see the predecessor written by the previous one, so they run one at a time.
 const tagQueues = new Map<string, Promise<void>>()
+const nodeQueues = new Map<string, Promise<void>>()
 
-const runInTagOrder = <T>(tagId: string, task: () => Promise<T>): Promise<T> => {
-  const result = (tagQueues.get(tagId) ?? Promise.resolve()).then(task)
+const runInOrder = <T>(
+  queues: Map<string, Promise<void>>,
+  key: string,
+  task: () => Promise<T>,
+): Promise<T> => {
+  const result = (queues.get(key) ?? Promise.resolve()).then(task)
   const tail = result.then(
     () => undefined,
     () => undefined,
   )
-  tagQueues.set(tagId, tail)
+  queues.set(key, tail)
   void tail.then(() => {
-    if (tagQueues.get(tagId) === tail) tagQueues.delete(tagId)
+    if (queues.get(key) === tail) queues.delete(key)
   })
   return result
 }
 
+// A manual entry fails at once when MongoDB is unreachable: the person entering it sees the error
 export const ingestValue = (
   tag: ITag,
   rawValue: number,
   occurredAt: Date,
 ): Promise<IngestValueResult> =>
-  runInTagOrder(tag._id.toString(), () => applyValue(tag, rawValue, occurredAt))
+  runInOrder(tagQueues, tag._id.toString(), () => applyValue(tag, rawValue, occurredAt))
+
+const ABANDONED = Symbol('abandoned')
+
+interface MongoWait {
+  topic: string
+  stop: AbortSignal
+  takenAt: number
+  failures: number
+}
+
+// The driver found no server or lost its connection, or Mongoose stopped waiting for one: MongoDB is
+// unreachable, and the step succeeds once it is back. Any other error belongs to the message.
+const isMongoUnreachable = (err: unknown): err is Error =>
+  err instanceof mongoose.mongo.MongoServerSelectionError ||
+  err instanceof mongoose.mongo.MongoNetworkError ||
+  (err instanceof mongoose.Error && err.message.includes('buffering timed out'))
+
+const mongoDown = () => mongoose.connection.readyState !== mongoose.ConnectionStates.connected
+
+const retryDelayMs = (failures: number) => Math.min(1000 * 2 ** (failures - 1), 30_000)
+
+// Runs a step of a message's store until MongoDB answers it. Telemetry acknowledged the message, so
+// the step waits for MongoDB as long as it takes, and is abandoned only when telemetry stops.
+const untilMongoAnswers = async <T>(
+  wait: MongoWait,
+  step: () => Promise<T>,
+  afterFailure?: () => void,
+): Promise<T | typeof ABANDONED> => {
+  for (;;) {
+    if (wait.stop.aborted && mongoDown()) return abandon(wait)
+    const outcome = await unlessStopped(step(), wait.stop)
+    if (outcome === ABANDONED) return abandon(wait)
+    if (!('error' in outcome)) return outcome.value
+    if (!isMongoUnreachable(outcome.error)) throw outcome.error
+
+    wait.failures++
+    afterFailure?.()
+    if (wait.failures === 1) {
+      logger.warn('MongoDB unreachable, message waits for it', {
+        event: 'ingestion.store.deferred',
+        topic: wait.topic,
+        error: outcome.error.message,
+      })
+    }
+    if (wait.stop.aborted) return abandon(wait)
+    await pause(retryDelayMs(wait.failures), undefined, { signal: wait.stop }).catch(() => {})
+  }
+}
+
+// When telemetry stops while MongoDB is down, the step stops waiting for an answer that may not come
+// before telemetry exits. While MongoDB is up, the step runs to its end, so the message is stored.
+const unlessStopped = <T>(attempt: Promise<T>, stop: AbortSignal) =>
+  new Promise<{ value: T } | { error: unknown } | typeof ABANDONED>(resolve => {
+    const onStop = () => {
+      if (mongoDown()) resolve(ABANDONED)
+    }
+    stop.addEventListener('abort', onStop, { once: true })
+    void attempt
+      .then(
+        value => resolve({ value }),
+        error => resolve({ error }),
+      )
+      .finally(() => stop.removeEventListener('abort', onStop))
+  })
+
+const abandon = (wait: MongoWait): typeof ABANDONED => {
+  logger.error('Telemetry stopped before MongoDB stored a message', {
+    event: 'ingestion.store.abandoned',
+    topic: wait.topic,
+    waitedMs: Date.now() - wait.takenAt,
+  })
+  return ABANDONED
+}
 
 const applyValue = async (
   tag: ITag,

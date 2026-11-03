@@ -1,3 +1,4 @@
+import { setMaxListeners } from 'node:events'
 import { CustomError } from '../../core/errors/index.js'
 import { logger } from '../../lib/logger.js'
 import { initMqtt } from '../../lib/mqtt.js'
@@ -11,16 +12,26 @@ import '../../modules/tag-type/tag-type.model.js'
 import { initExpress } from './express.js'
 import { initMongoose } from './mongoose.js'
 
+let ingestion = new AbortController()
+
+// Messages waiting for MongoDB stop waiting, so that telemetry stops within its grace period
+export const stopIngestionRetries = () => ingestion.abort()
+
 export const initLoaders = async () => {
   try {
     logger.info('Initializing application loaders', { event: 'loader.init.started' })
+
+    ingestion = new AbortController()
+    const stop = ingestion.signal
+    // Each message in the intake listens for the stop; the intake bound limits how many there are
+    setMaxListeners(0, stop)
 
     await initMongoose()
     await initRedis()
     await bindingCacheInit()
     await initMqtt((topic, payload) => {
       if (topic.startsWith('devices/')) {
-        return processMessage(topic, payload).catch(err => {
+        return processMessage(topic, payload, stop).catch(err => {
           if (err instanceof CustomError && err.message === 'historian.period_locked') {
             logger.debug('Ingestion rejected: period locked', {
               event: 'ingestion.period_locked',
