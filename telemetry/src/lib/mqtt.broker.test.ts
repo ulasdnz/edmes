@@ -1,3 +1,5 @@
+import { setupMongoTestContainer } from '@mes/testing'
+import mongoose from 'mongoose'
 import mqtt from 'mqtt'
 import {
   afterAll,
@@ -20,36 +22,45 @@ import { closeRedis, initRedis, redisClient, sharedClient } from './redis.js'
 vi.mock('dotenv', () => ({ default: { config: vi.fn() } }))
 
 // Telemetry builds its Redis clients and reads MQTT_URL when their modules load, so Redis and the
-// broker run before the imports above are evaluated. The broker publishes its $SYS values every
-// second instead of every 10 s, and holds at most 5 messages for a client that is away.
-const { redis, broker } = await vi.hoisted(async () => {
+// brokers run before the imports above are evaluated. Both brokers publish their $SYS values every
+// second instead of every 10 s. The first holds at most 5 messages for a client that is away; the
+// second queues without a message limit, as the repository's broker does.
+const { redis, broker, queueingBroker } = await vi.hoisted(async () => {
   const { composeImage, startRedisTestContainer } = await import('@mes/testing')
   const { GenericContainer, Wait } = await import('testcontainers')
-  const brokerConfig = [
-    'listener 1883',
-    'allow_anonymous true',
-    'sys_interval 1',
-    'max_queued_messages 5',
-    '',
-  ].join('\n')
-  const [redis, broker] = await Promise.all([
-    startRedisTestContainer(),
+  const startBroker = (queueLimit: string) =>
     new GenericContainer(composeImage('mosquitto'))
       .withExposedPorts(1883)
       .withCopyContentToContainer([
-        { content: brokerConfig, target: '/mosquitto/config/mosquitto.conf' },
+        {
+          content: ['listener 1883', 'allow_anonymous true', 'sys_interval 1', queueLimit, ''].join(
+            '\n',
+          ),
+          target: '/mosquitto/config/mosquitto.conf',
+        },
       ])
       .withWaitStrategy(Wait.forLogMessage(/running/))
-      .start(),
+      .start()
+  const [redis, broker, queueingBroker] = await Promise.all([
+    startRedisTestContainer(),
+    startBroker('max_queued_messages 5'),
+    startBroker('max_queued_messages 0'),
   ])
   process.env.REDIS_URL = redis.url
   process.env.MQTT_URL = `mqtt://127.0.0.1:${broker.getMappedPort(1883)}`
-  return { redis, broker }
+  return { redis, broker, queueingBroker }
 })
 
+// The stores of the intake tests write to a real MongoDB
+setupMongoTestContainer()
+
+const QUEUEING_BROKER_URL = `mqtt://127.0.0.1:${queueingBroker.getMappedPort(1883)}`
 const DROPPED_TOPIC = '$SYS/broker/publish/messages/dropped'
+const STORED_TOPIC = '$SYS/broker/store/messages/count'
 const BASELINE_KEY = 'mqtt:dropped-baseline'
+const SESSION_KEY = 'mqtt:session'
 const DROPPED_EVENT = 'mqtt.broker.messages_dropped'
+const SESSION_LOST_EVENT = 'mqtt.session.lost'
 
 let error: MockInstance
 let warn: MockInstance
@@ -65,10 +76,83 @@ const onMessage = (topic: string, payload: Buffer) => {
 const payloadsOn = (topic: string) => received.filter(m => m.topic === topic).map(m => m.payload)
 
 // A machine that publishes while telemetry is away
-async function publish(topic: string, payloads: string[]) {
-  const plc = await mqtt.connectAsync(config.MQTT_URL, { protocolVersion: 5 })
+async function publish(topic: string, payloads: string[], url = config.MQTT_URL) {
+  const plc = await mqtt.connectAsync(url, { protocolVersion: 5 })
   for (const payload of payloads) await plc.publishAsync(topic, payload, { qos: 1 })
   await plc.endAsync()
+}
+
+// The broker forgets telemetry's session, as one restarted without its persistence file does: a client
+// with the same id takes the session over with a clean start and leaves
+async function brokerForgetsSession() {
+  const takeover = await mqtt.connectAsync(config.MQTT_URL, {
+    clientId: config.MQTT_CLIENT_ID,
+    protocolVersion: 5,
+    clean: true,
+  })
+  await takeover.endAsync()
+}
+
+// The number of messages in a broker's store, as an operator subscribed to $SYS sees it
+async function watchStoredCount(url: string) {
+  const observer = await mqtt.connectAsync(url, { protocolVersion: 5 })
+  let latest: number | undefined
+  observer.on('message', (_topic, payload) => {
+    latest = Number(payload.toString())
+  })
+  await observer.subscribeAsync(STORED_TOPIC, { qos: 0 })
+  await vi.waitFor(() => expect(latest).toBeDefined())
+  return { latest: () => latest as number, close: () => observer.endAsync() }
+}
+
+// A store that writes each message to MongoDB once the test opens its gate, and counts the stores in
+// progress. `fails` names payloads whose store fails after the gate opens.
+function slowStore(fails: string[] = []) {
+  let open = () => {}
+  const gate = new Promise<void>(resolve => {
+    open = resolve
+  })
+  const handed: string[] = []
+  let inProgress = 0
+  let most = 0
+  return {
+    handed,
+    inProgress: () => inProgress,
+    most: () => most,
+    open: () => open(),
+    async store(_topic: string, payload: Buffer) {
+      const value = payload.toString()
+      handed.push(value)
+      inProgress++
+      most = Math.max(most, inProgress)
+      try {
+        await gate
+        if (fails.includes(value)) throw new Error(`store of ${value} failed`)
+        await mongoose.connection.collection('intake_samples').insertOne({ value })
+      } finally {
+        inProgress--
+      }
+    },
+  }
+}
+
+const storedValues = async () =>
+  (await mongoose.connection.collection('intake_samples').find().toArray()).map(doc => doc.value)
+
+// Telemetry's modules loaded again with the given environment, against the queueing broker
+async function telemetryWith(env: Record<string, string>) {
+  vi.stubEnv('MQTT_URL', QUEUEING_BROKER_URL)
+  for (const [name, value] of Object.entries(env)) vi.stubEnv(name, value)
+  vi.resetModules()
+  const configured = { redis: await import('./redis.js'), mqtt: await import('./mqtt.js') }
+  await configured.redis.initRedis()
+  return {
+    ...configured.mqtt,
+    async close() {
+      await configured.mqtt.closeMqtt()
+      await configured.redis.closeRedis()
+    },
+  }
 }
 
 // A restarted telemetry is a new process with a process id of its own
@@ -122,7 +206,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await closeRedis()
-  await Promise.all([redis.stop(), broker.stop()])
+  await Promise.all([redis.stop(), broker.stop(), queueingBroker.stop()])
 })
 
 beforeEach(() => {
@@ -132,12 +216,12 @@ beforeEach(() => {
   info = vi.spyOn(logger, 'info')
 })
 
-// Every test starts as a first start: no baseline a test before it left behind
+// Every test starts as a first start: no baseline or session marker a test before it left behind
 afterEach(async () => {
   vi.restoreAllMocks()
   vi.unstubAllEnvs()
   await closeMqtt()
-  await redisClient.del(BASELINE_KEY)
+  await redisClient.del(BASELINE_KEY, SESSION_KEY)
 })
 
 describe('TelemetryMqtt.sessionAcrossRestart', () => {
@@ -255,15 +339,194 @@ describe('Mqtt.droppedMessages', () => {
   })
 })
 
+// On a reconnect the broker sends queued messages ahead of the subscribe acknowledgement, so telemetry
+// is connected only once it has taken them in, and these tests start the reconnect without waiting
+describe('Mqtt.boundedIntake', () => {
+  it('holds no more than its bound and leaves the rest of the backlog at the broker', async () => {
+    const telemetry = await telemetryWith({
+      MQTT_CLIENT_ID: 'bounded-telemetry',
+      MQTT_MAX_UNSTORED_MESSAGES: '5',
+    })
+    const store = slowStore()
+    try {
+      await telemetry.initMqtt(store.store)
+      await telemetry.closeMqtt()
+      const stored = await watchStoredCount(QUEUEING_BROKER_URL)
+      const before = stored.latest()
+      const backlog = Array.from({ length: 50 }, (_, i) => String(i))
+      await publish('devices/plc-1/nodes/count', backlog, QUEUEING_BROKER_URL)
+
+      const reconnected = telemetry.initMqtt(store.store)
+
+      await vi.waitFor(() => expect(store.handed).toHaveLength(5), { timeout: 5_000 })
+      // Telemetry acknowledged 4 and holds back the fifth, so the broker keeps the other 46. Its store
+      // also holds its retained $SYS values, of which a new one can appear in any interval.
+      await vi.waitFor(() => expect(stored.latest()).toBeGreaterThanOrEqual(before + 46), {
+        timeout: 5_000,
+      })
+      // Longer than a $SYS interval: nothing more is handed over, and the broker still keeps them
+      await new Promise(resolve => setTimeout(resolve, 1_500))
+      expect(store.handed).toHaveLength(5)
+      expect(stored.latest()).toBeGreaterThanOrEqual(before + 46)
+      await stored.close()
+
+      store.open()
+      await reconnected
+
+      await vi.waitFor(async () => expect(await storedValues()).toHaveLength(50), {
+        timeout: 10_000,
+      })
+      expect(store.handed).toEqual(backlog)
+      expect((await storedValues()).map(Number).sort((a, b) => a - b)).toEqual(backlog.map(Number))
+      expect(store.most()).toBe(5)
+    } finally {
+      // Closing waits for the stores, so a failed assertion must not leave them waiting
+      store.open()
+      await telemetry.close()
+    }
+  })
+
+  it('counts every message, also when their stores wait on one promise', async () => {
+    const telemetry = await telemetryWith({
+      MQTT_CLIENT_ID: 'shared-store-telemetry',
+      MQTT_MAX_UNSTORED_MESSAGES: '2',
+    })
+    let open = () => {}
+    const gate = new Promise<void>(resolve => {
+      open = resolve
+    })
+    const handed: string[] = []
+    const store = (_topic: string, payload: Buffer) => {
+      handed.push(payload.toString())
+      return gate
+    }
+    try {
+      await telemetry.initMqtt(store)
+      await telemetry.closeMqtt()
+      await publish('devices/plc-1/nodes/count', ['0', '1', '2', '3'], QUEUEING_BROKER_URL)
+
+      const reconnected = telemetry.initMqtt(store)
+
+      await vi.waitFor(() => expect(handed).toEqual(['0', '1']), { timeout: 5_000 })
+      await new Promise(resolve => setTimeout(resolve, 500))
+      expect(handed).toEqual(['0', '1'])
+
+      open()
+      await reconnected
+      await vi.waitFor(() => expect(handed).toEqual(['0', '1', '2', '3']), { timeout: 5_000 })
+    } finally {
+      open()
+      await telemetry.close()
+    }
+  })
+
+  it('frees the place of a store that fails', async () => {
+    const telemetry = await telemetryWith({
+      MQTT_CLIENT_ID: 'failing-store-telemetry',
+      MQTT_MAX_UNSTORED_MESSAGES: '1',
+    })
+    const store = slowStore(['0'])
+    try {
+      await telemetry.initMqtt(store.store)
+      await telemetry.closeMqtt()
+      await publish('devices/plc-1/nodes/count', ['0', '1', '2'], QUEUEING_BROKER_URL)
+
+      const reconnected = telemetry.initMqtt(store.store)
+
+      await vi.waitFor(() => expect(store.handed).toEqual(['0']), { timeout: 5_000 })
+      await new Promise(resolve => setTimeout(resolve, 500))
+      expect(store.handed).toEqual(['0'])
+
+      store.open()
+      await reconnected
+
+      await vi.waitFor(() => expect(store.handed).toEqual(['0', '1', '2']), { timeout: 5_000 })
+      await vi.waitFor(async () => expect(await storedValues()).toEqual(['1', '2']), {
+        timeout: 5_000,
+      })
+    } finally {
+      store.open()
+      await telemetry.close()
+    }
+  })
+
+  it('lets the stores in progress finish before it closes', async () => {
+    const telemetry = await telemetryWith({
+      MQTT_CLIENT_ID: 'closing-telemetry',
+      MQTT_MAX_UNSTORED_MESSAGES: '5',
+    })
+    const store = slowStore()
+    try {
+      await telemetry.initMqtt(store.store)
+      await telemetry.closeMqtt()
+      await publish('devices/plc-1/nodes/count', ['0', '1', '2'], QUEUEING_BROKER_URL)
+      await telemetry.initMqtt(store.store)
+      await vi.waitFor(() => expect(store.inProgress()).toBe(3), { timeout: 5_000 })
+
+      let closed = false
+      const closing = telemetry.closeMqtt().then(() => {
+        closed = true
+      })
+      await new Promise(resolve => setTimeout(resolve, 500))
+      expect(closed).toBe(false)
+
+      store.open()
+      await closing
+
+      expect(await storedValues()).toHaveLength(3)
+    } finally {
+      store.open()
+      await telemetry.close()
+    }
+  })
+})
+
+describe('Mqtt.sessionLost', () => {
+  it('logs nothing on its first connect ever, and marks that it has a session', async () => {
+    await brokerForgetsSession()
+
+    await initMqtt(onMessage)
+
+    expect(await redisClient.get(SESSION_KEY)).not.toBeNull()
+    expect(logged(error, SESSION_LOST_EVENT)).toEqual([])
+  })
+
+  it('logs nothing when the broker kept its session', async () => {
+    await initMqtt(onMessage)
+    await closeMqtt()
+
+    await asNewProcess(() => initMqtt(onMessage))
+
+    expect(logged(error, SESSION_LOST_EVENT)).toEqual([])
+  })
+
+  it('logs a lost session when the broker no longer has the one it had', async () => {
+    await initMqtt(onMessage)
+    await closeMqtt()
+    await brokerForgetsSession()
+
+    await asNewProcess(() => initMqtt(onMessage))
+
+    expect(logged(error, SESSION_LOST_EVENT)).toEqual([
+      {
+        event: SESSION_LOST_EVENT,
+        clientId: 'aimes-telemetry',
+        previousClientId: 'aimes-telemetry',
+      },
+    ])
+  })
+})
+
 describe('TelemetryConfig.mqttSession', () => {
-  it('defaults the client id and a 30-minute session', async () => {
+  it('defaults the client id, a one-day session and an intake bound of 20', async () => {
     await initMqtt(onMessage)
 
     expect(getMqttClient().options).toMatchObject({
       clientId: 'aimes-telemetry',
       clean: false,
-      properties: { sessionExpiryInterval: 1800 },
+      properties: { sessionExpiryInterval: 86400 },
     })
+    expect(config.MQTT_MAX_UNSTORED_MESSAGES).toBe(20)
   })
 
   it('connects with the configured client id and session expiry', async () => {
@@ -300,5 +563,11 @@ describe('TelemetryConfig.mqttSession', () => {
     vi.stubEnv('MQTT_SESSION_EXPIRY_SECONDS', value)
 
     await expectConfigRejects('MQTT_SESSION_EXPIRY_SECONDS')
+  })
+
+  it.each(['0', '-5', '1.5'])('rejects %s as MQTT_MAX_UNSTORED_MESSAGES', async value => {
+    vi.stubEnv('MQTT_MAX_UNSTORED_MESSAGES', value)
+
+    await expectConfigRejects('MQTT_MAX_UNSTORED_MESSAGES')
   })
 })

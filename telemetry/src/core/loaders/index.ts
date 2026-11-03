@@ -20,7 +20,7 @@ export const initLoaders = async () => {
     await bindingCacheInit()
     await initMqtt((topic, payload) => {
       if (topic.startsWith('devices/')) {
-        processMessage(topic, payload).catch(err => {
+        return processMessage(topic, payload).catch(err => {
           if (err instanceof CustomError && err.message === 'historian.period_locked') {
             logger.debug('Ingestion rejected: period locked', {
               event: 'ingestion.period_locked',

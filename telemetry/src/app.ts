@@ -35,7 +35,9 @@ const startServer = async (): Promise<void> => {
         logger.info('HTTP server closed', { event: 'server.http.closed' })
 
         try {
-          await Promise.all([disconnectDB(), closeRedis(), closeMqtt()])
+          // The messages telemetry acknowledged are stored before MongoDB and Redis close
+          await closeMqtt()
+          await Promise.all([disconnectDB(), closeRedis()])
           logger.info('Data connections closed', { event: 'server.shutdown.completed' })
           process.exit(0)
         } catch (err) {

@@ -377,7 +377,10 @@ the same rule as `closeIfOpen` and publishes the opened and then the closed even
 - Redis writes its AOF every second. A Redis crash can lose a candidate written in the last second.
 - An operator may open a manual stop during an outage that overlaps the run-mode stop recorded late.
   The OEE already clips overlapping stops and reports `overlapping_stop_records_clipped`.
-- A broker crash loses the messages it received since its last autosave.
+- A broker crash loses the messages it queued since its last autosave: up to one `autosave_interval`
+  of the queue. The broker restarts from its last save, and nothing counts what was lost.
+- A telemetry crash loses the messages it acknowledged and had not yet stored: at most
+  `MQTT_MAX_UNSTORED_MESSAGES`.
 - One performance process writes the run-mode state, the writer rule 6 already assumes. The lock that
   makes the tick and the rules take turns (rule 5) lives in that process. A second performance
   instance would need a lock shared between processes, or one writer chosen among them.
@@ -421,12 +424,36 @@ a customer's own rate replaces it by repeating the measurement:
 ### Settings
 
 - **Telemetry:** `MQTT_CLIENT_ID`, default `aimes-telemetry`, and `MQTT_SESSION_EXPIRY_SECONDS`, default
-  `1800`.
+  `86400`.
+  - The session outlives the queue ceiling by far: at the design load the ceiling fills in about
+    37 minutes. An outage longer than the ceiling allows therefore ends with the broker dropping
+    messages, which it counts and telemetry alerts on (see
+    [When an outage runs longer](#when-an-outage-runs-longer)), not with the session expiring, which
+    discards the whole queue and counts nothing.
+  - A day still bounds how long an orphaned session lives (one left behind by a changed client id),
+    and how long the broker keeps writing a full queue at every autosave.
+- **Telemetry's intake:** `MQTT_MAX_UNSTORED_MESSAGES` bounds the messages telemetry has received but
+  not yet stored. Its default, 20, comes from the capacity measurement: it is the smallest bound at
+  which telemetry, within its 0.5 CPU, stored a backlog fastest. A bound of 1000 stored a third
+  slower, because the many concurrent stores cost CPU of their own.
+  - Below the bound, telemetry acknowledges each message as it arrives and stores it afterwards, as
+    before. MQTT.js handles one incoming message at a time, so acknowledging only after each store
+    would serialize storage below the plant's rate.
+  - At the bound, telemetry holds back the next acknowledgement until a store finishes. MQTT.js then
+    stops reading, and the rest of the backlog stays at the broker, which is sized for it. Without the
+    bound the broker hands its whole queue to a reconnecting telemetry within seconds, and telemetry
+    held 2 GB of it in memory in the measurement, four times its container limit.
+  - A failed store frees its place. A store that hangs, because MongoDB is down, holds the intake:
+    the broker keeps the messages until telemetry can store them.
+  - A telemetry crash loses at most `MQTT_MAX_UNSTORED_MESSAGES` messages: the ones it acknowledged
+    and had not stored. A message it holds back is not acknowledged, and the broker delivers it again.
 - **Broker** (`infra/mosquitto/mosquitto.conf`): `max_queued_messages 0`, so the message count is no
   longer the limit, and `max_queued_bytes` as the hard ceiling for the queue. Its value is the measured
   queue size of a 30-minute outage at the design load, plus 25%.
-- **Broker container:** memory and CPU limits sized from the same measurement: the queue ceiling, plus
-  the broker's own usage, plus a margin, so that a full queue never gets the broker killed.
+- **Broker container:** memory and CPU limits sized from the same measurement, so that a full queue
+  never gets the broker killed. With the session outliving the ceiling, a longer outage fills the
+  queue to the ceiling, so the memory limit covers a queue at the ceiling: the measured memory per
+  queued message × the messages the ceiling holds × 1.25.
 - **`autosave_interval`**, which bounds what a broker crash loses, is chosen from the measured cost of
   writing a full queue to disk.
 
@@ -437,11 +464,14 @@ a customer's own rate replaces it by repeating the measurement:
   time. The e2e broker runs the repository's `mosquitto.conf` with only authentication changed, so the
   test exercises the production settings. The harness runs services as separate processes, so the
   process id changes on restart and the stable client id is proven as well.
-- **By hand (`pnpm test:capacity`):** the same plant at the design load with a 30-minute outage. It
-  records the broker's peak memory, its message store size, the persistence file size, and how long
-  telemetry takes to work off the backlog once it is back; telemetry has to ingest faster than the
-  500 messages/s still arriving. The results go into `docs/operations/mqtt-broker-capacity.md` as a
-  table, with the method, the assumptions and the commands to repeat it for another rate.
+- **By hand (`pnpm test:capacity`):** the same plant at the design load with a 30-minute outage, with
+  the broker's final settings and container limits, and telemetry and performance as containers built
+  from their Dockerfiles under their `docker-compose.yml` limits.
+  - It records the broker's peak memory, its message store size, the persistence file size, and how
+    long telemetry takes to work off the backlog once it is back. Telemetry has to ingest faster than
+    the 500 messages/s still arriving, within its CPU and memory limits.
+  - The results go into `docs/operations/mqtt-broker-capacity.md` as a table, with the method, the
+    assumptions and the commands to repeat it for another rate.
 
 ### When an outage runs longer
 
@@ -451,6 +481,17 @@ compares it with the value it saw last, and logs `mqtt.broker.messages_dropped` 
 difference. A file-provisioned Grafana alert rule fires on that event. The broker restarting resets the
 counter; telemetry then takes the new value as its baseline. Stops across such an outage still follow
 the decision rules, with whatever signals survived.
+
+A session that expires takes its whole queue with it, and the broker counts none of it as dropped.
+Telemetry's session outlives the ceiling, so at the design load that needs an outage of a day. A
+broker that loses its sessions does the same: one restarted without its persistence file, or one
+whose memory was cleared. Either loss must not go unseen either.
+
+- Telemetry keeps a marker in its Redis once it has had a session, the same way as the dropped-message
+  baseline.
+- When it connects and the broker answers that it has no session for it, while the marker says it had
+  one, telemetry logs `mqtt.session.lost` at error level. A second Grafana alert rule fires on that.
+- A first connect ever has no marker, and logs nothing.
 
 ## Data and configuration changes
 
@@ -464,7 +505,8 @@ the decision rules, with whatever signals survived.
   `{ source: 'run_mode' }`. The product is not released, so there is no migration; a local database that
   already holds two run-mode stops with the same start must be cleaned before the index can build.
 - **Telemetry config:** `MQTT_CLIENT_ID`, default `aimes-telemetry`; `MQTT_SESSION_EXPIRY_SECONDS`,
-  default `1800`.
+  default `86400`; `MQTT_MAX_UNSTORED_MESSAGES`, default `20`, from the capacity measurement.
+- **Telemetry's Redis:** `mqtt:session` marks that telemetry has had a broker session.
 - **Telemetry event:** `tag.value.recorded` gains `previousOccurredAt`, the ISO 8601 UTC time of the
   tag's previous stored sample, or null for its first.
 - **Broker:** `max_queued_messages 0`, `max_queued_bytes` and `autosave_interval` in
@@ -486,12 +528,13 @@ the decision rules, with whatever signals survived.
 | `performance/src/jobs/tag-map.ts` | Read work-center before changing the map, full refresh with retries, seeded from the cursors at startup; a work center that stops being monitored loses its cursor and pending decisions; new and changed work centers reconciled with retries; stopped at shutdown |
 | `performance/src/lib/internal-api/run-mode-monitors.client.ts` | Throw when work-center cannot answer; the caller's log level and abort signal |
 | `performance/src/lib/internal-api/telemetry-request.client.ts` | A 400 `historian.binary_only` is its own error, not telemetry being unreachable |
-| `telemetry/src/lib/mqtt.ts`, telemetry config | Client id and session expiry from config; dropped-message check on connect |
+| `telemetry/src/lib/mqtt.ts`, telemetry config | Client id and session expiry from config; dropped-message check on connect; a bound on messages received but not stored; a lost session logged on connect |
+| `telemetry/src/app.ts` | Shutdown stops the intake and lets the stores finish before it closes MongoDB and Redis |
 | `telemetry/src/jobs/events.ts`, `telemetry/src/modules/ingestion/ingestion.pipeline.ts` | `tag.value.recorded` carries the previous stored sample's time |
 | `infra/mosquitto/mosquitto.conf`, `docker-compose.yml` | Queue ceiling, autosave interval, broker memory and CPU limits |
-| `infra/grafana/provisioning/alerting/` | Alert rule on `mqtt.broker.messages_dropped` |
+| `infra/grafana/provisioning/alerting/` | Alert rules on `mqtt.broker.messages_dropped` and `mqtt.session.lost` |
 | `packages/testing` | Redis test container helper using the image docker-compose.yml runs |
-| `e2e/src/global-setup.ts` | Stop and start a service during a test; run the repository's broker config |
+| `e2e/src/global-setup.ts` | Stop and start a service during a test; run the repository's broker config; for the capacity measurement, run services as containers from their Dockerfiles and the broker and those services under their compose limits |
 | `e2e`, `pnpm test:capacity` | The 30-minute capacity measurement, run by hand |
 | `docs/operations/mqtt-broker-capacity.md` | Measured table, method and assumptions |
 
@@ -567,11 +610,28 @@ its stored samples as telemetry does:
 14. With a deliberately low queue ceiling the broker drops messages during an outage: when telemetry
     reconnects it logs `mqtt.broker.messages_dropped` with the number dropped.
 
+### Telemetry against a real broker
+
+These tests run against a real Mosquitto in a test container.
+
+15. Telemetry reconnects to a backlog larger than `MQTT_MAX_UNSTORED_MESSAGES`, and its stores are slow:
+    - it never holds more received but unstored messages than the bound;
+    - while it is at the bound, the broker still has the rest of the backlog;
+    - once the stores finish, every message has been handed to a store once, in the order it was
+      published, and stored once.
+16. A store that fails frees its place in the bound.
+17. Telemetry connects and the broker has no session for it:
+    - when telemetry has had one, it logs `mqtt.session.lost`;
+    - on its first connect ever, it logs nothing;
+    - when the broker kept the session, it logs nothing.
+
 ### Capacity measurement (by hand)
 
 `pnpm test:capacity` runs scenario 13 at the design load with a 30-minute outage and writes the
 measured table described in [Broker buffering](#broker-buffering) to
-`docs/operations/mqtt-broker-capacity.md`. It takes over half an hour, so CI does not run it.
+`docs/operations/mqtt-broker-capacity.md`. It runs the broker with its final settings and container
+limits, and telemetry and performance as containers under their compose limits. It takes over half an
+hour, so CI does not run it.
 
 Before implementation, these scenarios are extracted to `docs/test-scenarios/performance.md`.
 

@@ -53,7 +53,10 @@ const envSchema = z
     MQTT_USERNAME: z.string().nonempty('MQTT_USERNAME must be provided'),
     MQTT_PASSWORD: z.string().nonempty('MQTT_PASSWORD must be provided'),
     MQTT_CLIENT_ID: z.string().min(1).default('aimes-telemetry'),
-    MQTT_SESSION_EXPIRY_SECONDS: z.coerce.number().int().positive().default(1800),
+    MQTT_SESSION_EXPIRY_SECONDS: z.coerce.number().int().positive().default(86400),
+    // The smallest bound at which telemetry, at its 0.5 CPU, stored a backlog fastest; see
+    // docs/operations/mqtt-broker-capacity.md
+    MQTT_MAX_UNSTORED_MESSAGES: z.coerce.number().int().positive().default(20),
   })
   .transform(data => ({
     ...data,

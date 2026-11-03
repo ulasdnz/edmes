@@ -664,10 +664,12 @@
 > target: e2e/src/capacity/broker-capacity.capacity.test.ts
 > plan-task: 11
 > spec: Testing, Capacity measurement (run by hand with `pnpm test:capacity`, not in CI); the same flow as the scenario carried by Outage.plantTransitionsKept, at the design load
+> amended in Task 11's fix round: the first measurement ran telemetry without its container limits, and telemetry held the whole backlog in memory, four times its limit. The measurement now runs the deployed settings.
 
 ### happy path
-- [CRITICAL] the plant publishes 500 messages/s of about 150 bytes through a 30-minute telemetry outage and the broker runs the repository config without a queue ceiling and without a container memory limit → every run-mode transition published during the outage is in telemetry's history with its own time (transitions lost = 0)
-- telemetry works off the backlog while the plant still publishes 500 messages/s (it ingests faster than 500 messages/s) → the backlog empties and the time it took is reported
+- [CRITICAL] the plant publishes 500 messages/s of about 150 bytes through a 30-minute telemetry outage → every run-mode transition and every counter sample published is in telemetry's history with its own time (nothing lost). The broker runs the repository config with its compose limits; telemetry and performance run as containers built from their Dockerfiles, under their compose limits.
+- telemetry works off the backlog while the plant still publishes 500 messages/s, within its CPU and memory limits → the backlog empties, telemetry is not killed, and the time it took is reported
+- the broker counts no dropped message, and telemetry logs no `mqtt.session.lost`
 
 ---
 
@@ -690,12 +692,42 @@
 ## TelemetryConfig.mqttSession
 > target: telemetry/src/lib/mqtt.broker.test.ts
 > plan-task: 9
-> spec: Broker buffering, Settings (`MQTT_CLIENT_ID`, `MQTT_SESSION_EXPIRY_SECONDS`)
+> spec: Broker buffering, Settings (`MQTT_CLIENT_ID`, `MQTT_SESSION_EXPIRY_SECONDS`, `MQTT_MAX_UNSTORED_MESSAGES`)
+> amended in Task 11's fix round: the session now outlives the queue ceiling, so a longer outage ends with counted drops instead of a session expiry that counts nothing; the default became 86400 s. The intake bound was added.
 
 ### happy path
-- `MQTT_CLIENT_ID` and `MQTT_SESSION_EXPIRY_SECONDS` not set → telemetry connects with client id `aimes-telemetry` (no process id in it) and a session expiry of 1800 s
+- `MQTT_CLIENT_ID`, `MQTT_SESSION_EXPIRY_SECONDS` and `MQTT_MAX_UNSTORED_MESSAGES` not set → telemetry connects with client id `aimes-telemetry` (no process id in it) and a session expiry of 86400 s, and bounds its intake at 20 messages
 - both set → telemetry connects with the configured client id and session expiry
 
 ### constraints
 - [HIGH] `MQTT_CLIENT_ID` empty → the configuration is rejected
 - [HIGH] `MQTT_SESSION_EXPIRY_SECONDS` zero, negative or not an integer → the configuration is rejected
+- [HIGH] `MQTT_MAX_UNSTORED_MESSAGES` zero, negative or not an integer → the configuration is rejected
+
+---
+
+## Mqtt.boundedIntake
+> target: telemetry/src/lib/mqtt.broker.test.ts
+> plan-task: 11 (fix round)
+> scenario: 15, 16
+
+### happy path
+- [CRITICAL] against a real Mosquitto container, telemetry reconnects to a backlog larger than `MQTT_MAX_UNSTORED_MESSAGES` and its stores are slow → it never holds more received but unstored messages than the bound; while it is at the bound, the broker's store still holds the rest of the backlog; once the stores finish, every message has been handed to a store once, in the order it was published, and stored exactly once
+
+### edge cases
+- [HIGH] a store that fails → its place in the bound is freed, and the next message is taken
+- below the bound → each message is handed to the store as it arrives, without waiting for an earlier store
+
+---
+
+## Mqtt.sessionLost
+> target: telemetry/src/lib/mqtt.broker.test.ts
+> plan-task: 11 (fix round)
+> scenario: 17
+
+### happy path
+- [CRITICAL] telemetry has had a session, and the broker answers a reconnect without it (the session expired, or the broker lost it) → one `mqtt.session.lost` error log with the client id
+
+### constraints
+- [HIGH] telemetry's first connect ever (no marker in its Redis) → no `mqtt.session.lost`, and the marker is written
+- [HIGH] the broker kept the session → no `mqtt.session.lost`

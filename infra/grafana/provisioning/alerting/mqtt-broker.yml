@@ -42,3 +42,41 @@ groups:
             The broker's queue ceiling was reached, for example while telemetry was down longer than
             the broker can buffer, and the machine messages it dropped are lost. Telemetry's
             mqtt.broker.messages_dropped log line gives the number in its dropped field.
+      - uid: mqtt-broker-session-lost
+        title: MQTT broker lost telemetry's session
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: loki
+            model:
+              refId: A
+              queryType: instant
+              expr: sum(count_over_time({service="telemetry"} |= "mqtt.session.lost" [5m])) > 0
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params:
+                      - 0
+        # No such log line in the last 5 minutes means the session held
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        labels:
+          severity: critical
+        annotations:
+          summary: The MQTT broker lost telemetry's session and its queue
+          description: >-
+            Telemetry reconnected and the broker had no session for it, although it had one before:
+            the session expired during a long outage, the broker restarted without its persistence
+            file, or telemetry's client id changed. The messages queued for that session are lost, and
+            the broker counts none of them as dropped. Telemetry's mqtt.session.lost log line names
+            the client id it had and the one it has.
