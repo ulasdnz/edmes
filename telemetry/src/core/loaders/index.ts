@@ -23,7 +23,9 @@ export const initLoaders = async () => {
 
     ingestion = new AbortController()
     const stop = ingestion.signal
-    // Each message in the intake listens for the stop; the intake bound limits how many there are
+    // Each message in the intake listens for the stop. The intake bound limits how many there are,
+    // plus one per keepalive reconnect while MongoDB is down: the broker delivers the held-back
+    // message again each time, and each delivery is one more store of it, about 864 a day
     setMaxListeners(0, stop)
 
     await initMongoose()

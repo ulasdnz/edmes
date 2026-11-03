@@ -130,9 +130,8 @@ speed. Telemetry's memory stayed between 80 and 102 MiB at every bound.
 - **A clean stop** takes nothing more in and acknowledges nothing more, lets the stores in progress
   finish, and then closes MongoDB and Redis. The broker delivers again what was still arriving.
 - **MongoDB unreachable.** A store or tag lookup that fails because MongoDB cannot be reached (the
-  driver's server-selection or network error, or Mongoose's buffering timeout) keeps its place and
-  tries again after 1 s, then twice as long each time, at most 30 s apart, for as long as the error
-  lasts. The messages after it for the same node wait behind it, the intake holds at its bound, and the
+  driver's server-selection or network error) keeps its place and tries again after 1 s, then twice as
+  long each time, at most 30 s apart, for as long as the error lasts. The messages after it for the same node wait behind it, the intake holds at its bound, and the
   broker keeps the rest of the queue. Telemetry logs one `ingestion.store.deferred` warning when a
   message first waits, and one `ingestion.store.resolved` line with `waitedMs` once it is handled. A
   test stopped a standalone MongoDB while a machine published, and started it again: every message was
@@ -153,7 +152,11 @@ speed. Telemetry's memory stayed between 80 and 102 MiB at every bound.
     stores finished, every message had arrived;
   - telemetry logged `mqtt.error` and `mqtt.offline` for the timeout.
 
-  So while the wait lasts, telemetry reconnects, with an error line, about every 100 s.
+  So while the wait lasts, telemetry reconnects, with an error line, about every 100 s. Each
+  reconnect during a long MongoDB outage adds one more store of the held-back message, waiting in its
+  node's order: about 864 a day. Once MongoDB is back, the first store keeps the message and each
+  extra one is dropped with an `ingestion.sample.out_of_order` warning. Telemetry acknowledges none
+  of the extra deliveries, so a crash still loses fewer than `MQTT_MAX_UNSTORED_MESSAGES` messages.
 - **At startup**, telemetry stops when its subscriptions fail. A wait that holds the intake while
   telemetry starts into a backlog lets the keepalive timeout fail them (the test above began its hang
   before the subscriptions were confirmed). Telemetry exits, Docker starts it again

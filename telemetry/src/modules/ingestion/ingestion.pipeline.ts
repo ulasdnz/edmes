@@ -144,12 +144,12 @@ interface MongoWait {
   failures: number
 }
 
-// The driver found no server or lost its connection, or Mongoose stopped waiting for one: MongoDB is
-// unreachable, and the step succeeds once it is back. Any other error belongs to the message.
+// The driver found no server or lost its connection: MongoDB is unreachable, and the step succeeds
+// once it is back. Any other error belongs to the message. Mongoose buffers no model operation once
+// it has connected, and telemetry takes no message in before that
 const isMongoUnreachable = (err: unknown): err is Error =>
   err instanceof mongoose.mongo.MongoServerSelectionError ||
-  err instanceof mongoose.mongo.MongoNetworkError ||
-  (err instanceof mongoose.Error && err.message.includes('buffering timed out'))
+  err instanceof mongoose.mongo.MongoNetworkError
 
 const mongoDown = () => mongoose.connection.readyState !== mongoose.ConnectionStates.connected
 

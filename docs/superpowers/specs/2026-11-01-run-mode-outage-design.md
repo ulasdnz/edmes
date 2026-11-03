@@ -60,9 +60,12 @@ machine ──MQTT (QoS 1, persistent session)──▶ telemetry ──events.t
   the last stored one. A machine that keeps running or keeps standing sends nothing new: **silence means
   "no change", not "stopped"**.
 - Every stored sample carries the device's timestamp (`msg.time`), not the time it reached a service.
-- Telemetry publishes every stored sample as `tag.value.recorded` with `previousOccurredAt`, the time of
+- Telemetry publishes a sample it stores as `tag.value.recorded` with `previousOccurredAt`, the time of
   the tag's sample stored before it (null for its first). A consumer whose last processed sample is
-  older than that knows it missed samples.
+  older than that knows it missed samples. Not every stored sample is published: a failed publish is
+  logged (`events.publish.failed`, warn) and swallowed, and a write MongoDB applied but did not
+  answer is retried, finds its own sample stored, and is dropped as out of order. Rule 6 replays
+  both from the history with the tag's next published sample.
 - `GET /internal/v1/historian/:tagId/latest` returns the last stored change.
 - When telemetry restarts, the broker delivers the QoS 1 messages it queued for telemetry's session, and
   telemetry stores and publishes them with their own timestamps. That holds only within the broker's
@@ -458,8 +461,8 @@ a customer's own rate replaces it by repeating the measurement:
     bound the broker hands its whole queue to a reconnecting telemetry within seconds, and telemetry
     held 2 GB of it in memory in the measurement, four times its container limit.
   - A store or tag lookup that fails because MongoDB cannot be reached (the driver's server-selection
-    or network error, or Mongoose's buffering timeout) keeps its place and tries again after 1 s,
-    doubling, at most 30 s apart, with no give-up while the error lasts. The messages after it for the
+    or network error) keeps its place and tries again after 1 s, doubling, at most 30 s apart, with no
+    give-up while the error lasts. The messages after it for the
     same node wait behind it, so the intake holds at its bound and the broker keeps the rest until
     MongoDB is back. Telemetry logs `ingestion.store.deferred` (warn) once when a message first waits
     and `ingestion.store.resolved` (info, with `waitedMs`) once it is handled; no line per attempt.
@@ -469,7 +472,11 @@ a customer's own rate replaces it by repeating the measurement:
   - A store that waits longer than the MQTT keepalive, for a MongoDB that is down or a dependency that
     does not answer, holds MQTT.js's reading too: the keepalive times out, telemetry reconnects with
     its session and logs an error line, about every 100 s while the wait lasts. The broker delivers
-    the held-back message again on each reconnect.
+    the held-back message again on each reconnect, and each delivery is one more store of it, waiting
+    in its node's order: about 864 a day while MongoDB stays down. Once MongoDB is back, the first
+    store keeps the message and each extra one is dropped as `ingestion.sample.out_of_order` (warn).
+    Telemetry acknowledges none of the extra deliveries, so a crash still loses at most
+    `MQTT_MAX_UNSTORED_MESSAGES` − 1 messages.
   - At startup telemetry exits when its subscriptions fail, and a wait that holds the intake while it
     starts into a backlog fails them through the keepalive. Docker starts telemetry again, the exit
     repeats about every 100 s while the wait lasts, and each exit is a crash: it loses at most
