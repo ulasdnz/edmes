@@ -398,6 +398,8 @@ the same rule as `closeIfOpen` and publishes the opened and then the closed even
   up as `ingestion.store.abandoned`.
 - A store that fails for any reason other than an unreachable MongoDB, MongoDB rejecting the document
   for example, drops its message, logged as `ingestion.error`.
+- A stop decided by a dead-lettered sample, such as one in flight while performance could not write
+  to MongoDB, shows only at its tag's next sample, when rule 6 replays it.
 - One performance process writes the run-mode state, the writer rule 6 already assumes. The lock that
   makes the tick and the rules take turns (rule 5) lives in that process. A second performance
   instance would need a lock shared between processes, or one writer chosen among them.

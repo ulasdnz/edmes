@@ -208,6 +208,54 @@ and deleted the 20 queued messages. The dropped counter stayed at 0, and telemet
 - A day still bounds how long an orphaned session lives, and how long the broker keeps writing a full
   queue at every autosave.
 
+## Alerting
+
+`infra/grafana/provisioning/alerting/mqtt-broker.yml` provisions two Grafana alert rules in the `MES`
+folder, both labelled `severity: critical`:
+
+| Rule uid | Title | Fires on |
+|---|---|---|
+| `mqtt-broker-messages-dropped` | MQTT broker dropped messages | an `mqtt.broker.messages_dropped` line from telemetry in the last 5 minutes |
+| `mqtt-broker-session-lost` | MQTT broker lost telemetry's session | an `mqtt.session.lost` line from telemetry in the last 5 minutes |
+
+The repository provisions no contact point and no notification policy, because who is told, and how,
+differs from plant to plant. Until a deployment provisions both, a firing rule shows only in
+Grafana's alert list and reaches nobody. Provision them on the plant's server in a file of their own
+next to the rules, such as `infra/grafana/provisioning/alerting/notifications.yml`:
+
+```yaml
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: plant-operations
+    receivers:
+      - uid: plant-operations-email
+        type: email
+        settings:
+          addresses: maintenance@plant.example;it-oncall@plant.example
+          singleEmail: true
+
+policies:
+  - orgId: 1
+    receiver: plant-operations
+    group_by: ['grafana_folder', 'alertname']
+    routes:
+      - receiver: plant-operations
+        object_matchers:
+          - ['severity', '=', 'critical']
+        repeat_interval: 4h
+```
+
+- An email contact point needs Grafana's SMTP settings: add `GF_SMTP_ENABLED=true`, `GF_SMTP_HOST`,
+  `GF_SMTP_FROM_ADDRESS` and, if the mail relay asks for them, `GF_SMTP_USER` and
+  `GF_SMTP_PASSWORD` to the `grafana` service's environment in `docker-compose.yml`. Another receiver
+  type, such as a `webhook` with a `url` setting, takes the email receiver's place the same way.
+- A provisioned notification policy replaces the organization's whole policy tree, so the file holds
+  every route the plant needs.
+- Grafana reads its provisioning files when it starts: `docker compose restart grafana`. The contact
+  point then shows under Alerting → Contact points.
+
 ## Telemetry and performance during the catch-up
 
 **Telemetry's event stream.** Telemetry publishes every stored sample to `events.telemetry` as
