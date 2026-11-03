@@ -253,6 +253,45 @@ describe('Ingestion.mongoUnreachable', () => {
     expect(resolved.find(meta => meta.topic === COUNT_TOPIC).failedAttempts).toBeGreaterThan(1)
   }, 180_000)
 
+  it('ends the wait of a message that has no bound tag, or a bad payload, with one line', async () => {
+    // A bound tag telemetry has not looked up yet
+    const levelTagId = new Types.ObjectId()
+    await Tag.collection.insertOne({
+      _id: levelTagId,
+      name: 'level',
+      tagTypeId: new Types.ObjectId(),
+      behavior: 'speed',
+      tolerance: 0,
+      binding: { deviceKey: 'plc-1', nodeId: 'level' },
+    })
+    await docker('stop', mongo.getId())
+
+    // A node no tag is bound to, and a payload that is not JSON for the tag not looked up yet: the
+    // lookups of both wait for MongoDB
+    await publish('devices/plc-1/nodes/unbound', [sample(1)])
+    await publish('devices/plc-1/nodes/level', ['not json'])
+    await vi.waitFor(() => expect(logged(warn, 'ingestion.store.deferred')).toHaveLength(2), {
+      timeout: 30_000,
+    })
+
+    await docker('start', mongo.getId())
+
+    await vi.waitFor(
+      () =>
+        expect(
+          logged(info, 'ingestion.store.resolved')
+            .map(meta => meta.topic)
+            .sort(),
+        ).toEqual(['devices/plc-1/nodes/level', 'devices/plc-1/nodes/unbound']),
+      { timeout: 90_000, interval: 500 },
+    )
+    const resolved = logged(info, 'ingestion.store.resolved')
+    expect(resolved.find(meta => meta.topic.endsWith('/level')).tagId).toBe(levelTagId.toString())
+    expect(resolved.find(meta => meta.topic.endsWith('/unbound')).tagId).toBeUndefined()
+    for (const meta of resolved) expect(meta.waitedMs).toBeGreaterThan(0)
+    expect(logged(error, 'ingestion.error')).toHaveLength(0)
+  }, 150_000)
+
   it('stops waiting for MongoDB when telemetry stops', async () => {
     const before = await stored.settled()
     await docker('stop', mongo.getId())

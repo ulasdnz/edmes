@@ -465,7 +465,9 @@ a customer's own rate replaces it by repeating the measurement:
     give-up while the error lasts. The messages after it for the
     same node wait behind it, so the intake holds at its bound and the broker keeps the rest until
     MongoDB is back. Telemetry logs `ingestion.store.deferred` (warn) once when a message first waits
-    and `ingestion.store.resolved` (info, with `waitedMs`) once it is handled; no line per attempt.
+    and `ingestion.store.resolved` (info, with `waitedMs`) once it is handled, however: stored, or
+    dropped because no tag is bound to its node or its payload is bad; no line per attempt. A message
+    a stop abandons gets `ingestion.store.abandoned` instead.
   - Any other failed store drops its message with `ingestion.error` and frees its place. A manual
     entry over HTTP is not retried: with MongoDB unreachable it fails, unless an MQTT message of its
     tag is waiting ahead of it, in which case it waits in the tag's order too.

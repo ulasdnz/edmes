@@ -744,6 +744,7 @@
 ### constraints
 - [HIGH] a store that fails for another reason (MongoDB rejects the document) → the message is dropped with `ingestion.error`, and the messages after it are stored
 - [HIGH] telemetry stops while stores wait for MongoDB → it stops waiting at once, logs one `ingestion.store.abandoned` error per waiting store, and its MQTT close finishes well within a stop grace period
+- [HIGH] a message whose tag lookup waits for MongoDB and then finds no bound tag, and one whose lookup waits and whose payload is not JSON → each logs one `ingestion.store.deferred` warn and, once MongoDB is back, one `ingestion.store.resolved` info with `waitedMs` (the second with its `tagId`); every deferred line gets a resolved or an abandoned line
 
 ---
 

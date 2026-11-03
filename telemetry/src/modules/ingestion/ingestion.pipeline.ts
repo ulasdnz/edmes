@@ -34,11 +34,11 @@ export const processMessage = async (
   const deviceKey = parts[1]
   const nodeId = parts[3]
 
-  const wait: MongoWait = { topic, stop, takenAt: Date.now(), failures: 0 }
+  const wait: MongoWait = { topic, stop, takenAt: Date.now(), failures: 0, abandoned: false }
   // A message that waits for MongoDB keeps its place: the next message for the same node waits behind
   // it, from the tag lookup on
   return runInOrder(nodeQueues, `${deviceKey}:${nodeId}`, () =>
-    storeMessage(wait, deviceKey, nodeId, payload),
+    storeMessage(wait, deviceKey, nodeId, payload).finally(() => logWaitEnded(wait)),
   )
 }
 
@@ -61,6 +61,8 @@ const storeMessage = async (
     })
     return
   }
+  const tagId = tag._id.toString()
+  wait.tagId = tagId
 
   let msg: IncomingMessage
   try {
@@ -72,7 +74,6 @@ const storeMessage = async (
   const occurredAt = parseUtcZonedDateTime(msg.time)
   if (!occurredAt) return
 
-  const tagId = tag._id.toString()
   // A failed store may have reached MongoDB, so the retry reads the predecessor from MongoDB again
   const result = await runInOrder(tagQueues, tagId, () =>
     untilMongoAnswers(
@@ -82,16 +83,6 @@ const storeMessage = async (
     ),
   )
   if (result === ABANDONED) return
-
-  if (wait.failures > 0) {
-    logger.info('Message handled after MongoDB came back', {
-      event: 'ingestion.store.resolved',
-      topic,
-      tagId,
-      waitedMs: Date.now() - wait.takenAt,
-      failedAttempts: wait.failures,
-    })
-  }
 
   if (!result.applied && result.reason === 'out_of_order') {
     logger.warn('Out-of-order MQTT telemetry sample dropped', {
@@ -142,6 +133,22 @@ interface MongoWait {
   stop: AbortSignal
   takenAt: number
   failures: number
+  abandoned: boolean
+  // The message's tag, once it is looked up
+  tagId?: string
+}
+
+// A message that waited for MongoDB ends its wait with one line, however it is handled then: stored,
+// dropped, or failed for another reason. One abandoned at a stop has its own line
+const logWaitEnded = (wait: MongoWait): void => {
+  if (wait.failures === 0 || wait.abandoned) return
+  logger.info('Message handled after MongoDB came back', {
+    event: 'ingestion.store.resolved',
+    topic: wait.topic,
+    ...(wait.tagId ? { tagId: wait.tagId } : {}),
+    waitedMs: Date.now() - wait.takenAt,
+    failedAttempts: wait.failures,
+  })
 }
 
 // The driver found no server or lost its connection: MongoDB is unreachable, and the step succeeds
@@ -200,6 +207,7 @@ const unlessStopped = <T>(attempt: Promise<T>, stop: AbortSignal) =>
   })
 
 const abandon = (wait: MongoWait): typeof ABANDONED => {
+  wait.abandoned = true
   logger.error('Telemetry stopped before MongoDB stored a message', {
     event: 'ingestion.store.abandoned',
     topic: wait.topic,
