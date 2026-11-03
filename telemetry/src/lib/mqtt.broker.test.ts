@@ -144,10 +144,15 @@ async function telemetryWith(env: Record<string, string>) {
   vi.stubEnv('MQTT_URL', QUEUEING_BROKER_URL)
   for (const [name, value] of Object.entries(env)) vi.stubEnv(name, value)
   vi.resetModules()
-  const configured = { redis: await import('./redis.js'), mqtt: await import('./mqtt.js') }
+  const configured = {
+    redis: await import('./redis.js'),
+    mqtt: await import('./mqtt.js'),
+    logger: (await import('./logger.js')).logger,
+  }
   await configured.redis.initRedis()
   return {
     ...configured.mqtt,
+    logger: configured.logger,
     async close() {
       await configured.mqtt.closeMqtt()
       await configured.redis.closeRedis()
@@ -476,6 +481,55 @@ describe('Mqtt.boundedIntake', () => {
       expect(await storedValues()).toHaveLength(3)
     } finally {
       store.open()
+      await telemetry.close()
+    }
+  })
+})
+
+describe('TelemetryMqtt.close', () => {
+  it('takes nothing in once it closes, and the broker delivers the rest again', async () => {
+    const telemetry = await telemetryWith({ MQTT_CLIENT_ID: 'closing-mid-burst-telemetry' })
+    const error = vi.spyOn(telemetry.logger, 'error')
+    const handed: string[] = []
+    const store = async (_topic: string, payload: Buffer) => {
+      handed.push(payload.toString())
+    }
+    const plc = await mqtt.connectAsync(QUEUEING_BROKER_URL, { protocolVersion: 5 })
+    const published: string[] = []
+    try {
+      // A machine publishes fast while telemetry closes, so messages still arrive after telemetry
+      // has told the broker it disconnects. The race is narrow, so it runs a few times.
+      for (let round = 0; round < 5; round++) {
+        await telemetry.initMqtt(store)
+        const burst = Array.from({ length: 2000 }, (_, i) => `${round}-${i}`)
+        published.push(...burst)
+        const publishing = (async () => {
+          for (let i = 0; i < burst.length; i += 100) {
+            await Promise.all(
+              burst
+                .slice(i, i + 100)
+                .map(payload => plc.publishAsync('devices/plc-1/nodes/count', payload, { qos: 1 })),
+            )
+          }
+        })()
+        await vi.waitFor(
+          () => expect(handed.filter(p => p.startsWith(`${round}-`)).length).toBeGreaterThan(300),
+          { timeout: 10_000 },
+        )
+
+        const takenBeforeClosing = handed.length
+        await telemetry.closeMqtt()
+        expect(handed.length).toBe(takenBeforeClosing)
+        await publishing
+      }
+      expect(logged(error, 'mqtt.error')).toEqual([])
+
+      await telemetry.initMqtt(store)
+      await vi.waitFor(() => expect(new Set(handed).size).toBe(published.length), {
+        timeout: 20_000,
+      })
+    } finally {
+      await plc.endAsync()
       await telemetry.close()
     }
   })

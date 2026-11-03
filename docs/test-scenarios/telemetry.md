@@ -720,6 +720,17 @@
 
 ---
 
+## TelemetryMqtt.close
+> target: telemetry/src/lib/mqtt.broker.test.ts
+> plan-task: 11 (fix round)
+> scenario: 18
+
+### edge cases
+- [HIGH] telemetry closes while a machine publishes fast → it takes in no message after it starts to close and acknowledges none (no `mqtt.error` such as "write after end"); after a reconnect every published message has arrived
+- [HIGH] stores in progress when telemetry closes → closing waits for them, so their messages are stored before MongoDB and Redis close
+
+---
+
 ## Mqtt.sessionLost
 > target: telemetry/src/lib/mqtt.broker.test.ts
 > plan-task: 11 (fix round)

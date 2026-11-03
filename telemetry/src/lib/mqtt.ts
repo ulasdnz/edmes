@@ -12,6 +12,9 @@ let client: MqttClient | null = null
 const unstored = new Set<Promise<void>>()
 // The acknowledgement of the message telemetry holds back while it is at its bound
 let heldBack: (() => void) | null = null
+// Telemetry is closing: it takes nothing in and acknowledges nothing, and the broker delivers what
+// still arrives again on the next connection
+let closing = false
 
 // The handler is attached before the client connects: right after the CONNACK, and before the
 // subscriptions are confirmed, the broker sends the messages it queued while telemetry was down.
@@ -31,6 +34,7 @@ export const initMqtt = async (
     MQTT_MAX_UNSTORED_MESSAGES,
   } = config
 
+  closing = false
   // The broker queues messages for the session under its client id, so the id stays the same
   // across restarts and the session outlives the outage
   client = mqtt.connect(MQTT_URL, {
@@ -47,6 +51,7 @@ export const initMqtt = async (
     },
   })
   client.on('message', (topic, payload) => {
+    if (closing) return
     if (topic === DROPPED_MESSAGES_TOPIC) {
       void checkDroppedMessages(Number(payload.toString()))
       return
@@ -68,6 +73,7 @@ export const initMqtt = async (
   // bound it runs at once, so stores overlap; at the bound it waits for a store to finish, and the
   // rest of the backlog stays at the broker.
   client.handleMessage = (_packet, callback) => {
+    if (closing) return
     if (unstored.size < MQTT_MAX_UNSTORED_MESSAGES) {
       callback()
       return
@@ -136,6 +142,8 @@ export const getMqttClient = (): MqttClient => {
 // Stops taking messages, then lets the stores in progress finish: their messages are acknowledged
 export const closeMqtt = async (): Promise<void> => {
   if (client) {
+    closing = true
+    heldBack = null
     await client.endAsync()
     await Promise.allSettled(unstored)
     logger.info('MQTT disconnected', { event: 'mqtt.disconnected' })

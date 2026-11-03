@@ -434,8 +434,8 @@ a customer's own rate replaces it by repeating the measurement:
     and how long the broker keeps writing a full queue at every autosave.
 - **Telemetry's intake:** `MQTT_MAX_UNSTORED_MESSAGES` bounds the messages telemetry has received but
   not yet stored. Its default, 20, comes from the capacity measurement: it is the smallest bound at
-  which telemetry, within its 0.5 CPU, stored a backlog fastest. A bound of 1000 stored a third
-  slower, because the many concurrent stores cost CPU of their own.
+  which telemetry, within its 0.5 CPU, stored a backlog fastest. A bound of 1000 stored half as
+  fast, because the many concurrent stores cost CPU of their own.
   - Below the bound, telemetry acknowledges each message as it arrives and stores it afterwards, as
     before. MQTT.js handles one incoming message at a time, so acknowledging only after each store
     would serialize storage below the plant's rate.
@@ -447,6 +447,9 @@ a customer's own rate replaces it by repeating the measurement:
     the broker keeps the messages until telemetry can store them.
   - A telemetry crash loses at most `MQTT_MAX_UNSTORED_MESSAGES` messages: the ones it acknowledged
     and had not stored. A message it holds back is not acknowledged, and the broker delivers it again.
+  - A clean stop takes nothing more in and acknowledges nothing more, lets the stores in progress
+    finish, and only then closes MongoDB and Redis. The broker delivers again what was still
+    arriving.
 - **Broker** (`infra/mosquitto/mosquitto.conf`): `max_queued_messages 0`, so the message count is no
   longer the limit, and `max_queued_bytes` as the hard ceiling for the queue. Its value is the measured
   queue size of a 30-minute outage at the design load, plus 25%.
@@ -624,6 +627,8 @@ These tests run against a real Mosquitto in a test container.
     - when telemetry has had one, it logs `mqtt.session.lost`;
     - on its first connect ever, it logs nothing;
     - when the broker kept the session, it logs nothing.
+18. Telemetry closes while a machine publishes fast: it takes in nothing more after it starts to
+    close, logs no MQTT error, and after a reconnect every message has arrived.
 
 ### Capacity measurement (by hand)
 
