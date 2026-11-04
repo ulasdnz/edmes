@@ -136,8 +136,6 @@ services:
     # Port dışarıya açılmıyor, sadece Traefik üzerinden erişilir
     volumes:
       - user_uploads:/app/uploads
-    env_file:
-      - ./user/.env
     environment:
       - MONGO_URI=${MONGO_URI:-mongodb://mongodb:27017/mes?directConnection=true}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379}
@@ -191,8 +189,6 @@ services:
     container_name: telemetry_app
     restart: unless-stopped
     logging: *logging
-    env_file:
-      - ./telemetry/.env
     environment:
       - MONGO_URI=${MONGO_URI_TELEMETRY:-mongodb://mongodb:27017/mes_telemetry?directConnection=true}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379}
@@ -241,14 +237,14 @@ services:
     container_name: work_center_app
     restart: unless-stopped
     logging: *logging
-    env_file:
-      - ./work-center/.env
     environment:
       - MONGO_URI=${MONGO_URI:-mongodb://mongodb:27017/mes?directConnection=true}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379}
       - JWT_SECRET=${JWT_SECRET:?JWT_SECRET must be set}
       - INTERNAL_API_TOKEN=${INTERNAL_API_TOKEN:?INTERNAL_API_TOKEN must be set}
       - INTERNAL_API_USER=${INTERNAL_API_USER:-http://user:3000}
+      - INTERNAL_API_PRODUCTION=${INTERNAL_API_PRODUCTION:-http://production:3002}
+      - PLANT_TIMEZONE=${PLANT_TIMEZONE:-Europe/Istanbul}
     depends_on:
       mongodb:
         condition: service_healthy
@@ -284,8 +280,6 @@ services:
     container_name: production_app
     restart: unless-stopped
     logging: *logging
-    env_file:
-      - ./production/.env
     environment:
       - MONGO_URI=${MONGO_URI:-mongodb://mongodb:27017/mes?directConnection=true}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379}
@@ -363,8 +357,6 @@ services:
     container_name: performance_app
     restart: unless-stopped
     logging: *logging
-    env_file:
-      - ./performance/.env
     environment:
       - MONGO_URI=${MONGO_URI_PERFORMANCE:-mongodb://mongodb:27017/mes_performance?directConnection=true}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379}
@@ -408,8 +400,6 @@ services:
     container_name: realtime_app
     restart: unless-stopped
     logging: *logging
-    env_file:
-      - ./realtime/.env
     environment:
       - REDIS_URL=${REDIS_URL:-redis://redis:6379}
       - JWT_SECRET=${JWT_SECRET:?JWT_SECRET must be set}
