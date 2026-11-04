@@ -98,14 +98,21 @@ services:
     logging: *logging
     ports:
       - "1883:1883"
+    # The password file is written from these at every start (infra/mosquitto/init-passwords.sh)
+    environment:
+      - MQTT_USERNAME=${MQTT_USERNAME:-mes_service}
+      - MQTT_PASSWORD=${MQTT_PASSWORD:?MQTT_PASSWORD must be set}
+      - MQTT_HEALTH_PASSWORD=${MQTT_HEALTH_PASSWORD:?MQTT_HEALTH_PASSWORD must be set}
+    entrypoint: ["/bin/sh", "/mosquitto/init-passwords.sh"]
+    command: ["/usr/sbin/mosquitto", "-c", "/mosquitto/config/mosquitto.conf"]
     volumes:
       - ./infra/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
-      - ./infra/mosquitto/password_file:/mosquitto/config/password_file:ro
+      - ./infra/mosquitto/init-passwords.sh:/mosquitto/init-passwords.sh:ro
       - mosquitto_data:/mosquitto/data
     networks:
       - mes_network
     healthcheck:
-      test: ["CMD", "mosquitto_pub", "-h", "127.0.0.1", "-u", "health", "-P", "dev123", "-t", "_healthcheck", "-m", "ok", "-q", "1"]
+      test: ["CMD-SHELL", "mosquitto_pub -h 127.0.0.1 -u health -P \"$$MQTT_HEALTH_PASSWORD\" -t _healthcheck -m ok -q 1"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -195,7 +202,7 @@ services:
       - INTERNAL_API_PRODUCTION=${INTERNAL_API_PRODUCTION:-http://production:3002}
       - MQTT_URL=${MQTT_URL:-mqtt://mosquitto:1883}
       - MQTT_USERNAME=${MQTT_USERNAME:-mes_service}
-      - MQTT_PASSWORD=${MQTT_PASSWORD:-dev123}
+      - MQTT_PASSWORD=${MQTT_PASSWORD:?MQTT_PASSWORD must be set}
       # Outlives the broker's queue ceiling, so a longer outage ends with counted drops
       - MQTT_SESSION_EXPIRY_SECONDS=${MQTT_SESSION_EXPIRY_SECONDS:-86400}
     depends_on:

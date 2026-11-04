@@ -27,14 +27,20 @@ mosquitto:
   restart: unless-stopped
   ports:
     - "1883:1883"
+  environment:
+    - MQTT_USERNAME=${MQTT_USERNAME:-mes_service}
+    - MQTT_PASSWORD=${MQTT_PASSWORD:?MQTT_PASSWORD must be set}
+    - MQTT_HEALTH_PASSWORD=${MQTT_HEALTH_PASSWORD:?MQTT_HEALTH_PASSWORD must be set}
+  entrypoint: ["/bin/sh", "/mosquitto/init-passwords.sh"]
+  command: ["/usr/sbin/mosquitto", "-c", "/mosquitto/config/mosquitto.conf"]
   volumes:
     - ./infra/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
-    - ./infra/mosquitto/password_file:/mosquitto/config/password_file:ro
+    - ./infra/mosquitto/init-passwords.sh:/mosquitto/init-passwords.sh:ro
     - mosquitto_data:/mosquitto/data
   networks:
     - mes_network
   healthcheck:
-    test: ["CMD", "mosquitto_pub", "-h", "127.0.0.1", "-u", "health", "-P", "dev123", "-t", "_healthcheck", "-m", "ok", "-q", "1"]
+    test: ["CMD-SHELL", "mosquitto_pub -h 127.0.0.1 -u health -P \"$$MQTT_HEALTH_PASSWORD\" -t _healthcheck -m ok -q 1"]
     interval: 10s
     timeout: 5s
     retries: 5
@@ -72,14 +78,14 @@ connection_messages true
 
 ## Credential Strategy
 
-**File:** `infra/mosquitto/password_file`
+**File:** `infra/mosquitto/init-passwords.sh` (broker konteynerinin entrypoint'i)
 
-- `mosquitto_passwd` tool ile hash'lenmis dev-only credential dosyasi
+- Sifre dosyasi repo'da yok. Broker her acilista `mosquitto_passwd` ile dosyayi ortam degiskenlerinden yeniden uretir: her sifre salt'li PBKDF2-SHA512 hash olarak `/mosquitto/config/password_file`'a yazilir. Dosyanin sahibi `mosquitto`, izni 0600; Mosquitto'nun izin ve sahiplik uyarilari bu yuzden cikmaz.
 - Kullanicilar:
-  - `mes_service` — servisler icin (telemetry service baglantisi)
-  - `health` — healthcheck icin
-- Production'da bu dosya deploy pipeline'da uretilir veya volume mount ile override edilir
-- Dev credential'lar repo'ya commit edilir (hash'li, non-production) — `JWT_SECRET=supersecretkey` default'u ile ayni mantik
+  - `mes_service` (`MQTT_USERNAME`) — servisler icin (telemetry service baglantisi), sifresi `MQTT_PASSWORD`
+  - `health` — healthcheck icin, sifresi `MQTT_HEALTH_PASSWORD`
+- Sifreleri her kurulumu yapan kisi belirler ve kok `.env` dosyasina yazar (git'e girmez). Varsayilan sifre yok: ikisi de bos ise `docker compose` baslamaz. Telemetry ayni `MQTT_PASSWORD`'u kullanir.
+- Sifre degistirmek icin `.env`'deki degeri degistirip broker'i ve telemetry'yi yeniden baslatmak yeter.
 
 ## Telemetry Service Integration (Future)
 
@@ -97,7 +103,7 @@ MQTT_PASSWORD=<password>
 infra/
   mosquitto/
     mosquitto.conf
-    password_file
+    init-passwords.sh
 ```
 
 ## Healthcheck
