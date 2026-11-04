@@ -27,7 +27,9 @@ import Tag from '../tag/tag.model.js'
 // every second. Telemetry takes in at most 5 messages it has not stored.
 const { mongo, redis, broker } = await vi.hoisted(async () => {
   const { createServer } = await import('node:net')
-  const { composeImage, MONGO_IMAGE, startRedisTestContainer } = await import('@mes/testing')
+  const { composeImage, MONGO_ENVIRONMENT, MONGO_IMAGE, startRedisTestContainer } = await import(
+    '@mes/testing'
+  )
   const { GenericContainer, Wait } = await import('testcontainers')
   const port = await new Promise<number>(resolve => {
     const probe = createServer().listen(0, () => {
@@ -37,6 +39,7 @@ const { mongo, redis, broker } = await vi.hoisted(async () => {
   })
   const [mongo, redis, broker] = await Promise.all([
     new GenericContainer(MONGO_IMAGE)
+      .withEnvironment(MONGO_ENVIRONMENT)
       .withExposedPorts({ container: 27017, host: port })
       .withWaitStrategy(Wait.forLogMessage(/Waiting for connections/))
       .start(),

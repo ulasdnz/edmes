@@ -73,6 +73,12 @@ services:
       - mongodb_data:/data/db
     networks:
       - mes_network
+    environment:
+      # MongoDB stops at startup on Linux kernels 6.19 through 7.0.13 while its TCMalloc owns rseq
+      # (see MongoDB's production notes; GitHub's Ubuntu runners run 7.0.0). With glibc owning rseq
+      # it starts on every kernel, and TCMalloc uses per-thread caches instead of per-CPU ones.
+      # Tests start MongoDB with this same environment.
+      - GLIBC_TUNABLES=glibc.pthread.rseq=1
     healthcheck:
       test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       interval: 10s

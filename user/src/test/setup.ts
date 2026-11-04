@@ -1,4 +1,4 @@
-import { MONGO_IMAGE } from '@mes/testing'
+import { MONGO_ENVIRONMENT, MONGO_IMAGE } from '@mes/testing'
 import { MongoDBContainer, type StartedMongoDBContainer } from '@testcontainers/mongodb'
 import mongoose from 'mongoose'
 import { afterAll, afterEach, beforeAll } from 'vitest'
@@ -6,7 +6,9 @@ import { afterAll, afterEach, beforeAll } from 'vitest'
 let mongoContainer: StartedMongoDBContainer
 
 beforeAll(async () => {
-  mongoContainer = await new MongoDBContainer(MONGO_IMAGE).start()
+  mongoContainer = await new MongoDBContainer(MONGO_IMAGE)
+    .withEnvironment(MONGO_ENVIRONMENT)
+    .start()
   let uri = mongoContainer.getConnectionString()
   if (!uri.includes('directConnection=true')) {
     uri += uri.includes('?') ? '&directConnection=true' : '?directConnection=true'

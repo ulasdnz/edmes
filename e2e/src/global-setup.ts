@@ -7,7 +7,7 @@ import { dirname, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 // Only the image helper: the package's main entry would load test dependencies e2e does not have
-import { composeImage } from '@mes/testing/images'
+import { composeImage, MONGO_ENVIRONMENT } from '@mes/testing/images'
 import { GenericContainer, Network, type StartedTestContainer, Wait } from 'testcontainers'
 import type { TestProject } from 'vitest/node'
 
@@ -262,6 +262,7 @@ export default async function setup(project: TestProject) {
     .withWaitStrategy(Wait.forLogMessage(/running/))
   const [mongo, redis, startedBroker] = await Promise.all([
     new GenericContainer(composeImage('mongodb'))
+      .withEnvironment(MONGO_ENVIRONMENT)
       .withNetwork(network)
       .withNetworkAliases('mongodb')
       .withExposedPorts(27017)
