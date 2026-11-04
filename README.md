@@ -195,6 +195,11 @@ runs behind it are in [MQTT broker capacity](docs/operations/mqtt-broker-capacit
 
 - Real infrastructure over fakes: a test that passes against a fake but would fail against the
   real thing hides a production bug. Calls to other services are stubbed at their HTTP client.
+- One MongoDB per package run, a database per test file: a Vitest global setup starts the container
+  once and every test file connects to a database of its own, so the files run in parallel without
+  sharing data ([global setup](packages/testing/src/mongo-server.ts)). It replaced a container per
+  file, which under a full parallel run made some files wait past the hook timeout; the CI unit
+  step went from about 115 s to 80 s.
 - List queries are profiled in tests, which assert the index used (`IXSCAN`) and the absence of an
   in-memory sort ([helper](packages/testing/src/profile.ts)).
 - The end-to-end harness fails the run when any service crashes or logs an error line, even if
