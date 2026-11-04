@@ -258,7 +258,7 @@ policies:
 
 ## Telemetry and performance during the catch-up
 
-**Telemetry's event stream.** Telemetry publishes every stored sample to `events.telemetry` as
+**Telemetry's event stream.** Telemetry publishes the samples it stores to `events.telemetry` as
 `tag.value.recorded`, and the stream is trimmed at about 10,000 entries. From telemetry's restart to
 the end of the run it published 1,197,003 entries, and performance read every one of them: none was
 trimmed before it read it. Performance stayed at most 3,483 entries behind. The count is the entries
