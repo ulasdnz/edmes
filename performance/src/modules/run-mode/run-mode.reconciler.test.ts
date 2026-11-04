@@ -1,24 +1,14 @@
 import { Types } from 'mongoose'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { cacheGet, cacheSet, cacheDel, cacheWrap, cacheWrapDedup } = vi.hoisted(() => ({
-  cacheGet: vi.fn(async () => null),
-  cacheSet: vi.fn(async () => {}),
-  cacheDel: vi.fn(async () => {}),
-  cacheWrap: vi.fn(async (_k: string, _t: number, loader: () => Promise<unknown>) => loader()),
-  cacheWrapDedup: vi.fn(async (_k: string, _t: number, loader: () => Promise<unknown>) => loader()),
-}))
-
-vi.mock('../../lib/cache.js', () => ({
-  cacheDel,
-  cacheGet,
-  cacheSet,
-  cacheWrap,
-  cacheWrapDedup,
-  cacheDelPattern: vi.fn(),
-  sharedCacheWrapDedup: vi.fn(),
-  sharedCacheDel: vi.fn(),
-}))
+// Pending decisions and the cache live in Redis, so a real one runs. Performance builds its Redis
+// clients from REDIS_URL when their module loads, so Redis starts before the imports below run.
+const { redis } = await vi.hoisted(async () => {
+  const { startRedisTestContainer } = await import('@mes/testing')
+  const redis = await startRedisTestContainer()
+  process.env.REDIS_URL = redis.url
+  return { redis }
+})
 
 // The segment shape telemetry's state-durations answers with
 type Segment = { state: number; start: string; end: string; durationMs: number }
@@ -50,28 +40,7 @@ vi.mock('../../lib/internal-api/work-center.client.js', () => ({
   invalidate: vi.fn(async () => {}),
 }))
 
-// Pending decisions go through the raw Redis client; this stands in for it where no Redis runs.
-// The contract tests run the same code against a real Redis.
-const { redisStore, redisClient } = vi.hoisted(() => {
-  const store = new Map<string, string>()
-  return {
-    redisStore: store,
-    redisClient: {
-      get: async (key: string) => store.get(key) ?? null,
-      set: async (key: string, value: string, ...options: unknown[]) => {
-        if (options.includes('NX') && store.has(key)) return null
-        store.set(key, value)
-        return 'OK'
-      },
-      del: async (key: string) => (store.delete(key) ? 1 : 0),
-    },
-  }
-})
-vi.mock('../../lib/redis.js', async importOriginal => ({
-  ...(await importOriginal<typeof import('../../lib/redis.js')>()),
-  redisClient,
-}))
-
+import { closeRedis, initRedis, redisClient } from '../../lib/redis.js'
 import { bootstrapSystemReasons } from '../reason/reason.bootstrap.js'
 import { UnplannedStop } from '../unplanned-stop/unplanned-stop.model.js'
 import {
@@ -95,9 +64,18 @@ async function seedCursor(
   })
 }
 
+beforeAll(async () => {
+  await initRedis()
+})
+
+afterAll(async () => {
+  await closeRedis()
+  await redis.stop()
+})
+
 describe('run-mode.reconciler', () => {
   beforeEach(async () => {
-    redisStore.clear()
+    await redisClient.flushall()
     getLatest.mockReset()
     getStateDurations.mockReset()
     getWorkCenter.mockReset()

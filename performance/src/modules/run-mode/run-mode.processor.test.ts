@@ -1,36 +1,14 @@
 import { Types } from 'mongoose'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const cacheStore = new Map<string, unknown>()
-
-const { cacheGet, cacheSet, cacheDel, cacheWrap, cacheWrapDedup } = vi.hoisted(() => {
-  const store = new Map<string, unknown>()
-  return {
-    cacheGet: vi.fn(async (key: string) => (store.has(key) ? store.get(key) : null)),
-    cacheSet: vi.fn(async (key: string, value: unknown) => {
-      store.set(key, value)
-    }),
-    cacheDel: vi.fn(async (key: string) => {
-      store.delete(key)
-    }),
-    cacheWrap: vi.fn(async (_k: string, _t: number, loader: () => Promise<unknown>) => loader()),
-    cacheWrapDedup: vi.fn(async (_k: string, _t: number, loader: () => Promise<unknown>) =>
-      loader(),
-    ),
-    __store: store,
-  }
+// Pending decisions and the cache live in Redis, so a real one runs. Performance builds its Redis
+// clients from REDIS_URL when their module loads, so Redis starts before the imports below run.
+const { redis } = await vi.hoisted(async () => {
+  const { startRedisTestContainer } = await import('@mes/testing')
+  const redis = await startRedisTestContainer()
+  process.env.REDIS_URL = redis.url
+  return { redis }
 })
-
-vi.mock('../../lib/cache.js', () => ({
-  cacheDel,
-  cacheGet,
-  cacheSet,
-  cacheWrap,
-  cacheWrapDedup,
-  cacheDelPattern: vi.fn(),
-  sharedCacheWrapDedup: vi.fn(),
-  sharedCacheDel: vi.fn(),
-}))
 
 const { getLatest, getStateDurations } = vi.hoisted(() => ({
   getLatest: vi.fn(async () => null as null | { tagId: string; value: number; occurredAt: string }),
@@ -49,36 +27,7 @@ vi.mock('../../lib/internal-api/work-center.client.js', () => ({
   invalidate: vi.fn(async () => {}),
 }))
 
-// Pending decisions go through the raw Redis client; this stands in for it where no Redis runs.
-// The contract tests run the same code against a real Redis.
-const { redisStore, redisGet, redisSet, redisDel, redisEval } = vi.hoisted(() => {
-  const store = new Map<string, string>()
-  return {
-    redisStore: store,
-    redisGet: vi.fn(async (key: string) => store.get(key) ?? null),
-    redisSet: vi.fn(async (key: string, value: string, ...options: unknown[]) => {
-      if (options.includes('NX') && store.has(key)) return null
-      store.set(key, value)
-      return 'OK'
-    }),
-    redisDel: vi.fn(async (key: string) => (store.delete(key) ? 1 : 0)),
-    // Stands in for the script that replaces or deletes a record while it has the same since
-    redisEval: vi.fn(
-      async (_script: string, _keys: number, key: string, since: string, value?: string) => {
-        const stored = store.get(key)
-        if (stored === undefined || JSON.parse(stored).since !== since) return 0
-        if (value === undefined) store.delete(key)
-        else store.set(key, value)
-        return 1
-      },
-    ),
-  }
-})
-vi.mock('../../lib/redis.js', async importOriginal => ({
-  ...(await importOriginal<typeof import('../../lib/redis.js')>()),
-  redisClient: { get: redisGet, set: redisSet, del: redisDel, eval: redisEval },
-}))
-
+import { closeRedis, initRedis, redisClient } from '../../lib/redis.js'
 import { PlannedStop } from '../planned-stop/planned-stop.model.js'
 import * as policyService from '../policy/policy.service.js'
 import { bootstrapSystemReasons } from '../reason/reason.bootstrap.js'
@@ -107,20 +56,30 @@ function sample(overrides: Partial<processor.RunModeSample>): processor.RunModeS
   }
 }
 
+const candidateKey = (wcId: string, tagId: string) => `runmode:candidate:${wcId}:${tagId}`
+
+beforeAll(async () => {
+  await initRedis()
+})
+
+afterAll(async () => {
+  await closeRedis()
+  await redis.stop()
+})
+
 describe('run-mode.processor', () => {
   beforeEach(async () => {
-    cacheStore.clear()
     getLatest.mockReset()
     getStateDurations.mockReset()
     getWorkCenter.mockReset()
     getLatest.mockResolvedValue(null)
     getWorkCenter.mockResolvedValue(null)
-    redisStore.clear()
-    redisGet.mockClear()
-    redisSet.mockClear()
-    redisDel.mockClear()
-    redisEval.mockClear()
+    await redisClient.flushall()
     await bootstrapSystemReasons()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 
   describe('handleRunModeSample — cursor idempotency', () => {
@@ -247,19 +206,16 @@ describe('run-mode.processor', () => {
         endAt: null,
       })
       expect(open).toBeNull()
-      expect(redisSet).toHaveBeenCalledWith(
-        `runmode:candidate:${wcId}:${tagId}`,
-        expect.any(String),
-        'EX',
-        90_000,
-        'NX',
-      )
+      expect(
+        JSON.parse((await redisClient.get(candidateKey(wcId, tagId))) ?? 'null'),
+      ).toMatchObject({ kind: 'debounce', since: '2026-06-15T10:00:00.000Z', debounceMs: 5000 })
     })
 
     it('stores the candidate with its first stop time for 25 hours', async () => {
       const wcId = new Types.ObjectId().toString()
       const tagId = new Types.ObjectId().toString()
       await seedPolicyForWc(wcId, 30_000)
+      const set = vi.spyOn(redisClient, 'set')
       const writtenFrom = Date.now()
       await processor.handleRunModeSample(
         sample({
@@ -269,10 +225,10 @@ describe('run-mode.processor', () => {
           occurredAt: new Date('2026-06-15T10:00:00.000Z'),
         }),
       )
-      expect(redisSet).toHaveBeenCalledTimes(1)
-      const [key, value, ...options] = redisSet.mock.calls[0]
-      expect(key).toBe(`runmode:candidate:${wcId}:${tagId}`)
-      const candidate = JSON.parse(value)
+      expect(set).toHaveBeenCalledTimes(1)
+      const [key, , ...options] = set.mock.calls[0]
+      expect(key).toBe(candidateKey(wcId, tagId))
+      const candidate = JSON.parse((await redisClient.get(candidateKey(wcId, tagId))) ?? 'null')
       expect(candidate).toEqual({
         kind: 'debounce',
         since: '2026-06-15T10:00:00.000Z',
@@ -286,6 +242,9 @@ describe('run-mode.processor', () => {
       expect(new Date(candidate.pendingSince).getTime()).toBeLessThanOrEqual(Date.now())
       // Written only when no candidate is stored, in one command: the first write wins
       expect(options).toEqual(['EX', 90_000, 'NX'])
+      const ttlSeconds = await redisClient.ttl(candidateKey(wcId, tagId))
+      expect(ttlSeconds).toBeGreaterThan(89_900)
+      expect(ttlSeconds).toBeLessThanOrEqual(90_000)
     })
   })
 
@@ -420,7 +379,7 @@ describe('run-mode.processor', () => {
       })
       expect(open).not.toBeNull()
       expect(open?.startAt.getTime()).toBe(firstStoppedAt.getTime())
-      expect(redisStore.has(`runmode:candidate:${wcId}:${tagId}`)).toBe(false)
+      expect(await redisClient.exists(candidateKey(wcId, tagId))).toBe(0)
     })
 
     it('keeps the candidate (no open) when telemetry knows a newer sample', async () => {
@@ -448,7 +407,7 @@ describe('run-mode.processor', () => {
       })
       expect(open).toBeNull()
       // The running signal decides it once performance processes it
-      expect(redisStore.has(`runmode:candidate:${wcId}:${tagId}`)).toBe(true)
+      expect(await redisClient.exists(candidateKey(wcId, tagId))).toBe(1)
     })
 
     it('skips when candidate has not matured yet', async () => {
