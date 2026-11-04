@@ -1,5 +1,3 @@
-import { readdir, readFile } from 'node:fs/promises'
-import { join } from 'node:path'
 import { describe, expect, inject, it } from 'vitest'
 import type { ServiceName } from './global-setup.js'
 import { Api, eventually, loginAsAdmin } from './support/api.js'
@@ -457,19 +455,5 @@ describe('OEE across telemetry, work-center, production and performance', () => 
         })
       }
     }
-  })
-
-  // A service can fail in the background (a crashed stream consumer, a failed startup job)
-  // while every request still succeeds. Its error log is the only trace.
-  it('leaves no error in any service log', async () => {
-    const logDir = inject('logDir')
-    const errors: string[] = []
-    // The run folder also holds each service's working folder
-    for (const file of (await readdir(logDir)).filter(name => name.endsWith('.log'))) {
-      const lines = (await readFile(join(logDir, file), 'utf8')).split('\n')
-      errors.push(...lines.filter(line => line.includes('"level":"error"')))
-    }
-
-    expect(errors).toEqual([])
   })
 })

@@ -74,6 +74,12 @@ async function lastLines(file: string) {
   return log.trimEnd().split('\n').slice(-30).join('\n')
 }
 
+// The services log JSON lines in production mode
+async function errorLines(file: string) {
+  const log = await readFile(file, 'utf8')
+  return log.split('\n').filter(line => /"level":\s*"error"/.test(line))
+}
+
 // A line that is gone or written differently fails the run at once, so e2e never runs a broker
 // without its changes
 function replaceLine(config: string, line: RegExp, replacement: string) {
@@ -356,6 +362,9 @@ export default async function setup(project: TestProject) {
       ),
     ),
   )
+  // Every process or container run of the services, restarts included, so teardown sees how each
+  // one ended
+  const started = [...services.values()]
 
   let stopping = false
   const reportCrash = (service: Service) => {
@@ -387,6 +396,7 @@ export default async function setup(project: TestProject) {
       service = launchProcess(previous.name)
     }
     services.set(service.name, service)
+    started.push(service)
     await waitUntilReady(service)
     reportCrash(service)
   }
@@ -446,16 +456,45 @@ export default async function setup(project: TestProject) {
     ...Object.fromEntries([...serviceContainers].map(([name, c]) => [name, c.getId()])),
   })
 
+  // A service that exited on its own, or logged an error at any time from its start to its shutdown,
+  // fails the run. An error line is often the only trace of a failure no request saw, such as a
+  // crashed stream consumer or a failed startup job.
   return async () => {
-    const crashed = [...services.values()].filter(service => !service.running() && !service.stopped)
-    await stop()
-    if (crashed.length === 0) return
-    const reports = await Promise.all(
-      crashed.map(
-        async ({ name, logFile, closed }) =>
-          `${name} exited with ${await closed} while the tests ran. Last lines of ${logFile}:\n${await lastLines(logFile)}`,
-      ),
-    )
-    throw new Error(reports.join('\n\n'))
+    try {
+      const crashed = [...services.values()].filter(
+        service => !service.running() && !service.stopped,
+      )
+      await stop()
+      const exitReports = await Promise.all(
+        started.map(async service => {
+          const exit = await service.closed
+          // A stop ends the process by SIGTERM, or with code 0 once it has shut down. Any other end
+          // came from the service itself, even one that came as it was being stopped.
+          const stoppedCleanly = exit === 'code 0' || exit === 'signal SIGTERM'
+          if (stoppedCleanly && !crashed.includes(service)) return []
+          const when = crashed.includes(service)
+            ? 'while the tests ran'
+            : 'by the end of the run, which no stop ends with'
+          return [
+            `${service.name} exited with ${exit} ${when}. Last lines of ${service.logFile}:\n${await lastLines(service.logFile)}`,
+          ]
+        }),
+      )
+      const errorReports = await Promise.all(
+        names.map(async name => {
+          const logFile = resolve(runDir, `${name}.log`)
+          const errors = await errorLines(logFile)
+          return errors.length === 0
+            ? []
+            : [`${name} logged ${errors.length} error lines in ${logFile}:\n${errors.join('\n')}`]
+        }),
+      )
+      const reports = [...exitReports.flat(), ...errorReports.flat()]
+      if (reports.length > 0) throw new Error(reports.join('\n\n'))
+    } catch (err) {
+      // Vitest prints an error a global teardown throws, yet exits 0 for it
+      process.exitCode = 1
+      throw err
+    }
   }
 }
