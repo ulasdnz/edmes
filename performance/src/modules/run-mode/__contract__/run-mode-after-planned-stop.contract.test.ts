@@ -826,9 +826,11 @@ describe('One check holds the earliest pending end and hands over to the next pl
     // As if the first check had waited 23 hours: 2 of its 25 hours are left
     await testRedis.expire(checkKey(machine), 7_200)
 
-    await runDecisionTick(new Date(at('10:30:00').getTime() + 23 * 3_600_000))
+    const handedOverAt = new Date(at('10:30:00').getTime() + 23 * 3_600_000)
+    await runDecisionTick(handedOverAt)
 
-    expect(await storedCheck(machine)).toEqual(afterPlannedSince('10:50:00'))
+    // Pending from the handover, not from the first check's write
+    expect(await storedCheck(machine)).toEqual(afterPlannedSince('10:50:00', handedOverAt))
     expect(await testRedis.ttl(checkKey(machine))).toBeGreaterThan(89_900)
   })
 })
