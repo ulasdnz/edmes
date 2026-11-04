@@ -18,9 +18,6 @@ import { closeMqtt, getMqttClient, initMqtt } from './mqtt.js'
 import { checkDroppedMessages } from './mqtt-dropped.js'
 import { closeRedis, initRedis, redisClient, sharedClient } from './redis.js'
 
-// A developer's local .env stays out, so the tests decide the client id and session settings
-vi.mock('dotenv', () => ({ default: { config: vi.fn() } }))
-
 // Telemetry builds its Redis clients and reads MQTT_URL when their modules load, so Redis and the
 // brokers run before the imports above are evaluated. Both brokers publish their $SYS values every
 // second instead of every 10 s. The first holds at most 5 messages for a client that is away; the

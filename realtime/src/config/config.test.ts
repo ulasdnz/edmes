@@ -1,7 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('dotenv', () => ({ default: { config: vi.fn() } }))
-
 describe('RealtimeConfig.validation', () => {
   const originalEnv = process.env
 

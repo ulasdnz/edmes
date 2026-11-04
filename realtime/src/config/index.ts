@@ -1,18 +1,7 @@
-import dotenv from 'dotenv'
-import path from 'path'
-import { fileURLToPath } from 'url'
 import { z } from 'zod'
 
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
-
-const envPath = path.resolve(__dirname, '../../.env')
-if (process.env.NODE_ENV !== 'production') {
-  dotenv.config({ path: envPath })
-} else {
-  dotenv.config()
-}
-
+// Settings come from the environment only. The image and docker compose set them in a container;
+// the dev scripts load the service's .env with --env-file-if-exists.
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.coerce.number().default(3003),

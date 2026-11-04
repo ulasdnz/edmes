@@ -20,9 +20,6 @@ import { closeMqtt } from '../../lib/mqtt.js'
 import { closeRedis } from '../../lib/redis.js'
 import Tag from '../tag/tag.model.js'
 
-// A developer's local .env stays out, so the tests decide every address and setting
-vi.mock('dotenv', () => ({ default: { config: vi.fn() } }))
-
 // Telemetry reads its MongoDB, Redis and broker addresses when its modules load, so all three run
 // before the imports above are evaluated. MongoDB is a standalone server, as under compose, bound to a
 // fixed host port so that it comes back at the same address after a stop and a start. The broker
