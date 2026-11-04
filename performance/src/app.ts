@@ -43,7 +43,9 @@ const startServer = async (): Promise<void> => {
           await stopPlannedStopScheduler()
           await stopBootReconciliation()
           await stopRefresh()
-          await Promise.all([disconnectDB(), closeRedis(), shutdownSubscribers()])
+          // A handler still running needs its connections, so the consumer drains before they close
+          await shutdownSubscribers()
+          await Promise.all([disconnectDB(), closeRedis()])
           logger.info('Data connections closed', { event: 'server.shutdown.completed' })
           process.exit(0)
         } catch (err) {

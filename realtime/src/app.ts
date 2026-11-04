@@ -40,7 +40,9 @@ const startServer = async (): Promise<void> => {
         await closeSocketServer()
         logger.info('HTTP server closed', { event: 'server.http.closed' })
 
-        await Promise.all([closeRedis(), shutdownSubscribers()])
+        // A handler still running needs Redis, so the consumer drains before the connections close
+        await shutdownSubscribers()
+        await closeRedis()
         logger.info('Connections closed', { event: 'server.shutdown.completed' })
         process.exit(0)
       } catch (err) {
