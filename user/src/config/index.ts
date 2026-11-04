@@ -67,6 +67,8 @@ const envSchema = z
       .refine(value => value === undefined || (value.length >= 8 && value.length <= 20), {
         message: 'SYSTEM_ADMIN_PASSWORD must be 8-20 characters when provided',
       }),
+    // install.sh sets it when it generated SYSTEM_ADMIN_PASSWORD and printed it
+    SYSTEM_ADMIN_MUST_CHANGE_PASSWORD: z.enum(['true', 'false']).optional(),
   })
   .transform(data => ({
     ...data,
@@ -74,6 +76,7 @@ const envSchema = z
       data.MONGO_INDEX_STRATEGY ?? (data.NODE_ENV === 'production' ? 'ensure' : 'off'),
     USER_DELETION_RETENTION_MS: data.USER_DELETION_RETENTION_DAYS * 24 * 60 * 60 * 1000,
     SYSTEM_ADMIN_BOOTSTRAP_ENABLED: (data.SYSTEM_ADMIN_BOOTSTRAP_ENABLED ?? 'true') === 'true',
+    SYSTEM_ADMIN_MUST_CHANGE_PASSWORD: data.SYSTEM_ADMIN_MUST_CHANGE_PASSWORD === 'true',
   }))
   .refine(
     data =>

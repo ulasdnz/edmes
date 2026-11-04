@@ -77,9 +77,11 @@ if [ -z "$(current .env SYSTEM_ADMIN_PASSWORD)" ]; then
     read -r -s -p "  System admin password, 8 to 20 characters (Enter generates one): " password
     echo
   fi
+  generated=false
   if [ -z "$password" ]; then
     password=$(random_hex 8)
-    shown+=("System admin password (user system): $password")
+    generated=true
+    shown+=("System admin password (user system, to be changed at the first sign-in): $password")
   fi
   [ "${#password}" -ge 8 ] && [ "${#password}" -le 20 ] ||
     die "the system admin password needs 8 to 20 characters"
@@ -87,6 +89,8 @@ if [ -z "$(current .env SYSTEM_ADMIN_PASSWORD)" ]; then
     *"'"* | *[[:space:]]*) die "the system admin password cannot hold quotes or spaces" ;;
   esac
   set_value .env SYSTEM_ADMIN_PASSWORD "'$password'"
+  # Printed on this screen, so the system admin replaces it at the first sign-in
+  [ "$generated" = false ] || set_value .env SYSTEM_ADMIN_MUST_CHANGE_PASSWORD true
   echo "  SYSTEM_ADMIN_PASSWORD: set"
 fi
 

@@ -152,6 +152,7 @@ services:
       - SYSTEM_ADMIN_BOOTSTRAP_ENABLED=${SYSTEM_ADMIN_BOOTSTRAP_ENABLED:-true}
       - SYSTEM_ADMIN_EMAIL=${SYSTEM_ADMIN_EMAIL:-system.admin@example.local}
       - SYSTEM_ADMIN_PASSWORD=${SYSTEM_ADMIN_PASSWORD:-}
+      - SYSTEM_ADMIN_MUST_CHANGE_PASSWORD=${SYSTEM_ADMIN_MUST_CHANGE_PASSWORD:-false}
     depends_on:
       mongodb:
         condition: service_healthy

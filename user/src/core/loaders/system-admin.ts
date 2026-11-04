@@ -91,6 +91,10 @@ const ensureSystemAdminUser = async (roleId: string): Promise<void> => {
   if (!existingUser) {
     const password = config.SYSTEM_ADMIN_PASSWORD ?? SYSTEM_ADMIN_DEV_PASSWORD
     const hashedPassword = await bcrypt.hash(password, 10)
+    // A password someone chose stays; the default one and a generated one are replaced at first
+    // sign-in, since both were shown or are known
+    const mustChangePassword =
+      !config.SYSTEM_ADMIN_PASSWORD || config.SYSTEM_ADMIN_MUST_CHANGE_PASSWORD
 
     const user = await User.create({
       username: SYSTEM_ADMIN_USERNAME,
@@ -100,7 +104,7 @@ const ensureSystemAdminUser = async (roleId: string): Promise<void> => {
       password: hashedPassword,
       roles: [roleId],
       isActivated: true,
-      mustChangePassword: !config.SYSTEM_ADMIN_PASSWORD,
+      mustChangePassword,
     })
 
     await emitUserCreated(user._id.toString())
@@ -109,7 +113,7 @@ const ensureSystemAdminUser = async (roleId: string): Promise<void> => {
       event: 'bootstrap.system_admin.user_created',
       userId: user._id.toString(),
       username: SYSTEM_ADMIN_USERNAME,
-      mustChangePassword: !config.SYSTEM_ADMIN_PASSWORD,
+      mustChangePassword,
     })
 
     return

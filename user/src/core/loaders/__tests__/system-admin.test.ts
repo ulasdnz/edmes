@@ -1,5 +1,6 @@
 import { PRIVILEGES } from '@mes/privileges'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { config } from '../../../config/index.js'
 import { SYSTEM_ADMIN_ROLE_NAME, SYSTEM_ADMIN_USERNAME } from '../../../constants/system-admin.js'
 import Role from '../../../modules/role/role.model.js'
 import User from '../../../modules/user/user.model.js'
@@ -186,5 +187,43 @@ describe('system admin bootstrap', () => {
 
     const userAfter = await User.findOne({ username: systemUsername }).select('+password').lean()
     expect(userAfter!.password).toBe(passwordBefore)
+  })
+
+  describe('password change at the first sign-in', () => {
+    const { SYSTEM_ADMIN_PASSWORD, SYSTEM_ADMIN_MUST_CHANGE_PASSWORD } = config
+    const mustChange = async () =>
+      (await User.findOne({ username: systemUsername }).lean())?.mustChangePassword
+
+    afterEach(() => {
+      config.SYSTEM_ADMIN_PASSWORD = SYSTEM_ADMIN_PASSWORD
+      config.SYSTEM_ADMIN_MUST_CHANGE_PASSWORD = SYSTEM_ADMIN_MUST_CHANGE_PASSWORD
+    })
+
+    it('is required for the default password', async () => {
+      config.SYSTEM_ADMIN_PASSWORD = undefined
+      config.SYSTEM_ADMIN_MUST_CHANGE_PASSWORD = false
+
+      await initLoaders()
+
+      expect(await mustChange()).toBe(true)
+    })
+
+    it('is required for a password install.sh generated', async () => {
+      config.SYSTEM_ADMIN_PASSWORD = 'generated-pass1'
+      config.SYSTEM_ADMIN_MUST_CHANGE_PASSWORD = true
+
+      await initLoaders()
+
+      expect(await mustChange()).toBe(true)
+    })
+
+    it('is not required for a password someone chose', async () => {
+      config.SYSTEM_ADMIN_PASSWORD = 'chosen-pass1'
+      config.SYSTEM_ADMIN_MUST_CHANGE_PASSWORD = false
+
+      await initLoaders()
+
+      expect(await mustChange()).toBe(false)
+    })
   })
 })

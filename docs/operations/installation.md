@@ -24,7 +24,8 @@ sudo /opt/aimes/install.sh
 2. Creates `/opt/aimes/.env` from `.env.example`, readable by its owner only, and fills every
    empty secret with a random value. A value already there is never changed.
 3. Asks for the system admin's password. Press Enter to have one generated, or pass it in:
-   `sudo SYSTEM_ADMIN_PASSWORD='...' /opt/aimes/install.sh`.
+   `sudo SYSTEM_ADMIN_PASSWORD='...' /opt/aimes/install.sh`. A generated password has to be
+   changed at the first sign-in; one you chose does not.
 4. Pulls the images of the package's version, or loads `images.tar.gz` when it is in the package.
 5. Starts everything and waits until every service reports healthy.
 
