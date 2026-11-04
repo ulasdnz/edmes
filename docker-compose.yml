@@ -1,3 +1,10 @@
+# The project name keeps the volume names the same wherever these files are unpacked
+name: aimes
+
+# The six service images are published by the release workflow as
+# ghcr.io/ulasdnz/aimes-<service>:<version>, and install.sh sets AIMES_VERSION from the release
+# VERSION file. In a source checkout docker-compose.override.yml builds them instead, as :dev.
+
 # Every image is pinned by exact tag and digest, so each start runs the same one; Dependabot
 # (docker-compose) proposes newer patches and minors, majors are upgraded by hand
 
@@ -127,9 +134,7 @@ services:
           memory: 960M
 
   user:
-    build:
-      context: .
-      dockerfile: user/Dockerfile
+    image: ghcr.io/ulasdnz/aimes-user:${AIMES_VERSION:-dev}
     container_name: user_app
     restart: unless-stopped
     logging: *logging
@@ -183,9 +188,7 @@ services:
           memory: 512M
 
   telemetry:
-    build:
-      context: .
-      dockerfile: telemetry/Dockerfile
+    image: ghcr.io/ulasdnz/aimes-telemetry:${AIMES_VERSION:-dev}
     container_name: telemetry_app
     restart: unless-stopped
     logging: *logging
@@ -231,9 +234,7 @@ services:
           memory: 512M
 
   work-center:
-    build:
-      context: .
-      dockerfile: work-center/Dockerfile
+    image: ghcr.io/ulasdnz/aimes-work-center:${AIMES_VERSION:-dev}
     container_name: work_center_app
     restart: unless-stopped
     logging: *logging
@@ -274,9 +275,7 @@ services:
           memory: 512M
 
   production:
-    build:
-      context: .
-      dockerfile: production/Dockerfile
+    image: ghcr.io/ulasdnz/aimes-production:${AIMES_VERSION:-dev}
     container_name: production_app
     restart: unless-stopped
     logging: *logging
@@ -351,9 +350,7 @@ services:
           memory: 512M
 
   performance:
-    build:
-      context: .
-      dockerfile: performance/Dockerfile
+    image: ghcr.io/ulasdnz/aimes-performance:${AIMES_VERSION:-dev}
     container_name: performance_app
     restart: unless-stopped
     logging: *logging
@@ -394,9 +391,7 @@ services:
           memory: 512M
 
   realtime:
-    build:
-      context: .
-      dockerfile: realtime/Dockerfile
+    image: ghcr.io/ulasdnz/aimes-realtime:${AIMES_VERSION:-dev}
     container_name: realtime_app
     restart: unless-stopped
     logging: *logging

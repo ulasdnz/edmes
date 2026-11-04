@@ -1,0 +1,28 @@
+# Development only: builds the six service images from this checkout, tagged :dev. docker compose
+# merges this file into docker-compose.yml on its own; the release package leaves it out, so an
+# install runs the published images.
+services:
+  user:
+    build:
+      context: .
+      dockerfile: user/Dockerfile
+  telemetry:
+    build:
+      context: .
+      dockerfile: telemetry/Dockerfile
+  work-center:
+    build:
+      context: .
+      dockerfile: work-center/Dockerfile
+  production:
+    build:
+      context: .
+      dockerfile: production/Dockerfile
+  performance:
+    build:
+      context: .
+      dockerfile: performance/Dockerfile
+  realtime:
+    build:
+      context: .
+      dockerfile: realtime/Dockerfile

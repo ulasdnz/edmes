@@ -1,0 +1,68 @@
+name: Release
+
+# A version tag publishes that version: the six service images on GHCR and the install package on
+# the GitHub release. Tag a commit on main that passed CI.
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: read
+
+# Actions are pinned to commit SHAs, as in ci.yml. The images are built and pushed with the
+# runner's own Docker CLI, so no third-party action handles the registry token.
+jobs:
+  images:
+    name: Image ${{ matrix.service }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        service: [user, telemetry, work-center, production, performance, realtime]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build and push
+        env:
+          SERVICE: ${{ matrix.service }}
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          version=${GITHUB_REF_NAME#v}
+          image=ghcr.io/ulasdnz/aimes-$SERVICE:$version
+          echo "$TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
+          # A published version is never replaced: the same tag always names the same image
+          if docker manifest inspect "$image" > /dev/null 2>&1; then
+            echo "$image is already published" >&2
+            exit 1
+          fi
+          docker build -f "$SERVICE/Dockerfile" \
+            --label "org.opencontainers.image.source=https://github.com/$REPOSITORY" \
+            --label "org.opencontainers.image.version=$version" \
+            -t "$image" .
+          docker push "$image"
+
+  package:
+    name: Install package
+    needs: images
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version=${GITHUB_REF_NAME#v}
+          package=$(scripts/package-release.sh "$version")
+          gh release create "$GITHUB_REF_NAME" "$package" \
+            --repo "$GITHUB_REPOSITORY" --title "AIMES $version" --generate-notes

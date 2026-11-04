@@ -43,6 +43,8 @@ updates:
     ignore:
       - dependency-name: '*'
         update-types: ['version-update:semver-major']
+      # The six service images are this project's own, versioned by its releases
+      - dependency-name: 'ghcr.io/ulasdnz/aimes-*'
     groups:
       infrastructure:
         patterns: ['*']

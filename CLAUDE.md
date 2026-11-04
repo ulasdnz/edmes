@@ -106,7 +106,7 @@ emitJobOrderUpdated(jobOrderId, workCenterId, previousWorkCenterId?: string)
 3. Add to `pnpm-workspace.yaml`
 4. Add to root `tsconfig.json` references
 5. Add Dockerfile following `user/Dockerfile` pattern (two-phase build)
-6. Add service to `docker-compose.yml` with Traefik labels, healthcheck, and named volumes
+6. Add service to `docker-compose.yml` with `image: ghcr.io/ulasdnz/aimes-<service>:${AIMES_VERSION:-dev}`, Traefik labels, healthcheck, and named volumes; put its `build` in `docker-compose.override.yml` and add it to the matrix in `.github/workflows/release.yml`
 7. Create event stream `events.<service>` and register handlers in consuming services
 8. Reuse shared packages — do not duplicate auth, cache, logging, error handling, or health check logic
 
@@ -229,6 +229,7 @@ Types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`
 ## Docker
 
 - Two-phase build: `tsc -b` for packages, then service-level `tsc`.
+- Releases: a `vX.Y.Z` tag runs `.github/workflows/release.yml`, which pushes the six images to GHCR and attaches the install package. `install.sh` installs and upgrades a server; see `docs/operations/installation.md`.
 - `.tsbuildinfo` excluded via `.dockerignore`.
 - `node-linker=hoisted` in Docker `.npmrc` for flat module resolution.
 - Named volumes persist all stateful data: MongoDB, Redis, user uploads, Loki, Grafana, Alloy positions.
