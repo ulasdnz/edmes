@@ -89,10 +89,10 @@ async function startPlant() {
 }
 
 describe('a telemetry outage the MQTT broker bridges', () => {
-  // The machine stops, telemetry goes down before the debounce runs out, and the machine runs
-  // again while telemetry is still down. Telemetry comes back as a new process, so the running
+  // The machine stops, telemetry goes down once performance has opened the stop, and the machine
+  // runs again while telemetry is still down. Telemetry comes back as a new process, so the running
   // signal reaches it only if the broker kept the session it queued the signal for.
-  it('records a stop whose running signal waited at the broker while telemetry was down', async () => {
+  it('closes a stop with the running signal that waited at the broker while telemetry was down', async () => {
     const { api } = await loginAsAdmin()
     const tagType = await api.post<Created>('telemetry', '/api/v1/tag-types', {
       name: 'Outage press signals',
@@ -123,31 +123,30 @@ describe('a telemetry outage the MQTT broker bridges', () => {
       { runModeDebounceMs: 60_000 },
     )
 
+    const listStops = () =>
+      api.get<Array<{ startAt: string; endAt: string | null }>>(
+        'performance',
+        `/api/v1/unplanned-stops?workCenterId=${press._id}`,
+      )
     const t0 = new Date()
-    const t1 = new Date(t0.getTime() + 90_000)
     await publishSamples('outage-press', 'run', [{ value: 0, time: t0 }])
-    // Telemetry passes each sample it stores on to performance
-    await eventually(
-      () => latestSample(runMode._id),
-      latest => latest?.occurredAt === t0.toISOString(),
+    // The stop opens once the debounce runs out, which shows performance took the stopped sample.
+    // Stored by telemetry is not enough: performance may learn of the new work center later, and
+    // with telemetry down by then it would start from whatever sample is latest when it comes back
+    await sleep(t0.getTime() + 60_000 - Date.now())
+    await eventually(listStops, list =>
+      list.some(stop => stop.startAt === t0.toISOString() && stop.endAt === null),
     )
 
     await stopService('telemetry')
+    const t1 = new Date()
     try {
-      await sleep(t1.getTime() - Date.now())
       await publishSamples('outage-press', 'run', [{ value: 1, time: t1 }])
     } finally {
       await startService('telemetry')
     }
 
-    const stops = await eventually(
-      () =>
-        api.get<Array<{ startAt: string; endAt: string | null }>>(
-          'performance',
-          `/api/v1/unplanned-stops?workCenterId=${press._id}`,
-        ),
-      list => list.some(stop => stop.endAt !== null),
-    )
+    const stops = await eventually(listStops, list => list.some(stop => stop.endAt !== null))
     expect(stops.map(({ startAt, endAt }) => ({ startAt, endAt }))).toEqual([
       { startAt: t0.toISOString(), endAt: t1.toISOString() },
     ])
