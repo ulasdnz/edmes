@@ -3,7 +3,7 @@
 ## Summary
 
 The Performance service owns OEE, productivity, quality aggregation, and stop
-classification for Aimes core MES.
+classification for EDMES core MES.
 
 The first version must support a solid core MES flow:
 
@@ -49,7 +49,7 @@ The first version must support a solid core MES flow:
 
 7. Deployment scoping stays simple.
 
-   Aimes runs as one on-premises instance per factory installation. Do not add
+   EDMES runs as one on-premises instance per factory installation. Do not add
    deployment-scope fields to domain models, indexes, or API contracts.
 
 ## Service Ownership
@@ -159,7 +159,7 @@ The timeline response must include the baseline standard effective at `from`
 (`validFrom <= from`) and every later standard revision whose `validFrom` falls inside
 `(from, to]`.
 
-Aimes Production already blocks active/overlapping job orders on the same work center.
+EDMES Production already blocks active/overlapping job orders on the same work center.
 Performance can rely on that invariant and does not need to add a duplicate
 overlapping job order guard.
 

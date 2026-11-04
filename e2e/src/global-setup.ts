@@ -190,7 +190,7 @@ function followContainer(name: ServiceName, id: string, runDir: string, since?: 
 
 // The service's image, built from its Dockerfile as the deployment builds it
 async function buildImage(name: ServiceName, runDir: string) {
-  const tag = `aimes-e2e-${name}`
+  const tag = `edmes-e2e-${name}`
   const log = createWriteStream(resolve(runDir, `${name}.image-build.log`))
   const build = spawn('docker', ['build', '-f', `${name}/Dockerfile`, '-t', tag, '.'], {
     cwd: ROOT,

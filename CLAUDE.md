@@ -106,7 +106,7 @@ emitJobOrderUpdated(jobOrderId, workCenterId, previousWorkCenterId?: string)
 3. Add to `pnpm-workspace.yaml`
 4. Add to root `tsconfig.json` references
 5. Add Dockerfile following `user/Dockerfile` pattern (two-phase build)
-6. Add service to `docker-compose.yml` with `image: ghcr.io/ulasdnz/aimes-<service>:${AIMES_VERSION:-dev}`, Traefik labels, healthcheck, and named volumes; put its `build` in `docker-compose.override.yml` and add it to the matrix in `.github/workflows/release.yml`
+6. Add service to `docker-compose.yml` with `image: ghcr.io/ulasdnz/edmes-<service>:${EDMES_VERSION:-dev}`, Traefik labels, healthcheck, and named volumes; put its `build` in `docker-compose.override.yml` and add it to the matrix in `.github/workflows/release.yml`
 7. Create event stream `events.<service>` and register handlers in consuming services
 8. Reuse shared packages — do not duplicate auth, cache, logging, error handling, or health check logic
 

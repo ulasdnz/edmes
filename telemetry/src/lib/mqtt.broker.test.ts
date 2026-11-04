@@ -561,8 +561,8 @@ describe('Mqtt.sessionLost', () => {
     expect(logged(error, SESSION_LOST_EVENT)).toEqual([
       {
         event: SESSION_LOST_EVENT,
-        clientId: 'aimes-telemetry',
-        previousClientId: 'aimes-telemetry',
+        clientId: 'edmes-telemetry',
+        previousClientId: 'edmes-telemetry',
       },
     ])
   })
@@ -573,7 +573,7 @@ describe('TelemetryConfig.mqttSession', () => {
     await initMqtt(onMessage)
 
     expect(getMqttClient().options).toMatchObject({
-      clientId: 'aimes-telemetry',
+      clientId: 'edmes-telemetry',
       clean: false,
       properties: { sessionExpiryInterval: 86400 },
     })

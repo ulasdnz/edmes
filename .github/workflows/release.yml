@@ -34,7 +34,7 @@ jobs:
           REPOSITORY: ${{ github.repository }}
         run: |
           version=${GITHUB_REF_NAME#v}
-          image=ghcr.io/ulasdnz/aimes-$SERVICE:$version
+          image=ghcr.io/ulasdnz/edmes-$SERVICE:$version
           echo "$TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
           # A published version is never replaced: the same tag always names the same image
           if docker manifest inspect "$image" > /dev/null 2>&1; then
@@ -65,4 +65,4 @@ jobs:
           version=${GITHUB_REF_NAME#v}
           package=$(scripts/package-release.sh "$version")
           gh release create "$GITHUB_REF_NAME" "$package" \
-            --repo "$GITHUB_REPOSITORY" --title "AIMES $version" --generate-notes
+            --repo "$GITHUB_REPOSITORY" --title "EDMES $version" --generate-notes

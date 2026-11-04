@@ -196,7 +196,7 @@ the ceiling allows therefore ends with the broker dropping new messages. The bro
 back, and a Grafana rule alerts on it.
 
 A session that expires takes its whole queue with it, and the broker counts none of it as dropped. In
-a test with a 5-second session, the broker logged `Expiring client aimes-telemetry due to timeout.`
+a test with a 5-second session, the broker logged `Expiring client edmes-telemetry due to timeout.`
 and deleted the 20 queued messages. The dropped counter stayed at 0, and telemetry reconnected with
 `sessionPresent=false` and received nothing.
 

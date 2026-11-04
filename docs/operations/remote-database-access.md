@@ -1,6 +1,6 @@
 # Remote Database Access (SSH Tunnel)
 
-How to reach MongoDB, Redis and the Traefik dashboard of an on-prem AIMES installation from your own machine.
+How to reach MongoDB, Redis and the Traefik dashboard of an on-prem EDMES installation from your own machine.
 
 ## Why the ports are not public
 
@@ -30,7 +30,7 @@ Compass  -> localhost:27017 ==SSH==> sshd -> 127.0.0.1:27017 -> mongodb containe
 
 `ssh -L` opens a port on your laptop and forwards everything sent to it through the encrypted SSH connection to an address **as seen from the server**. For the server, the connection comes from its own loopback, so the `127.0.0.1` binding allows it.
 
-The SSH login is the access control: whoever can SSH into the server can reach the databases. Nothing in AIMES needs to change for this to work.
+The SSH login is the access control: whoever can SSH into the server can reach the databases. Nothing in EDMES needs to change for this to work.
 
 ## What you need
 

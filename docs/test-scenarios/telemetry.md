@@ -696,7 +696,7 @@
 > amended in Task 11's fix round: the session now outlives the queue ceiling, so a longer outage ends with counted drops instead of a session expiry that counts nothing; the default became 86400 s. The intake bound was added.
 
 ### happy path
-- `MQTT_CLIENT_ID`, `MQTT_SESSION_EXPIRY_SECONDS` and `MQTT_MAX_UNSTORED_MESSAGES` not set → telemetry connects with client id `aimes-telemetry` (no process id in it) and a session expiry of 86400 s, and bounds its intake at 20 messages
+- `MQTT_CLIENT_ID`, `MQTT_SESSION_EXPIRY_SECONDS` and `MQTT_MAX_UNSTORED_MESSAGES` not set → telemetry connects with client id `edmes-telemetry` (no process id in it) and a session expiry of 86400 s, and bounds its intake at 20 messages
 - both set → telemetry connects with the configured client id and session expiry
 
 ### constraints

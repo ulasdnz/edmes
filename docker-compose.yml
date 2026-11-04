@@ -1,8 +1,8 @@
 # The project name keeps the volume names the same wherever these files are unpacked
-name: aimes
+name: edmes
 
 # The six service images are published by the release workflow as
-# ghcr.io/ulasdnz/aimes-<service>:<version>, and install.sh sets AIMES_VERSION from the release
+# ghcr.io/ulasdnz/edmes-<service>:<version>, and install.sh sets EDMES_VERSION from the release
 # VERSION file. In a source checkout docker-compose.override.yml builds them instead, as :dev.
 
 # Every image is pinned by exact tag and digest, so each start runs the same one; Dependabot
@@ -134,7 +134,7 @@ services:
           memory: 960M
 
   user:
-    image: ghcr.io/ulasdnz/aimes-user:${AIMES_VERSION:-dev}
+    image: ghcr.io/ulasdnz/edmes-user:${EDMES_VERSION:-dev}
     container_name: user_app
     restart: unless-stopped
     logging: *logging
@@ -188,7 +188,7 @@ services:
           memory: 512M
 
   telemetry:
-    image: ghcr.io/ulasdnz/aimes-telemetry:${AIMES_VERSION:-dev}
+    image: ghcr.io/ulasdnz/edmes-telemetry:${EDMES_VERSION:-dev}
     container_name: telemetry_app
     restart: unless-stopped
     logging: *logging
@@ -234,7 +234,7 @@ services:
           memory: 512M
 
   work-center:
-    image: ghcr.io/ulasdnz/aimes-work-center:${AIMES_VERSION:-dev}
+    image: ghcr.io/ulasdnz/edmes-work-center:${EDMES_VERSION:-dev}
     container_name: work_center_app
     restart: unless-stopped
     logging: *logging
@@ -275,7 +275,7 @@ services:
           memory: 512M
 
   production:
-    image: ghcr.io/ulasdnz/aimes-production:${AIMES_VERSION:-dev}
+    image: ghcr.io/ulasdnz/edmes-production:${EDMES_VERSION:-dev}
     container_name: production_app
     restart: unless-stopped
     logging: *logging
@@ -314,7 +314,7 @@ services:
           memory: 512M
 
   performance:
-    image: ghcr.io/ulasdnz/aimes-performance:${AIMES_VERSION:-dev}
+    image: ghcr.io/ulasdnz/edmes-performance:${EDMES_VERSION:-dev}
     container_name: performance_app
     restart: unless-stopped
     logging: *logging
@@ -355,7 +355,7 @@ services:
           memory: 512M
 
   realtime:
-    image: ghcr.io/ulasdnz/aimes-realtime:${AIMES_VERSION:-dev}
+    image: ghcr.io/ulasdnz/edmes-realtime:${EDMES_VERSION:-dev}
     container_name: realtime_app
     restart: unless-stopped
     logging: *logging

@@ -1,8 +1,8 @@
-# AIMES
+# EDMES
 
-[![CI](https://github.com/ulasdnz/aimes/actions/workflows/ci.yml/badge.svg)](https://github.com/ulasdnz/aimes/actions/workflows/ci.yml)
+[![CI](https://github.com/ulasdnz/edmes/actions/workflows/ci.yml/badge.svg)](https://github.com/ulasdnz/edmes/actions/workflows/ci.yml)
 
-AIMES is the backend of a Manufacturing Execution System that runs on a single server inside a
+EDMES is the backend of a Manufacturing Execution System that runs on a single server inside a
 factory, with no cloud dependency. Machines report over MQTT; six Node.js/TypeScript services turn
 those signals and the operators' input into production records, machine stops and OEE, and push
 changes to the clients in real time.

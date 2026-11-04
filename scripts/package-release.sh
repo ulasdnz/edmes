@@ -10,7 +10,7 @@ cd "$(dirname "$0")/.."
 
 version=${1:?usage: scripts/package-release.sh <version> [--offline]}
 mode=${2:-}
-stage=dist/aimes
+stage=dist/edmes
 
 rm -rf "$stage"
 mkdir -p "$stage"
@@ -25,9 +25,9 @@ cp docs/operations/installation.md "$stage/INSTALL.md"
 echo "$version" > "$stage/VERSION"
 chmod +x "$stage/install.sh"
 
-name=aimes-$version.tar.gz
+name=edmes-$version.tar.gz
 if [ "$mode" = --offline ]; then
-  refs=$(grep -E '^ +image: ' docker-compose.yml | awk '{print $2}' | sed "s/\${AIMES_VERSION:-dev}/$version/")
+  refs=$(grep -E '^ +image: ' docker-compose.yml | awk '{print $2}' | sed "s/\${EDMES_VERSION:-dev}/$version/")
   names=()
   for ref in $refs; do
     docker image inspect "$ref" > /dev/null 2>&1 || docker pull "$ref" >&2
@@ -39,8 +39,8 @@ if [ "$mode" = --offline ]; then
     names+=("$name")
   done
   docker save "${names[@]}" | gzip > "$stage/images.tar.gz"
-  name=aimes-$version-offline.tar.gz
+  name=edmes-$version-offline.tar.gz
 fi
 
-tar -czf "dist/$name" -C dist aimes
+tar -czf "dist/$name" -C dist edmes
 echo "dist/$name"

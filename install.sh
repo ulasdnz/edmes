@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Installs or upgrades AIMES on this server and starts it. Running it again is safe: it fills only
+# Installs or upgrades EDMES on this server and starts it. Running it again is safe: it fills only
 # the settings that are still empty, so an upgrade keeps the secrets of the first install.
 #
 #   sudo ./install.sh                                    first install, or an upgrade
@@ -96,7 +96,7 @@ fi
 
 if [ -f VERSION ]; then
   version=$(tr -d '[:space:]' < VERSION)
-  set_value .env AIMES_VERSION "$version"
+  set_value .env EDMES_VERSION "$version"
   if [ -f images.tar.gz ]; then
     echo "Loading the images from images.tar.gz"
     docker load -i images.tar.gz
@@ -104,7 +104,7 @@ if [ -f VERSION ]; then
     echo "Pulling the images of version $version"
     docker compose pull
   fi
-  echo "Starting AIMES $version"
+  echo "Starting EDMES $version"
   # Every image is here by now; a missing one fails at once instead of reaching for the internet
   docker compose up -d --pull never --wait --wait-timeout 300
 else
@@ -114,14 +114,14 @@ else
     set_value telemetry/.env MQTT_PASSWORD "$(current .env MQTT_PASSWORD)"
     echo "  telemetry/.env MQTT_PASSWORD: copied from .env"
   fi
-  echo "Building and starting AIMES from this checkout"
+  echo "Building and starting EDMES from this checkout"
   docker compose up -d --build --wait --wait-timeout 600
 fi
 
 host=$(hostname -I 2> /dev/null | awk '{print $1}') || true
 host=${host:-this-server}
 echo
-echo "AIMES $version is running"
+echo "EDMES $version is running"
 echo "  Web and API:  http://$host/"
 echo "  Grafana:      http://$host:3001/"
 echo "  MQTT broker:  $host:1883"
