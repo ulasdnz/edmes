@@ -233,5 +233,5 @@ Types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`
 - `.tsbuildinfo` excluded via `.dockerignore`.
 - `node-linker=hoisted` in Docker `.npmrc` for flat module resolution.
 - Named volumes persist all stateful data: MongoDB, Redis, user uploads, Loki, Grafana, Alloy positions.
-- All infra services have healthchecks. `depends_on` uses `condition: service_healthy`.
+- All infra services have healthchecks. `depends_on` uses `condition: service_healthy`. The exception is Loki: its image has no shell, so Alloy's healthcheck also asks Loki's `/ready`, and Loki's dependents wait for `service_started`.
 - Loki labels: only `level` (from JSON) + `service` (from Docker Compose metadata) — query everything else via `| json` in LogQL.
