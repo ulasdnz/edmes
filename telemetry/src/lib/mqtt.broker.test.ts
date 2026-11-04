@@ -1,4 +1,4 @@
-import { setupMongoTestContainer } from '@mes/testing'
+import { setupMongoDatabase } from '@mes/testing'
 import mongoose from 'mongoose'
 import mqtt from 'mqtt'
 import {
@@ -49,7 +49,7 @@ const { redis, broker, queueingBroker } = await vi.hoisted(async () => {
 })
 
 // The stores of the intake tests write to a real MongoDB
-setupMongoTestContainer()
+setupMongoDatabase()
 
 const QUEUEING_BROKER_URL = `mqtt://127.0.0.1:${queueingBroker.getMappedPort(1883)}`
 const DROPPED_TOPIC = '$SYS/broker/publish/messages/dropped'

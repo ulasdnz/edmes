@@ -13,6 +13,10 @@
     "./images": {
       "types": "./src/images.ts",
       "import": "./src/images.ts"
+    },
+    "./mongo-server": {
+      "types": "./src/mongo-server.ts",
+      "import": "./src/mongo-server.ts"
     }
   },
   "scripts": {},

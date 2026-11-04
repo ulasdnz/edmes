@@ -1,26 +1,21 @@
-import { MongoDBContainer, type StartedMongoDBContainer } from '@testcontainers/mongodb'
+import { randomUUID } from 'node:crypto'
 import mongoose from 'mongoose'
-import { afterAll, afterEach, beforeAll } from 'vitest'
-import { MONGO_ENVIRONMENT, MONGO_IMAGE } from './images.js'
+import { afterAll, afterEach, beforeAll, inject } from 'vitest'
+import './provided-context.js'
 
-let mongoContainer: StartedMongoDBContainer
-
-export function setupMongoTestContainer(image = MONGO_IMAGE, timeoutMs = 120_000): void {
+// Connects the test file to a database of its own on the MongoDB the package's global setup started
+// (mongo-server.ts), empties its collections after each test and drops the database once the file
+// is done, so the files running in parallel never see each other's data
+export function setupMongoDatabase(): void {
   beforeAll(async () => {
-    mongoContainer = await new MongoDBContainer(image).withEnvironment(MONGO_ENVIRONMENT).start()
-
-    let uri = mongoContainer.getConnectionString()
-    if (!uri.includes('directConnection=true')) {
-      uri += uri.includes('?') ? '&directConnection=true' : '?directConnection=true'
-    }
-    uri = uri.replace('localhost', '127.0.0.1')
-
-    await mongoose.connect(uri)
-  }, timeoutMs)
+    await mongoose.connect(inject('mongoUri'), {
+      dbName: `test_${randomUUID().replaceAll('-', '')}`,
+    })
+  })
 
   afterAll(async () => {
+    if (mongoose.connection.readyState === 1) await mongoose.connection.dropDatabase()
     await mongoose.disconnect()
-    await mongoContainer.stop()
   })
 
   afterEach(async () => {

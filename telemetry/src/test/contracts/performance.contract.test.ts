@@ -2,7 +2,7 @@
 // run-mode-telemetry.client.ts. Performance stubs these endpoints in its own tests, so this test
 // feeds samples through the real ingestion pipeline and asserts what the real endpoints answer.
 import { INTERNAL_TOKEN_HEADER } from '@mes/auth'
-import { setupMongoTestContainer } from '@mes/testing'
+import { setupMongoDatabase } from '@mes/testing'
 import type { Express } from 'express'
 import { Types } from 'mongoose'
 import request from 'supertest'
@@ -11,7 +11,7 @@ import { initExpress } from '../../core/loaders/express.js'
 import { ingestValue } from '../../modules/ingestion/ingestion.pipeline.js'
 import Tag from '../../modules/tag/tag.model.js'
 
-setupMongoTestContainer()
+setupMongoDatabase()
 
 const INTERNAL_TOKEN = process.env.INTERNAL_API_TOKEN as string
 const at = (minute: number, second = 0) => new Date(Date.UTC(2026, 9, 28, 6, minute, second))

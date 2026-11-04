@@ -208,7 +208,7 @@ Types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`
 
 ## Testing
 
-- **Unit tests**: Vitest + `testcontainers` (real MongoDB in Docker via `@testcontainers/mongodb`). Files: `src/**/*.{test,spec}.ts`. Setup in each service's `src/test/setup.ts` or via the shared `setupMongoTestContainer` helper in `@mes/testing`.
+- **Unit tests**: Vitest + `testcontainers` (real MongoDB in Docker via `@testcontainers/mongodb`). Files: `src/**/*.{test,spec}.ts`. One MongoDB per package run: the Vitest config's `globalSetup: ['@mes/testing/mongo-server']` starts it, and `setupMongoDatabase()` from `@mes/testing` (in each service's `src/test/setup.ts`, or in the test file) gives every test file a database of its own on it. A test that stops or restarts MongoDB starts its own container instead.
 - **Contract tests**: Vitest + `testcontainers`. Config: `vitest.contract.config.ts`.
 - **Why testcontainers (not `mongodb-memory-server`)**: MongoDB has no official Alpine binaries, so `mongodb-memory-server` cannot pull a binary in our Alpine-based Docker images without manual `MONGOMS_SYSTEM_BINARY` workarounds. Testcontainers runs the MongoDB image `docker-compose.yml` pins, read through `MONGO_IMAGE` in `@mes/testing`, for unit, contract and e2e tests, which keeps test infrastructure identical to production and CI.
 - `@mes/testing` provides shared utilities (source-only, no build needed).

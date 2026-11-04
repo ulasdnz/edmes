@@ -1,9 +1,9 @@
-import { setupMongoTestContainer } from '@mes/testing'
+import { setupMongoDatabase } from '@mes/testing'
 import mongoose from 'mongoose'
 import { describe, expect, it } from 'vitest'
 import { paginate } from './pagination.js'
 
-setupMongoTestContainer()
+setupMongoDatabase()
 
 const Item = mongoose.model(
   'PaginationItem',

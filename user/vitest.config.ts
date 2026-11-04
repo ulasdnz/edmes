@@ -6,6 +6,7 @@ export default defineConfig({
     environment: 'node',
     testTimeout: 30000,
     hookTimeout: 120000,
+    globalSetup: ['@mes/testing/mongo-server'],
     setupFiles: ['./src/test/setup.ts'],
     coverage: {
       provider: 'v8',

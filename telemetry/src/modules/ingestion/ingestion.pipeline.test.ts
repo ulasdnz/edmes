@@ -1,4 +1,4 @@
-import { setupMongoTestContainer } from '@mes/testing'
+import { setupMongoDatabase } from '@mes/testing'
 import { Types } from 'mongoose'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { setPeriodLock } from '../../jobs/subscribers.js'
@@ -16,7 +16,7 @@ const redis = await vi.hoisted(async () => {
   return started
 })
 
-setupMongoTestContainer()
+setupMongoDatabase()
 
 beforeAll(async () => {
   await streamClient.connect()
