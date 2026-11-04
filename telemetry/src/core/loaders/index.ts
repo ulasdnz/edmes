@@ -1,6 +1,7 @@
+import { setMaxListeners } from 'node:events'
 import { CustomError } from '../../core/errors/index.js'
 import { logger } from '../../lib/logger.js'
-import { initMqtt, onMqttMessage } from '../../lib/mqtt.js'
+import { initMqtt } from '../../lib/mqtt.js'
 import { initRedis } from '../../lib/redis.js'
 import { discoverySetManifest } from '../../modules/discovery/discovery.cache.js'
 import EdgeDevice from '../../modules/edge-device/edge-device.model.js'
@@ -11,18 +12,28 @@ import '../../modules/tag-type/tag-type.model.js'
 import { initExpress } from './express.js'
 import { initMongoose } from './mongoose.js'
 
+let ingestion = new AbortController()
+
+// Messages waiting for MongoDB stop waiting, so that telemetry stops within its grace period
+export const stopIngestionRetries = () => ingestion.abort()
+
 export const initLoaders = async () => {
   try {
     logger.info('Initializing application loaders', { event: 'loader.init.started' })
 
+    ingestion = new AbortController()
+    const stop = ingestion.signal
+    // Each message in the intake listens for the stop. The intake bound limits how many there are,
+    // plus one per keepalive reconnect while MongoDB is down: the broker delivers the held-back
+    // message again each time, and each delivery is one more store of it, about 864 a day
+    setMaxListeners(0, stop)
+
     await initMongoose()
     await initRedis()
     await bindingCacheInit()
-    await initMqtt()
-
-    onMqttMessage((topic, payload) => {
+    await initMqtt((topic, payload) => {
       if (topic.startsWith('devices/')) {
-        processMessage(topic, payload).catch(err => {
+        return processMessage(topic, payload, stop).catch(err => {
           if (err instanceof CustomError && err.message === 'historian.period_locked') {
             logger.debug('Ingestion rejected: period locked', {
               event: 'ingestion.period_locked',

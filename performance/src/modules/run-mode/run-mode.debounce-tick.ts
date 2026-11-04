@@ -1,58 +1,65 @@
 import { logger } from '../../lib/logger.js'
-import { redisClient } from '../../lib/redis.js'
-import { confirmCandidate } from './run-mode.processor.js'
+import { listPendingDecisions } from './run-mode.decisions.js'
+import { confirmAfterPlannedCheck, confirmCandidate } from './run-mode.processor.js'
 
 const TICK_INTERVAL_MS = 1000
-const CANDIDATE_PREFIX = 'runmode:candidate:'
 
 let tickTimer: NodeJS.Timeout | null = null
 let running = false
 
-async function scanCandidates(): Promise<void> {
-  let cursor = '0'
-  const matched: string[] = []
-  do {
-    const [next, keys] = await redisClient.scan(
-      cursor,
-      'MATCH',
-      `${CANDIDATE_PREFIX}*`,
-      'COUNT',
-      200,
-    )
-    cursor = next
-    matched.push(...keys)
-  } while (cursor !== '0')
-
-  if (matched.length === 0) return
-
-  const prefix = `${redisClient.options.keyPrefix ?? ''}${CANDIDATE_PREFIX}`
-  for (const full of matched) {
-    const unprefixed = full.startsWith(prefix) ? full.slice(prefix.length) : full
-    const parts = unprefixed.split(':')
-    if (parts.length < 2) continue
-    const runModeTagId = parts[parts.length - 1]
-    const workCenterId = parts.slice(0, -1).join(':')
-    try {
-      await confirmCandidate({ workCenterId, runModeTagId })
-    } catch (err) {
-      logger.warn('Run-mode debounce tick failed for candidate', {
-        event: 'run_mode.debounce_tick.failed',
-        workCenterId,
-        runModeTagId,
-        error: err instanceof Error ? err.message : err,
-      })
-    }
-  }
+// Asks about every pending decision at once, so a telemetry request that hangs for one tag holds
+// up no other work center. A decision that fails defers itself; only a record that could not be
+// read, or a deferral that could not be written, fails here
+export async function runDecisionTick(now: Date): Promise<void> {
+  const pending = await listPendingDecisions()
+  await Promise.all(
+    pending.map(async ({ kind, ...target }) => {
+      try {
+        if (kind === 'debounce') await confirmCandidate(target, now)
+        else await confirmAfterPlannedCheck(target, now)
+      } catch (err) {
+        logger.warn('Run-mode debounce tick could not read or defer a pending decision', {
+          event: 'run_mode.debounce_tick.failed',
+          kind,
+          workCenterId: target.workCenterId,
+          runModeTagId: target.runModeTagId,
+          error: err instanceof Error ? err.message : err,
+        })
+      }
+    }),
+  )
 }
 
 export function startDebounceTick(): void {
   if (running) return
   running = true
+  // Logs mark changes: the first tick that cannot list the pending decisions, and the first that
+  // can again
+  let listingFails = false
   const loop = (): void => {
     if (!running) return
-    void scanCandidates().finally(() => {
-      if (running) tickTimer = setTimeout(loop, TICK_INTERVAL_MS)
-    })
+    runDecisionTick(new Date())
+      .then(
+        () => {
+          if (!listingFails) return
+          listingFails = false
+          logger.info('Run-mode debounce tick lists pending decisions again', {
+            event: 'run_mode.debounce_tick.scan_recovered',
+          })
+        },
+        err => {
+          // Redis could not list the pending decisions; the next tick asks again
+          if (listingFails) return
+          listingFails = true
+          logger.warn('Run-mode debounce tick could not list pending decisions', {
+            event: 'run_mode.debounce_tick.scan_failed',
+            error: err instanceof Error ? err.message : err,
+          })
+        },
+      )
+      .finally(() => {
+        if (running) tickTimer = setTimeout(loop, TICK_INTERVAL_MS)
+      })
   }
   tickTimer = setTimeout(loop, TICK_INTERVAL_MS)
   logger.info('Run-mode debounce tick started', {

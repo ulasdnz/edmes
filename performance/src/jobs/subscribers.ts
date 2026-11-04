@@ -2,58 +2,16 @@ import { buildAuthContextCacheKey } from '@mes/auth'
 import { runInContext } from '@mes/core'
 import { createStreamConsumer } from '@mes/events'
 import { sharedCacheDel } from '../lib/cache.js'
-import { listRunModeMonitors } from '../lib/internal-api/run-mode-monitors.client.js'
-import {
-  getById as getWorkCenter,
-  invalidate as invalidateWorkCenter,
-} from '../lib/internal-api/work-center.client.js'
 import { logger } from '../lib/logger.js'
 import { streamClient } from '../lib/redis.js'
-import {
-  handleRunModeSample,
-  listMonitoredFromCursors,
-} from '../modules/run-mode/run-mode.processor.js'
+import { handleRunModeSample } from '../modules/run-mode/run-mode.processor.js'
+import { requestRefresh, seedFromCursors, syncWorkCenter, workCenterForTag } from './tag-map.js'
 
 const SERVICE_GROUP = 'performance-service'
 const CONSUMER_ID = `performance-${process.pid}`
 
-const runModeTagToWorkCenter = new Map<string, string>()
-
-async function syncRunModeTag(workCenterId: string): Promise<void> {
-  await invalidateWorkCenter(workCenterId)
-  for (const [tagId, wc] of runModeTagToWorkCenter) {
-    if (wc === workCenterId) runModeTagToWorkCenter.delete(tagId)
-  }
-  const wc = await getWorkCenter(workCenterId)
-  const runModeTagId = wc?.tagBindings?.runModeTagId
-  if (runModeTagId) {
-    runModeTagToWorkCenter.set(runModeTagId, workCenterId)
-  }
-}
-
-function dropWorkCenter(workCenterId: string): void {
-  for (const [tagId, wc] of runModeTagToWorkCenter) {
-    if (wc === workCenterId) runModeTagToWorkCenter.delete(tagId)
-  }
-}
-
-async function seedRunModeTagMap(): Promise<void> {
-  try {
-    const cursors = await listMonitoredFromCursors()
-    for (const c of cursors) {
-      runModeTagToWorkCenter.set(c.runModeTagId, c.workCenterId)
-    }
-    const monitors = await listRunModeMonitors()
-    for (const m of monitors) {
-      runModeTagToWorkCenter.set(m.runModeTagId, m.workCenterId)
-    }
-  } catch (err) {
-    logger.warn('Failed to seed run-mode tag map', {
-      event: 'run_mode.tag_map.seed_failed',
-      error: err instanceof Error ? err.message : err,
-    })
-  }
-}
+// Run-mode tags warned about as not binary, until one of their samples is binary again
+const notBinaryTags = new Set<string>()
 
 const streams = {
   'events.user': {
@@ -65,33 +23,51 @@ const streams = {
       })
     },
   },
+  // Each one reads the work center from work-center, so the order they arrive in does not matter
   'events.work_center': {
     'work_center.created': async (data: { workCenterId: string }) =>
-      syncRunModeTag(data.workCenterId),
+      syncWorkCenter(data.workCenterId),
     'work_center.updated': async (data: { workCenterId: string }) =>
-      syncRunModeTag(data.workCenterId),
+      syncWorkCenter(data.workCenterId),
     'work_center.reactivated': async (data: { workCenterId: string }) =>
-      syncRunModeTag(data.workCenterId),
-    'work_center.archived': async (data: { workCenterId: string }) => {
-      await invalidateWorkCenter(data.workCenterId)
-      dropWorkCenter(data.workCenterId)
-    },
-    'work_center.deleted': async (data: { workCenterId: string }) => {
-      await invalidateWorkCenter(data.workCenterId)
-      dropWorkCenter(data.workCenterId)
-    },
+      syncWorkCenter(data.workCenterId),
+    'work_center.archived': async (data: { workCenterId: string }) =>
+      syncWorkCenter(data.workCenterId),
+    'work_center.deleted': async (data: { workCenterId: string }) =>
+      syncWorkCenter(data.workCenterId),
     'work_center.metric_composition.changed': async (data: { workCenterId: string }) =>
-      syncRunModeTag(data.workCenterId),
+      syncWorkCenter(data.workCenterId),
   },
   'events.telemetry': {
-    'tag.value.recorded': async (data: { tagId: string; value: number; occurredAt: string }) => {
-      const workCenterId = runModeTagToWorkCenter.get(data.tagId)
+    'tag.value.recorded': async (data: {
+      tagId: string
+      behavior?: string
+      value: number
+      occurredAt: string
+      previousOccurredAt: string | null
+    }) => {
+      const workCenterId = workCenterForTag(data.tagId)
       if (!workCenterId) return
+      // Only a binary tag says whether the machine runs. Work-center binds any tag, and checking the
+      // binding is its own concern
+      if (data.behavior !== undefined && data.behavior !== 'binary') {
+        if (notBinaryTags.has(data.tagId)) return
+        notBinaryTags.add(data.tagId)
+        logger.warn('Run-mode tag is not binary; its samples are not decided', {
+          event: 'run_mode.sample.not_binary',
+          workCenterId,
+          runModeTagId: data.tagId,
+          behavior: data.behavior,
+        })
+        return
+      }
+      notBinaryTags.delete(data.tagId)
       await handleRunModeSample({
         workCenterId,
         runModeTagId: data.tagId,
         value: data.value,
         occurredAt: new Date(data.occurredAt),
+        previousOccurredAt: data.previousOccurredAt ? new Date(data.previousOccurredAt) : null,
       })
     },
   },
@@ -106,8 +82,11 @@ const consumer = createStreamConsumer({
   runInContext: (traceId, fn) => runInContext({ traceId, ip: 'internal' }, fn),
 })
 
-export const initSubscribers = () => {
-  void seedRunModeTagMap()
+// The tag map is seeded from the cursors before the consumer starts, so the samples of work centers
+// processed before are routed at once; the refresh from work-center runs in the background
+export const initSubscribers = async () => {
+  await seedFromCursors()
+  requestRefresh()
   consumer.start().catch(err => {
     logger.error('Stream consumer crashed', {
       event: 'events.consumer.crashed',
@@ -120,10 +99,4 @@ export const shutdownSubscribers = async (): Promise<void> => {
   await consumer.stop()
 }
 
-export const __test__ = {
-  runModeTagToWorkCenter,
-  syncRunModeTag,
-  dropWorkCenter,
-  seedRunModeTagMap,
-  streams,
-}
+export const __test__ = { streams }

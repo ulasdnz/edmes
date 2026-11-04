@@ -1,6 +1,7 @@
 import '../../../test/contract-setup.js'
 
 import type { Server } from 'node:http'
+import { setTimeout as sleep } from 'node:timers/promises'
 import express from 'express'
 import { Types } from 'mongoose'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -60,9 +61,9 @@ function makeStubServers() {
 
   const telemApp = express()
   telemApp.use(express.json())
-  telemApp.post('/internal/v1/historian/:tagId/produced-summary', (req, res) => {
+  telemApp.post('/internal/v1/historian/:tagId/produced-summary', async (req, res) => {
     const fn = handlers.getProducedSummary
-    if (fn) return res.json({ data: fn(req.params.tagId, req.body) })
+    if (fn) return res.json({ data: await fn(req.params.tagId, req.body) })
     res.json({ data: { windows: [], total: 0 } })
   })
   telemApp.post('/internal/v1/historian/:tagId/speed-summary', (req, res) => {
@@ -1066,4 +1067,30 @@ describe('A service the OEE reads cannot answer → 503, never a result from mis
       calculate({ workCenterId: WC_ID, from: FROM, to: TO, userId: SYSTEM_IDENTITY }),
     ).rejects.toMatchObject({ statusCode: 503, message: code })
   })
+})
+
+// The run-mode requests give up after 5 s; the OEE's summaries wait for telemetry's answer
+describe('The OEE waits for a slow telemetry summary', () => {
+  it('uses a produced count telemetry answers after 5 s', async () => {
+    resetHandlers({
+      getWorkCenter: () => machineWc(),
+      getJobOrders: () => [joRecord()],
+      getProductStandardsBatch: () => ({
+        items: [{ jobOrderId: JO_ID, standards: [standardTimeline(10)], qualityFlags: [] }],
+      }),
+      getProducedSummary: async () => {
+        await sleep(5_500)
+        return producedSummaryFor(600, FROM, TO)
+      },
+    })
+
+    const result = await calculate({
+      workCenterId: WC_ID,
+      from: FROM,
+      to: TO,
+      userId: SYSTEM_IDENTITY,
+    })
+
+    expect(result.productivity).toMatchObject({ percentage: 100, status: 'ok' })
+  }, 20_000)
 })

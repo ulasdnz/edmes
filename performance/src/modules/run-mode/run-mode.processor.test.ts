@@ -32,12 +32,13 @@ vi.mock('../../lib/cache.js', () => ({
   sharedCacheDel: vi.fn(),
 }))
 
-const { getLatest } = vi.hoisted(() => ({
+const { getLatest, getStateDurations } = vi.hoisted(() => ({
   getLatest: vi.fn(async () => null as null | { tagId: string; value: number; occurredAt: string }),
+  getStateDurations: vi.fn(),
 }))
 vi.mock('../../lib/internal-api/run-mode-telemetry.client.js', () => ({
   getLatest,
-  getStateDurations: vi.fn(),
+  getStateDurations,
 }))
 
 const { getWorkCenter } = vi.hoisted(() => ({
@@ -48,11 +49,42 @@ vi.mock('../../lib/internal-api/work-center.client.js', () => ({
   invalidate: vi.fn(async () => {}),
 }))
 
+// Pending decisions go through the raw Redis client; this stands in for it where no Redis runs.
+// The contract tests run the same code against a real Redis.
+const { redisStore, redisGet, redisSet, redisDel, redisEval } = vi.hoisted(() => {
+  const store = new Map<string, string>()
+  return {
+    redisStore: store,
+    redisGet: vi.fn(async (key: string) => store.get(key) ?? null),
+    redisSet: vi.fn(async (key: string, value: string, ...options: unknown[]) => {
+      if (options.includes('NX') && store.has(key)) return null
+      store.set(key, value)
+      return 'OK'
+    }),
+    redisDel: vi.fn(async (key: string) => (store.delete(key) ? 1 : 0)),
+    // Stands in for the script that replaces or deletes a record while it has the same since
+    redisEval: vi.fn(
+      async (_script: string, _keys: number, key: string, since: string, value?: string) => {
+        const stored = store.get(key)
+        if (stored === undefined || JSON.parse(stored).since !== since) return 0
+        if (value === undefined) store.delete(key)
+        else store.set(key, value)
+        return 1
+      },
+    ),
+  }
+})
+vi.mock('../../lib/redis.js', async importOriginal => ({
+  ...(await importOriginal<typeof import('../../lib/redis.js')>()),
+  redisClient: { get: redisGet, set: redisSet, del: redisDel, eval: redisEval },
+}))
+
 import { PlannedStop } from '../planned-stop/planned-stop.model.js'
 import * as policyService from '../policy/policy.service.js'
 import { bootstrapSystemReasons } from '../reason/reason.bootstrap.js'
 import { Reason } from '../reason/reason.model.js'
 import { UnplannedStop } from '../unplanned-stop/unplanned-stop.model.js'
+import { writeDecision } from './run-mode.decisions.js'
 import * as processor from './run-mode.processor.js'
 import { RunModeProcessingState } from './run-mode-processing-state.model.js'
 
@@ -79,12 +111,15 @@ describe('run-mode.processor', () => {
   beforeEach(async () => {
     cacheStore.clear()
     getLatest.mockReset()
+    getStateDurations.mockReset()
     getWorkCenter.mockReset()
     getLatest.mockResolvedValue(null)
     getWorkCenter.mockResolvedValue(null)
-    vi.mocked(cacheGet).mockClear()
-    vi.mocked(cacheSet).mockClear()
-    vi.mocked(cacheDel).mockClear()
+    redisStore.clear()
+    redisGet.mockClear()
+    redisSet.mockClear()
+    redisDel.mockClear()
+    redisEval.mockClear()
     await bootstrapSystemReasons()
   })
 
@@ -212,9 +247,90 @@ describe('run-mode.processor', () => {
         endAt: null,
       })
       expect(open).toBeNull()
-      expect(cacheSet).toHaveBeenCalled()
-      const cacheCallArgs = vi.mocked(cacheSet).mock.calls.at(-1)!
-      expect(cacheCallArgs[0]).toBe(`runmode:candidate:${wcId}:${tagId}`)
+      expect(redisSet).toHaveBeenCalledWith(
+        `runmode:candidate:${wcId}:${tagId}`,
+        expect.any(String),
+        'EX',
+        90_000,
+        'NX',
+      )
+    })
+
+    it('stores the candidate with its first stop time for 25 hours', async () => {
+      const wcId = new Types.ObjectId().toString()
+      const tagId = new Types.ObjectId().toString()
+      await seedPolicyForWc(wcId, 30_000)
+      const writtenFrom = Date.now()
+      await processor.handleRunModeSample(
+        sample({
+          workCenterId: wcId,
+          runModeTagId: tagId,
+          value: 0,
+          occurredAt: new Date('2026-06-15T10:00:00.000Z'),
+        }),
+      )
+      expect(redisSet).toHaveBeenCalledTimes(1)
+      const [key, value, ...options] = redisSet.mock.calls[0]
+      expect(key).toBe(`runmode:candidate:${wcId}:${tagId}`)
+      const candidate = JSON.parse(value)
+      expect(candidate).toEqual({
+        kind: 'debounce',
+        since: '2026-06-15T10:00:00.000Z',
+        pendingSince: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/),
+        debounceMs: 30_000,
+        attempts: 0,
+        nextAttemptAt: null,
+      })
+      // Pending from the server's time of the write, not from the stop's own time
+      expect(new Date(candidate.pendingSince).getTime()).toBeGreaterThanOrEqual(writtenFrom)
+      expect(new Date(candidate.pendingSince).getTime()).toBeLessThanOrEqual(Date.now())
+      // Written only when no candidate is stored, in one command: the first write wins
+      expect(options).toEqual(['EX', 90_000, 'NX'])
+    })
+  })
+
+  describe('handleRunModeSample — samples telemetry stored that performance missed', () => {
+    it('fails the sample when the replay stops at its page limit before reaching it', async () => {
+      const wcId = new Types.ObjectId().toString()
+      const tagId = new Types.ObjectId().toString()
+      await seedPolicyForWc(wcId, 0)
+      await processor.handleRunModeSample(
+        sample({
+          workCenterId: wcId,
+          runModeTagId: tagId,
+          value: 1,
+          occurredAt: new Date('2026-06-15T10:00:00.000Z'),
+        }),
+      )
+      // Telemetry always has one more page, as only a fault would make it
+      let page = 0
+      getStateDurations.mockImplementation(async () => {
+        page += 1
+        const start = new Date(Date.UTC(2026, 5, 15, 10, 0, page)).toISOString()
+        return {
+          segments: [{ state: 1, start, end: start, durationMs: 0 }],
+          hasMore: true,
+          nextCursor: start,
+        }
+      })
+
+      await expect(
+        processor.handleRunModeSample({
+          workCenterId: wcId,
+          runModeTagId: tagId,
+          value: 0,
+          occurredAt: new Date('2026-06-15T11:00:00.000Z'),
+          previousOccurredAt: new Date('2026-06-15T10:59:00.000Z'),
+        }),
+      ).rejects.toThrow()
+
+      expect(getStateDurations).toHaveBeenCalledTimes(100)
+      // The replayed samples keep the cursor they advanced; the sample itself is not decided
+      const cursor = await RunModeProcessingState.findOne({
+        workCenterId: new Types.ObjectId(wcId),
+      }).lean()
+      expect(cursor?.lastProcessedOccurredAt).toEqual(new Date('2026-06-15T10:01:40.000Z'))
+      expect(await UnplannedStop.countDocuments({ workCenterId: new Types.ObjectId(wcId) })).toBe(0)
     })
   })
 
@@ -278,26 +394,24 @@ describe('run-mode.processor', () => {
   })
 
   describe('confirmCandidate', () => {
-    it('opens unplanned when candidate matures and latest value still < 1', async () => {
+    it('opens unplanned when candidate matures and its own stopped sample is still the latest', async () => {
       const wcId = new Types.ObjectId().toString()
       const tagId = new Types.ObjectId().toString()
       await seedPolicyForWc(wcId, 5000)
       // Seed a candidate with firstStoppedAt = 10s in the past so matured.
       const firstStoppedAt = new Date(Date.now() - 10_000)
-      const key = `runmode:candidate:${wcId}:${tagId}`
-      await cacheSet(
-        key,
-        {
-          firstStoppedAt: firstStoppedAt.toISOString(),
-          runModeTagId: tagId,
-          debounceMs: 5000,
-        },
-        60,
-      )
+      await writeDecision(wcId, tagId, {
+        kind: 'debounce',
+        since: firstStoppedAt.toISOString(),
+        pendingSince: new Date().toISOString(),
+        debounceMs: 5000,
+        attempts: 0,
+        nextAttemptAt: null,
+      })
       getLatest.mockResolvedValue({
         tagId,
         value: 0,
-        occurredAt: new Date().toISOString(),
+        occurredAt: firstStoppedAt.toISOString(),
       })
       await processor.confirmCandidate({ workCenterId: wcId, runModeTagId: tagId })
       const open = await UnplannedStop.findOne({
@@ -306,23 +420,22 @@ describe('run-mode.processor', () => {
       })
       expect(open).not.toBeNull()
       expect(open?.startAt.getTime()).toBe(firstStoppedAt.getTime())
+      expect(redisStore.has(`runmode:candidate:${wcId}:${tagId}`)).toBe(false)
     })
 
-    it('cancels candidate (no open) when latest value>=1', async () => {
+    it('keeps the candidate (no open) when telemetry knows a newer sample', async () => {
       const wcId = new Types.ObjectId().toString()
       const tagId = new Types.ObjectId().toString()
       await seedPolicyForWc(wcId, 5000)
       const firstStoppedAt = new Date(Date.now() - 10_000)
-      const key = `runmode:candidate:${wcId}:${tagId}`
-      await cacheSet(
-        key,
-        {
-          firstStoppedAt: firstStoppedAt.toISOString(),
-          runModeTagId: tagId,
-          debounceMs: 5000,
-        },
-        60,
-      )
+      await writeDecision(wcId, tagId, {
+        kind: 'debounce',
+        since: firstStoppedAt.toISOString(),
+        pendingSince: new Date().toISOString(),
+        debounceMs: 5000,
+        attempts: 0,
+        nextAttemptAt: null,
+      })
       getLatest.mockResolvedValue({
         tagId,
         value: 1,
@@ -334,6 +447,8 @@ describe('run-mode.processor', () => {
         endAt: null,
       })
       expect(open).toBeNull()
+      // The running signal decides it once performance processes it
+      expect(redisStore.has(`runmode:candidate:${wcId}:${tagId}`)).toBe(true)
     })
 
     it('skips when candidate has not matured yet', async () => {
@@ -341,16 +456,14 @@ describe('run-mode.processor', () => {
       const tagId = new Types.ObjectId().toString()
       await seedPolicyForWc(wcId, 30_000)
       const firstStoppedAt = new Date(Date.now() - 1_000) // 1s ago, debounce 30s
-      const key = `runmode:candidate:${wcId}:${tagId}`
-      await cacheSet(
-        key,
-        {
-          firstStoppedAt: firstStoppedAt.toISOString(),
-          runModeTagId: tagId,
-          debounceMs: 30_000,
-        },
-        60,
-      )
+      await writeDecision(wcId, tagId, {
+        kind: 'debounce',
+        since: firstStoppedAt.toISOString(),
+        pendingSince: new Date().toISOString(),
+        debounceMs: 30_000,
+        attempts: 0,
+        nextAttemptAt: null,
+      })
       getLatest.mockResolvedValue({
         tagId,
         value: 0,

@@ -1,11 +1,13 @@
 import { config } from './config/index.js'
 import { initLoaders } from './core/loaders/index.js'
 import { shutdownSubscribers } from './jobs/subscribers.js'
+import { stopRefresh } from './jobs/tag-map.js'
 import { logger } from './lib/logger.js'
 import { closeRedis } from './lib/redis.js'
 import { isShuttingDown, setShuttingDown } from './lib/shutdown.js'
 import { stopPlannedStopScheduler } from './modules/planned-stop-schedule/planned-stop-schedule.scheduler.js'
 import { stopDebounceTick } from './modules/run-mode/run-mode.debounce-tick.js'
+import { stopBootReconciliation } from './modules/run-mode/run-mode.reconciler.js'
 import { disconnectDB } from './utils/db.js'
 
 const SHUTDOWN_TIMEOUT_MS = 8000
@@ -39,6 +41,8 @@ const startServer = async (): Promise<void> => {
         try {
           stopDebounceTick()
           await stopPlannedStopScheduler()
+          await stopBootReconciliation()
+          await stopRefresh()
           await Promise.all([disconnectDB(), closeRedis(), shutdownSubscribers()])
           logger.info('Data connections closed', { event: 'server.shutdown.completed' })
           process.exit(0)

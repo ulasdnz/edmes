@@ -20,7 +20,8 @@ vi.mock('../../lib/cache.js', () => ({
   sharedCacheDel: vi.fn(),
 }))
 
-type Segment = { from: string; to: string; value: number; durationMs: number }
+// The segment shape telemetry's state-durations answers with
+type Segment = { state: number; start: string; end: string; durationMs: number }
 type Page = { segments: Segment[]; hasMore: boolean; nextCursor: string | null }
 const emptyPage = (): Page => ({ segments: [], hasMore: false, nextCursor: null })
 
@@ -29,7 +30,7 @@ const { getLatest, getStateDurations } = vi.hoisted(() => ({
   getStateDurations: vi.fn(
     async () =>
       ({ segments: [], hasMore: false, nextCursor: null }) as {
-        segments: Array<{ from: string; to: string; value: number; durationMs: number }>
+        segments: Array<{ state: number; start: string; end: string; durationMs: number }>
         hasMore: boolean
         nextCursor: string | null
       },
@@ -49,9 +50,35 @@ vi.mock('../../lib/internal-api/work-center.client.js', () => ({
   invalidate: vi.fn(async () => {}),
 }))
 
+// Pending decisions go through the raw Redis client; this stands in for it where no Redis runs.
+// The contract tests run the same code against a real Redis.
+const { redisStore, redisClient } = vi.hoisted(() => {
+  const store = new Map<string, string>()
+  return {
+    redisStore: store,
+    redisClient: {
+      get: async (key: string) => store.get(key) ?? null,
+      set: async (key: string, value: string, ...options: unknown[]) => {
+        if (options.includes('NX') && store.has(key)) return null
+        store.set(key, value)
+        return 'OK'
+      },
+      del: async (key: string) => (store.delete(key) ? 1 : 0),
+    },
+  }
+})
+vi.mock('../../lib/redis.js', async importOriginal => ({
+  ...(await importOriginal<typeof import('../../lib/redis.js')>()),
+  redisClient,
+}))
+
 import { bootstrapSystemReasons } from '../reason/reason.bootstrap.js'
 import { UnplannedStop } from '../unplanned-stop/unplanned-stop.model.js'
-import { reconcileOnBoot } from './run-mode.reconciler.js'
+import {
+  reconcileWorkCenter,
+  startBootReconciliation,
+  stopBootReconciliation,
+} from './run-mode.reconciler.js'
 import { RunModeProcessingState } from './run-mode-processing-state.model.js'
 
 async function seedCursor(
@@ -70,6 +97,7 @@ async function seedCursor(
 
 describe('run-mode.reconciler', () => {
   beforeEach(async () => {
+    redisStore.clear()
     getLatest.mockReset()
     getStateDurations.mockReset()
     getWorkCenter.mockReset()
@@ -80,7 +108,8 @@ describe('run-mode.reconciler', () => {
   })
 
   it('returns quickly with no monitored work centers', async () => {
-    await expect(reconcileOnBoot({ now: new Date() })).resolves.toBeUndefined()
+    await expect(startBootReconciliation()).resolves.toBeUndefined()
+    await stopBootReconciliation()
     expect(getLatest).not.toHaveBeenCalled()
     expect(getStateDurations).not.toHaveBeenCalled()
   })
@@ -95,16 +124,16 @@ describe('run-mode.reconciler', () => {
       segments: [
         // Segment at/before cursor — must be ignored.
         {
-          from: '2026-06-15T10:00:00.000Z',
-          to: '2026-06-15T10:05:00.000Z',
-          value: 0,
+          state: 0,
+          start: '2026-06-15T10:00:00.000Z',
+          end: '2026-06-15T10:05:00.000Z',
           durationMs: 300_000,
         },
         // Segment after cursor — must be processed.
         {
-          from: '2026-06-15T10:10:00.000Z',
-          to: '2026-06-15T10:15:00.000Z',
-          value: 0,
+          state: 0,
+          start: '2026-06-15T10:10:00.000Z',
+          end: '2026-06-15T10:15:00.000Z',
           durationMs: 300_000,
         },
       ],
@@ -112,7 +141,10 @@ describe('run-mode.reconciler', () => {
       nextCursor: null,
     })
 
-    await reconcileOnBoot({ now: new Date('2026-06-15T10:20:00.000Z') })
+    await reconcileWorkCenter(
+      { workCenterId: wcId, runModeTagId: tagId },
+      new Date('2026-06-15T10:20:00.000Z'),
+    )
 
     const openStops = await UnplannedStop.find({
       workCenterId: new Types.ObjectId(wcId),
@@ -129,9 +161,9 @@ describe('run-mode.reconciler', () => {
     getStateDurations.mockResolvedValue({
       segments: [
         {
-          from: '2026-06-15T10:10:00.000Z',
-          to: '2026-06-15T10:11:00.000Z',
-          value: 0,
+          state: 0,
+          start: '2026-06-15T10:10:00.000Z',
+          end: '2026-06-15T10:11:00.000Z',
           durationMs: 60_000,
         },
       ],
@@ -144,7 +176,10 @@ describe('run-mode.reconciler', () => {
       occurredAt: '2026-06-15T10:30:00.000Z',
     })
 
-    await reconcileOnBoot({ now: new Date('2026-06-15T10:20:00.000Z') })
+    await reconcileWorkCenter(
+      { workCenterId: wcId, runModeTagId: tagId },
+      new Date('2026-06-15T10:20:00.000Z'),
+    )
 
     // Only one open should exist: from the state-durations segment, not from latest.
     const stops = await UnplannedStop.find({
@@ -161,7 +196,10 @@ describe('run-mode.reconciler', () => {
     await seedCursor(wcId, tagId, new Date('2026-06-15T10:00:00.000Z'), 1)
     getStateDurations.mockResolvedValue(emptyPage())
 
-    await reconcileOnBoot({ now: new Date('2026-06-15T10:20:00.000Z') })
+    await reconcileWorkCenter(
+      { workCenterId: wcId, runModeTagId: tagId },
+      new Date('2026-06-15T10:20:00.000Z'),
+    )
     const openCount = await UnplannedStop.countDocuments({
       workCenterId: new Types.ObjectId(wcId),
     })
@@ -179,10 +217,10 @@ describe('run-mode.reconciler', () => {
       occurredAt: '2026-06-15T10:00:00.000Z',
     })
 
-    await reconcileOnBoot({
-      now: new Date('2026-06-15T10:20:00.000Z'),
-      monitored: [{ workCenterId: wcId, runModeTagId: tagId }],
-    })
+    await reconcileWorkCenter(
+      { workCenterId: wcId, runModeTagId: tagId },
+      new Date('2026-06-15T10:20:00.000Z'),
+    )
 
     const open = await UnplannedStop.findOne({
       workCenterId: new Types.ObjectId(wcId),
@@ -202,10 +240,10 @@ describe('run-mode.reconciler', () => {
       occurredAt: '2026-06-15T10:00:00.000Z',
     })
 
-    await reconcileOnBoot({
-      now: new Date('2026-06-15T10:20:00.000Z'),
-      monitored: [{ workCenterId: wcId, runModeTagId: tagId }],
-    })
+    await reconcileWorkCenter(
+      { workCenterId: wcId, runModeTagId: tagId },
+      new Date('2026-06-15T10:20:00.000Z'),
+    )
 
     const open = await UnplannedStop.findOne({
       workCenterId: new Types.ObjectId(wcId),
@@ -225,10 +263,10 @@ describe('run-mode.reconciler', () => {
     const wcId = new Types.ObjectId().toString()
     const tagId = new Types.ObjectId().toString()
     getLatest.mockResolvedValue(null)
-    await reconcileOnBoot({
-      now: new Date('2026-06-15T10:20:00.000Z'),
-      monitored: [{ workCenterId: wcId, runModeTagId: tagId }],
-    })
+    await reconcileWorkCenter(
+      { workCenterId: wcId, runModeTagId: tagId },
+      new Date('2026-06-15T10:20:00.000Z'),
+    )
     const openCount = await UnplannedStop.countDocuments({
       workCenterId: new Types.ObjectId(wcId),
     })
@@ -247,9 +285,9 @@ describe('run-mode.reconciler', () => {
     await seedCursor(wcId, tagId, cursorAt, 1)
 
     const segment = {
-      from: '2026-06-15T10:10:00.000Z',
-      to: '2026-06-15T10:15:00.000Z',
-      value: 0,
+      state: 0,
+      start: '2026-06-15T10:10:00.000Z',
+      end: '2026-06-15T10:15:00.000Z',
       durationMs: 300_000,
     }
 
@@ -258,7 +296,10 @@ describe('run-mode.reconciler', () => {
       hasMore: false,
       nextCursor: null,
     })
-    await reconcileOnBoot({ now: new Date('2026-06-15T10:20:00.000Z') })
+    await reconcileWorkCenter(
+      { workCenterId: wcId, runModeTagId: tagId },
+      new Date('2026-06-15T10:20:00.000Z'),
+    )
 
     const stopsAfterFirst = await UnplannedStop.find({
       workCenterId: new Types.ObjectId(wcId),
@@ -273,7 +314,10 @@ describe('run-mode.reconciler', () => {
       hasMore: false,
       nextCursor: null,
     })
-    await reconcileOnBoot({ now: new Date('2026-06-15T10:25:00.000Z') })
+    await reconcileWorkCenter(
+      { workCenterId: wcId, runModeTagId: tagId },
+      new Date('2026-06-15T10:25:00.000Z'),
+    )
 
     const stopsAfterSecond = await UnplannedStop.find({
       workCenterId: new Types.ObjectId(wcId),
@@ -291,9 +335,9 @@ describe('run-mode.reconciler', () => {
       .mockResolvedValueOnce({
         segments: [
           {
-            from: '2026-06-15T10:05:00.000Z',
-            to: '2026-06-15T10:05:00.000Z',
-            value: 0,
+            state: 0,
+            start: '2026-06-15T10:05:00.000Z',
+            end: '2026-06-15T10:05:00.000Z',
             durationMs: 0,
           },
         ],
@@ -303,9 +347,9 @@ describe('run-mode.reconciler', () => {
       .mockResolvedValueOnce({
         segments: [
           {
-            from: '2026-06-15T10:10:00.000Z',
-            to: '2026-06-15T10:10:00.000Z',
-            value: 1,
+            state: 1,
+            start: '2026-06-15T10:10:00.000Z',
+            end: '2026-06-15T10:10:00.000Z',
             durationMs: 0,
           },
         ],
@@ -315,9 +359,9 @@ describe('run-mode.reconciler', () => {
       .mockResolvedValueOnce({
         segments: [
           {
-            from: '2026-06-15T10:15:00.000Z',
-            to: '2026-06-15T10:15:00.000Z',
-            value: 0,
+            state: 0,
+            start: '2026-06-15T10:15:00.000Z',
+            end: '2026-06-15T10:15:00.000Z',
             durationMs: 0,
           },
         ],
@@ -325,15 +369,21 @@ describe('run-mode.reconciler', () => {
         nextCursor: null,
       })
 
-    await reconcileOnBoot({ now: new Date('2026-06-15T10:20:00.000Z') })
+    await reconcileWorkCenter(
+      { workCenterId: wcId, runModeTagId: tagId },
+      new Date('2026-06-15T10:20:00.000Z'),
+    )
 
     expect(getStateDurations).toHaveBeenCalledTimes(3)
-    // Second call should pass after = nextCursor of first chunk.
+    // Second call should pass after = nextCursor of first chunk. A failed request logs at debug:
+    // the caller that retries the reconciliation logs the failure once
     expect(getStateDurations.mock.calls[1][3]).toEqual({
       after: new Date('2026-06-15T10:05:00.000Z'),
+      failureLogLevel: 'debug',
     })
     expect(getStateDurations.mock.calls[2][3]).toEqual({
       after: new Date('2026-06-15T10:10:00.000Z'),
+      failureLogLevel: 'debug',
     })
 
     // Outcome: first stop opened at 10:05, closed at 10:10; second stop opened at 10:15.
@@ -362,9 +412,9 @@ describe('run-mode.reconciler', () => {
       .mockResolvedValueOnce({
         segments: [
           {
-            from: '2026-06-15T10:05:00.000Z',
-            to: '2026-06-15T10:05:00.000Z',
-            value: 0,
+            state: 0,
+            start: '2026-06-15T10:05:00.000Z',
+            end: '2026-06-15T10:05:00.000Z',
             durationMs: 0,
           },
         ],
@@ -374,15 +424,15 @@ describe('run-mode.reconciler', () => {
       .mockResolvedValueOnce({
         segments: [
           {
-            from: '2026-06-15T10:05:00.000Z',
-            to: '2026-06-15T10:05:00.000Z',
-            value: 0,
+            state: 0,
+            start: '2026-06-15T10:05:00.000Z',
+            end: '2026-06-15T10:05:00.000Z',
             durationMs: 0,
           },
           {
-            from: '2026-06-15T10:10:00.000Z',
-            to: '2026-06-15T10:10:00.000Z',
-            value: 1,
+            state: 1,
+            start: '2026-06-15T10:10:00.000Z',
+            end: '2026-06-15T10:10:00.000Z',
             durationMs: 0,
           },
         ],
@@ -390,7 +440,10 @@ describe('run-mode.reconciler', () => {
         nextCursor: null,
       })
 
-    await reconcileOnBoot({ now: new Date('2026-06-15T10:20:00.000Z') })
+    await reconcileWorkCenter(
+      { workCenterId: wcId, runModeTagId: tagId },
+      new Date('2026-06-15T10:20:00.000Z'),
+    )
 
     const stops = await UnplannedStop.find({
       workCenterId: new Types.ObjectId(wcId),
@@ -401,40 +454,38 @@ describe('run-mode.reconciler', () => {
     expect(stops[0].endAt?.toISOString()).toBe('2026-06-15T10:10:00.000Z')
   })
 
-  it('MAX_ITER cap: bails after 100 chunks; cursor stays at last successfully processed sample', async () => {
+  it('MAX_ITER cap: goes on from the cursor the replayed samples advanced until the replay is complete', async () => {
     const wcId = new Types.ObjectId().toString()
     const tagId = new Types.ObjectId().toString()
     await seedCursor(wcId, tagId, new Date('2026-06-15T10:00:00.000Z'), 1)
 
-    // Mock that always returns hasMore=true with a unique advancing nextCursor.
-    // The reconciler must bail at MAX_ITER (=100) instead of looping forever.
+    // 100 chunks that each have more after them, then the last one: one advancing sample each.
+    // A replay ends at MAX_ITER (=100) chunks; the reconciliation goes on from its cursor.
     let counter = 0
     getStateDurations.mockImplementation(async () => {
       counter += 1
       const ts = new Date(Date.UTC(2026, 5, 15, 10, 0, counter)).toISOString() // 10:00:01, 10:00:02, ...
       return {
-        segments: [{ from: ts, to: ts, value: 1, durationMs: 0 }],
-        hasMore: true,
-        nextCursor: ts,
+        segments: [{ state: 1, start: ts, end: ts, durationMs: 0 }],
+        hasMore: counter <= 100,
+        nextCursor: counter <= 100 ? ts : null,
       }
     })
 
-    await reconcileOnBoot({ now: new Date('2026-06-15T11:00:00.000Z') })
+    await reconcileWorkCenter(
+      { workCenterId: wcId, runModeTagId: tagId },
+      new Date('2026-06-15T11:00:00.000Z'),
+    )
 
-    // Reconciler must have stopped exactly at MAX_ITER iterations, not infinite.
-    expect(getStateDurations).toHaveBeenCalledTimes(100)
+    expect(getStateDurations).toHaveBeenCalledTimes(101)
+    // The second replay starts from the cursor the first one left, at its 100th sample
+    expect(getStateDurations.mock.calls[100][1]).toEqual(new Date('2026-06-15T10:01:40.000Z'))
+    expect(getStateDurations.mock.calls[100][3]).toEqual({ failureLogLevel: 'debug' })
 
-    // Cursor must have advanced to the last sample successfully processed by
-    // handleRunModeSample (so a subsequent boot resumes from there). All segments
-    // in this scenario carry value=1 (running) which closes any open stop and
-    // updates the cursor; we just assert cursor is past the seed.
     const cursor = await RunModeProcessingState.findOne({
       workCenterId: new Types.ObjectId(wcId),
       runModeTagId: new Types.ObjectId(tagId),
     }).lean()
-    expect(cursor).not.toBeNull()
-    expect(cursor!.lastProcessedOccurredAt.getTime()).toBeGreaterThan(
-      new Date('2026-06-15T10:00:00.000Z').getTime(),
-    )
+    expect(cursor?.lastProcessedOccurredAt).toEqual(new Date('2026-06-15T10:01:41.000Z'))
   })
 })

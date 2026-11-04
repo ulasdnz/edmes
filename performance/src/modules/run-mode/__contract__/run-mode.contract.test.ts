@@ -1,7 +1,8 @@
 import '../../../test/contract-setup.js'
 
 import { Types } from 'mongoose'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { closeRedis, initRedis } from '../../../lib/redis.js'
 import { bootstrapSystemReasons } from '../../reason/reason.bootstrap.js'
 import { UnplannedStop } from '../../unplanned-stop/unplanned-stop.model.js'
 import { handleRunModeSample } from '../run-mode.processor.js'
@@ -57,6 +58,16 @@ vi.mock('../../../jobs/events.js', () => ({
 // conflict across tests (afterEach clears all collections, so this is fine).
 const WC_ID = new Types.ObjectId().toHexString()
 const TAG_ID = new Types.ObjectId().toHexString()
+
+// A running sample reads its pending decision from Redis. As in production, the clients are
+// connected before any sample is handled; a lazy first command fails fast and is not retried.
+beforeAll(async () => {
+  await initRedis()
+}, 30_000)
+
+afterAll(async () => {
+  await closeRedis()
+})
 
 beforeEach(async () => {
   // afterEach (from contract-setup) wipes all collections — re-bootstrap each time.

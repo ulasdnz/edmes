@@ -1,12 +1,31 @@
 import { setupMongoTestContainer } from '@mes/testing'
 import { Types } from 'mongoose'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { setPeriodLock } from '../../jobs/subscribers.js'
+import { streamClient } from '../../lib/redis.js'
 import type { ITag } from '../tag/tag.model.js'
 import { getHistorianCollection } from './historian.repository.js'
 import { ingestValue } from './ingestion.pipeline.js'
 
+// Telemetry publishes on its stream client, which reads REDIS_URL when its module loads, so Redis
+// runs before the imports above are evaluated
+const redis = await vi.hoisted(async () => {
+  const { startRedisTestContainer } = await import('@mes/testing')
+  const started = await startRedisTestContainer()
+  process.env.REDIS_URL = started.url
+  return started
+})
+
 setupMongoTestContainer()
+
+beforeAll(async () => {
+  await streamClient.connect()
+})
+
+afterAll(async () => {
+  await streamClient.quit()
+  await redis.stop()
+})
 
 const makeTag = (behavior: 'counter' | 'speed' | 'binary'): ITag =>
   ({ _id: new Types.ObjectId(), behavior, tolerance: 0 }) as unknown as ITag
@@ -93,5 +112,53 @@ describe('ingestValue with concurrent samples for the same tag', () => {
       value: { applied: true, reason: 'history_inserted' },
     })
     expect(await storedSamples(tag)).toMatchObject([{ value: 6, prevValue: null }])
+  })
+})
+
+// The events telemetry published on events.telemetry for the tag, oldest first, without the trace id
+async function publishedFor(tag: ITag) {
+  const entries = await streamClient.xrange('events.telemetry', '-', '+')
+  return entries
+    .map(([, fields]) => {
+      const entry: Record<string, string> = {}
+      for (let i = 0; i < fields.length; i += 2) entry[fields[i]] = fields[i + 1]
+      const { traceId: _traceId, ...data } = JSON.parse(entry.data)
+      return { type: entry.type, data }
+    })
+    .filter(({ data }) => data.tagId === tag._id.toString())
+}
+
+describe('the tag.value.recorded event', () => {
+  it('carries the time of the sample stored before it, null for the first one', async () => {
+    const tag = makeTag('binary')
+    const tagId = tag._id.toString()
+
+    await ingestValue(tag, 0, at(1))
+    // Not stored, the value did not change: the next event names at(1) as its predecessor
+    await ingestValue(tag, 0, at(2))
+    await ingestValue(tag, 1, at(3))
+
+    expect(await publishedFor(tag)).toEqual([
+      {
+        type: 'tag.value.recorded',
+        data: {
+          tagId,
+          behavior: 'binary',
+          value: 0,
+          occurredAt: at(1).toISOString(),
+          previousOccurredAt: null,
+        },
+      },
+      {
+        type: 'tag.value.recorded',
+        data: {
+          tagId,
+          behavior: 'binary',
+          value: 1,
+          occurredAt: at(3).toISOString(),
+          previousOccurredAt: at(1).toISOString(),
+        },
+      },
+    ])
   })
 })

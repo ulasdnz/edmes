@@ -1,6 +1,7 @@
 export { createAuthMocks, type MockUser } from './auth.js'
-export { composeImage, MONGO_IMAGE } from './images.js'
+export { composeImage, MONGO_IMAGE, REDIS_IMAGE } from './images.js'
 export { setupMongoTestContainer } from './mongo.js'
 export { profileOperations } from './profile.js'
 export { createRedisMock, type RedisMock } from './redis.js'
+export { type RedisTestContainer, startRedisTestContainer } from './redis-container.js'
 export { createTestAgent, type TestAgent } from './request.js'

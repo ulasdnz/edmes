@@ -58,9 +58,12 @@ function isDuplicateKeyError(err: unknown): boolean {
   return typeof err === 'object' && err !== null && (err as { code?: number }).code === 11000
 }
 
+// debounceMs is the debounce the stop is opened under: a running signal that shows it shorter
+// deletes it. A stop opened without one closes at the running signal however short
 export async function openFromRunMode(
   workCenterId: string,
   startAt: Date,
+  debounceMs: number | null = null,
 ): Promise<IUnplannedStop> {
   const wcObjectId = new Types.ObjectId(workCenterId)
   try {
@@ -68,14 +71,47 @@ export async function openFromRunMode(
       workCenterId: wcObjectId,
       source: 'run_mode',
       startAt,
+      debounceMs,
     })
     emitUnplannedStopOpened(doc._id.toString(), workCenterId)
     return doc
   } catch (err) {
     if (isDuplicateKeyError(err)) {
+      const existing =
+        (await UnplannedStop.findOne({ workCenterId: wcObjectId, source: 'run_mode', startAt })) ??
+        (await UnplannedStop.findOne({ workCenterId: wcObjectId, endAt: null }))
+      if (existing) return existing
+    }
+    throw err
+  }
+}
+
+export async function recordClosedFromRunMode(
+  workCenterId: string,
+  startAt: Date,
+  endAt: Date,
+): Promise<IUnplannedStop> {
+  const wcObjectId = new Types.ObjectId(workCenterId)
+  const policy = await resolveForWorkCenter(workCenterId)
+  const isMicroStop = endAt.getTime() - startAt.getTime() <= policy.microStopThresholdMs
+  const reasonId = isMicroStop ? await getSystemReasonIdByCode('MICRO_STOP') : null
+  try {
+    const doc = await UnplannedStop.create({
+      workCenterId: wcObjectId,
+      source: 'run_mode',
+      startAt,
+      endAt,
+      reasonId,
+    })
+    emitUnplannedStopOpened(doc._id.toString(), workCenterId)
+    emitUnplannedStopClosed(doc._id.toString(), workCenterId)
+    return doc
+  } catch (err) {
+    if (isDuplicateKeyError(err)) {
       const existing = await UnplannedStop.findOne({
         workCenterId: wcObjectId,
-        endAt: null,
+        source: 'run_mode',
+        startAt,
       })
       if (existing) return existing
     }
@@ -83,17 +119,24 @@ export async function openFromRunMode(
   }
 }
 
+// No stop ends before it starts: a stop that started after endAt stays open, to close at its own end.
+// With a source, only an open stop of that source closes
 export async function closeIfOpen(
   workCenterId: string,
   endAt: Date,
-  options: { closedBy?: string } = {},
+  options: { closedBy?: string; source?: IUnplannedStop['source'] } = {},
 ): Promise<IUnplannedStop | null> {
   const wcObjectId = new Types.ObjectId(workCenterId)
   const update: Record<string, unknown> = { endAt }
   if (options.closedBy) update.closedBy = new Types.ObjectId(options.closedBy)
 
   const closed = await UnplannedStop.findOneAndUpdate(
-    { workCenterId: wcObjectId, endAt: null },
+    {
+      workCenterId: wcObjectId,
+      endAt: null,
+      startAt: { $lte: endAt },
+      ...(options.source ? { source: options.source } : {}),
+    },
     { $set: update },
     { returnDocument: 'after' },
   )
@@ -118,6 +161,32 @@ export async function closeIfOpen(
 
   emitUnplannedStopClosed(closed._id.toString(), workCenterId)
   return closed
+}
+
+export async function closeOnRunning(
+  workCenterId: string,
+  endAt: Date,
+): Promise<IUnplannedStop | null> {
+  // One conditional delete, so a stop a user changes in the meantime is closed and kept. It takes
+  // an untouched run-mode stop the signal shows shorter than the debounce it was opened under, and
+  // one that started after the signal: every stop the processor opens starts at a sample it
+  // processed, so such a stop was opened at the end of a planned stop from a history that did not
+  // hold this signal yet. A late or replayed signal never closes a stop that started after it
+  const deleted = await deleteStop({
+    workCenterId: new Types.ObjectId(workCenterId),
+    endAt: null,
+    source: 'run_mode',
+    updatedBy: null,
+    $or: [
+      { startAt: { $gt: endAt } },
+      {
+        debounceMs: { $gt: 0 },
+        $expr: { $gt: ['$startAt', { $subtract: [endAt, '$debounceMs'] }] },
+      },
+    ],
+  })
+  if (deleted) return null
+  return closeIfOpen(workCenterId, endAt)
 }
 
 export async function createManual(
@@ -344,9 +413,14 @@ export async function patch(
   return doc
 }
 
+async function deleteStop(filter: Record<string, unknown>): Promise<IUnplannedStop | null> {
+  const doc = await UnplannedStop.findOneAndDelete(filter)
+  if (doc) emitUnplannedStopUpdated(doc._id.toString(), doc.workCenterId.toString())
+  return doc
+}
+
 export async function remove(id: string, _userId: string): Promise<IUnplannedStop> {
-  const doc = await UnplannedStop.findOneAndDelete({ _id: id })
+  const doc = await deleteStop({ _id: id })
   if (!doc) throw new CustomError(404, 'error.not_found')
-  emitUnplannedStopUpdated(doc._id.toString(), doc.workCenterId.toString())
   return doc
 }

@@ -9,14 +9,16 @@ import {
   emitPlannedStopStarted,
   emitPlannedStopUpdated,
 } from '../../jobs/events.js'
-import { getLatest, type LatestSample } from '../../lib/internal-api/run-mode-telemetry.client.js'
 import { getById as getWorkCenter } from '../../lib/internal-api/work-center.client.js'
 import { logger } from '../../lib/logger.js'
 import { Reason } from '../reason/reason.model.js'
 import {
-  closeIfOpen as closeOpenUnplanned,
-  openFromRunMode as openUnplannedFromRunMode,
-} from '../unplanned-stop/unplanned-stop.service.js'
+  checkRunModeAfterPlannedStop,
+  leaveAfterPlannedCheck,
+  plannedStopCovering,
+  runModeTagIdFromCursor,
+} from '../run-mode/run-mode.processor.js'
+import { closeIfOpen as closeOpenUnplanned } from '../unplanned-stop/unplanned-stop.service.js'
 import { type IPlannedStop, PlannedStop } from './planned-stop.model.js'
 
 export interface CreatePlannedStopInput {
@@ -308,42 +310,54 @@ export async function close(
   return doc
 }
 
+// Rule 4 of the run-mode stops: a machine that still stands when the planned stop ends gets its stop
+// at the end. When the run mode cannot be read, the check after the planned stop decides it once
+// telemetry answers
 async function maybeOpenUnplannedAfterClose(
   closed: IPlannedStop,
   actualEndAt: Date,
 ): Promise<void> {
   const workCenterId = closed.workCenterId.toString()
+  const logFields = {
+    plannedStopId: closed._id.toString(),
+    workCenterId,
+    actualEndAt: actualEndAt.toISOString(),
+  }
 
-  const covering = await PlannedStop.exists({
-    workCenterId: closed.workCenterId,
-    _id: { $ne: closed._id },
-    status: { $in: ['planned', 'active'] },
-    plannedStartAt: { $lte: actualEndAt },
-    plannedEndAt: { $gt: actualEndAt },
-  })
-  if (covering) return
-
-  let latest: LatestSample | null
+  // The planned stop is closed already; nothing here may fail the close
   try {
-    const wc = await getWorkCenter(workCenterId)
-    const runModeTagId = wc?.tagBindings?.runModeTagId
-    if (!runModeTagId) return
+    // Another planned stop covers E, as the check after a planned stop finds it: one that is planned
+    // or active, or one that closed after E, such as a converted one. This one ended at E and covers
+    // it no longer
+    if (await plannedStopCovering(workCenterId, actualEndAt)) return
 
-    latest = await getLatest(runModeTagId)
+    // undefined when work-center cannot answer; its client logs why
+    const workCenter = await getWorkCenter(workCenterId).catch(() => undefined)
+    if (workCenter !== undefined) {
+      const runModeTagId = workCenter?.tagBindings?.runModeTagId
+      if (runModeTagId) {
+        await checkRunModeAfterPlannedStop({ workCenterId, runModeTagId }, actualEndAt)
+      }
+      return
+    }
+
+    // Without work-center, the tag of the run-mode signals processed for the work center stands in
+    const runModeTagId = await runModeTagIdFromCursor(workCenterId)
+    if (runModeTagId) {
+      await leaveAfterPlannedCheck({ workCenterId, runModeTagId }, actualEndAt)
+      return
+    }
+    logger.warn('Run mode after a planned stop not checked: no run-mode tag known', {
+      event: 'planned_stop.run_mode_unmonitored',
+      ...logFields,
+    })
   } catch (err) {
-    // The planned stop is closed already; a service that cannot answer must not fail the close
-    logger.warn('Run mode could not be read after a planned stop closed', {
+    logger.error('Run mode after a planned stop could not be checked; a stop may be lost', {
       event: 'planned_stop.run_mode_check_failed',
-      plannedStopId: closed._id.toString(),
-      workCenterId,
+      ...logFields,
       error: err instanceof Error ? err.message : err,
     })
-    return
   }
-  if (!latest) return
-  if (latest.value >= 1) return
-
-  await openUnplannedFromRunMode(workCenterId, actualEndAt)
 }
 
 export async function cancel(id: string, userId: string): Promise<IPlannedStop> {

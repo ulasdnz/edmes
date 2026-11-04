@@ -305,7 +305,7 @@
 - valid MQTT message for bound speed tag → sample persisted with prevValue, prevTs
 - valid MQTT message for bound binary tag, state change (0→1) → sample persisted
 - first sample for a tag (no predecessor) → prevValue=null, prevTs=null; counter: prev2Value=null, prev2Ts=null, reset=false
-- after persist → `tag.value.recorded` event emitted on `events.telemetry` with `{ tagId, behavior, value, occurredAt }`
+- after persist → `tag.value.recorded` event emitted on `events.telemetry` with `{ tagId, behavior, value, occurredAt, previousOccurredAt }`: `previousOccurredAt` is the time of the tag's sample stored before this one (ISO 8601 UTC with `Z`), null for the tag's first stored sample; a sample that was not stored (same value) is not a predecessor
 
 ### constraints
 - topic not matching `devices/{deviceKey}/nodes/{nodeId}` format → silently dropped
@@ -500,6 +500,17 @@
 
 ---
 
+## Historian.stateDurations (provider contract with performance)
+> target: telemetry/src/test/contracts/performance.contract.test.ts
+> spec: docs/superpowers/specs/2026-11-01-run-mode-outage-design.md, Decision rules 6 (performance replays a gap through this endpoint and stubs it in its own tests)
+
+### happy path
+- [HIGH] binary samples 0@06:00, 1@06:05, 0@06:10 and 1@06:15 stored through the ingestion pipeline, `GET /internal/v1/historian/:tagId/state-durations` from 06:00 to 06:20 without `limit` → segments `{ state, start, end, durationMs }` starting at 06:00, 06:05, 06:10 and 06:15, the last one ending at `to`; `hasMore` false, `nextCursor` null
+- from 06:02 to 06:15 → the first segment starts at `from` with the state before it, and the sample at `to` is left out
+- `limit` 2 → a page ends before its last sample (`hasMore` true, `nextCursor` = that sample's time) and the next page, `after` = `nextCursor`, starts at that sample
+
+---
+
 ## Historian.latest
 > target: telemetry/src/modules/historian/__tests__/historian.service.test.ts
 > plan-task: 12
@@ -630,3 +641,121 @@
 
 ### edge cases
 - Redis Pub/Sub publish fails → ingestion NOT affected (fire-and-forget, error swallowed)
+
+---
+
+> Added 2026-11-01 for the run-mode outage work | Spec: docs/superpowers/specs/2026-11-01-run-mode-outage-design.md | Plan: docs/superpowers/plans/2026-11-01-run-mode-outage.md
+> The header at the top of this file names the original telemetry spec and plan. The groups below this note come from the run-mode outage spec and plan, and their `plan-task` numbers refer to that plan. They carry spec scenarios 13 and 14 (scenarios 1-12 and the review focus lines are in performance.md). Same rule as above: immutable after implementation starts.
+
+---
+
+## Outage.plantTransitionsKept
+> target: e2e/src/outage.e2e.test.ts
+> plan-task: 10
+> scenario: 13
+> see-also: Outage.designLoad (plan Task 11: the same flow at the design load, run by hand)
+
+### happy path
+- [CRITICAL] a modelled plant keeps publishing over MQTT (the plan uses 200 messages/s with 20 run-mode transitions over a 20 s outage) while telemetry is stopped and started again → all 20 transitions are in telemetry's history for the run-mode tag, each with the time the machine gave it, and none is missing or altered
+
+---
+
+## Outage.designLoad
+> target: e2e/src/capacity/broker-capacity.capacity.test.ts
+> plan-task: 11
+> spec: Testing, Capacity measurement (run by hand with `pnpm test:capacity`, not in CI); the same flow as the scenario carried by Outage.plantTransitionsKept, at the design load
+> amended in Task 11's fix round: the first measurement ran telemetry without its container limits, and telemetry held the whole backlog in memory, four times its limit. The measurement now runs the deployed settings.
+
+### happy path
+- [CRITICAL] the plant publishes 500 messages/s of about 150 bytes through a 30-minute telemetry outage → every run-mode transition and every counter sample published is in telemetry's history with its own time (nothing lost). The broker runs the repository config with its compose limits; telemetry and performance run as containers built from their Dockerfiles, under their compose limits.
+- telemetry works off the backlog while the plant still publishes 500 messages/s, within its CPU and memory limits → the backlog empties, telemetry is not killed, and the time it took is reported
+- the broker counts no dropped message, and telemetry logs no `mqtt.session.lost`
+
+---
+
+## Mqtt.droppedMessages
+> target: telemetry/src/lib/mqtt.broker.test.ts
+> plan-task: 9
+> scenario: 14
+
+### happy path
+- [HIGH] against a real Mosquitto container with a low queue ceiling (the plan uses `max_queued_messages 5`): telemetry's session is disconnected, 20 QoS 1 messages are published, telemetry reconnects → exactly one `mqtt.broker.messages_dropped` is logged at error level with `dropped` of at least 15 (the broker's `$SYS/broker/publish/messages/dropped` counter minus the value telemetry saw last)
+
+### constraints
+- [HIGH] a dropped-message counter above the baseline → one `mqtt.broker.messages_dropped` error log whose `dropped` is the difference
+- a counter equal to the baseline (including the value just logged, received again with the next `$SYS` update) → no log
+- [HIGH] a counter below the baseline (the broker restarted and reset it) → no log, and the baseline moves to the new value so a later increase is measured from it
+- [HIGH] the baseline is kept in telemetry's Redis under `mqtt:dropped-baseline` → after a telemetry restart, drops that happened in between are still reported as the difference to the stored value
+
+---
+
+## TelemetryConfig.mqttSession
+> target: telemetry/src/lib/mqtt.broker.test.ts
+> plan-task: 9
+> spec: Broker buffering, Settings (`MQTT_CLIENT_ID`, `MQTT_SESSION_EXPIRY_SECONDS`, `MQTT_MAX_UNSTORED_MESSAGES`)
+> amended in Task 11's fix round: the session now outlives the queue ceiling, so a longer outage ends with counted drops instead of a session expiry that counts nothing; the default became 86400 s. The intake bound was added.
+
+### happy path
+- `MQTT_CLIENT_ID`, `MQTT_SESSION_EXPIRY_SECONDS` and `MQTT_MAX_UNSTORED_MESSAGES` not set → telemetry connects with client id `aimes-telemetry` (no process id in it) and a session expiry of 86400 s, and bounds its intake at 20 messages
+- both set → telemetry connects with the configured client id and session expiry
+
+### constraints
+- [HIGH] `MQTT_CLIENT_ID` empty → the configuration is rejected
+- [HIGH] `MQTT_SESSION_EXPIRY_SECONDS` zero, negative or not an integer → the configuration is rejected
+- [HIGH] `MQTT_MAX_UNSTORED_MESSAGES` zero, negative or not an integer → the configuration is rejected
+
+---
+
+## Mqtt.boundedIntake
+> target: telemetry/src/lib/mqtt.broker.test.ts
+> plan-task: 11 (fix round)
+> scenario: 15, 16
+
+### happy path
+- [CRITICAL] against a real Mosquitto container, telemetry reconnects to a backlog larger than `MQTT_MAX_UNSTORED_MESSAGES` and its stores are slow → it never holds more received but unstored messages than the bound; while it is at the bound, the broker's store still holds the rest of the backlog; once the stores finish, every message has been handed to a store once, in the order it was published, and stored exactly once
+
+### edge cases
+- [HIGH] a store that fails → its place in the bound is freed, and the next message is taken
+- below the bound → each message is handed to the store as it arrives, without waiting for an earlier store
+
+---
+
+## TelemetryMqtt.close
+> target: telemetry/src/lib/mqtt.broker.test.ts
+> plan-task: 11 (fix round)
+> scenario: 18
+
+### edge cases
+- [HIGH] telemetry closes while a machine publishes fast → it takes in no message after it starts to close and acknowledges none (no `mqtt.error` such as "write after end"); after a reconnect every published message has arrived
+- [HIGH] stores in progress when telemetry closes → closing waits for them, so their messages are stored before MongoDB and Redis close
+
+---
+
+## Ingestion.mongoUnreachable
+> target: telemetry/src/modules/ingestion/mongo-outage.broker.test.ts
+> plan-task: 11 (fix round 2)
+> scenario: 19
+> added after implementation started: the review of Task 11 found that with MongoDB down a store failed within 5 s and the loader dropped a message telemetry had already acknowledged, while the spec said the intake was held. The owner chose to make a store that cannot reach MongoDB wait for it.
+
+### happy path
+- [CRITICAL] telemetry's MongoDB stops while a machine publishes, then starts again → every message is stored exactly once and in the order it was published; while MongoDB is down, the broker's store holds every message telemetry has not taken in, and no message is dropped; each store that waited logs one `ingestion.store.deferred` warn when it first fails and one `ingestion.store.resolved` info with `waitedMs` once it is stored
+- [HIGH] a tag telemetry has not looked up yet sends its first messages while MongoDB is down → the lookup waits as well, and its messages are stored in order once MongoDB is back
+
+### constraints
+- [HIGH] a store that fails for another reason (MongoDB rejects the document) → the message is dropped with `ingestion.error`, and the messages after it are stored
+- [HIGH] telemetry stops while stores wait for MongoDB → it stops waiting at once, logs one `ingestion.store.abandoned` error per waiting store, and its MQTT close finishes well within a stop grace period
+- [HIGH] a message whose tag lookup waits for MongoDB and then finds no bound tag, and one whose lookup waits and whose payload is not JSON → each logs one `ingestion.store.deferred` warn and, once MongoDB is back, one `ingestion.store.resolved` info with `waitedMs` (the second with its `tagId`); every deferred line gets a resolved or an abandoned line
+
+---
+
+## Mqtt.sessionLost
+> target: telemetry/src/lib/mqtt.broker.test.ts
+> plan-task: 11 (fix round)
+> scenario: 17
+
+### happy path
+- [CRITICAL] telemetry has had a session, and the broker answers a reconnect without it (the session expired, or the broker lost it) → one `mqtt.session.lost` error log with the client id
+
+### constraints
+- [HIGH] telemetry's first connect ever (no marker in its Redis) → no `mqtt.session.lost`, and the marker is written
+- [HIGH] the broker kept the session → no `mqtt.session.lost`

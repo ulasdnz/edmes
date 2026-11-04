@@ -22,3 +22,6 @@ export function composeImage(service: string): string {
 // in the tag, and `name:tag@digest` parses as tag `sha256:...`, which falls back to the shell MongoDB
 // 6 removed, so the container never turns healthy
 export const MONGO_IMAGE = composeImage('mongodb').replace(/@sha256:[0-9a-f]+$/, '')
+
+// The compose image as it is: a GenericContainer takes `name:tag@digest`, so the digest stays
+export const REDIS_IMAGE = composeImage('redis')

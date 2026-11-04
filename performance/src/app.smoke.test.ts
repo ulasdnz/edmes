@@ -36,7 +36,8 @@ vi.mock('./modules/run-mode/run-mode.debounce-tick.js', () => ({
 }))
 
 vi.mock('./modules/run-mode/run-mode.reconciler.js', () => ({
-  reconcileOnBoot: vi.fn(async () => {}),
+  startBootReconciliation: vi.fn(async () => {}),
+  stopBootReconciliation: vi.fn(async () => {}),
 }))
 
 describe('app smoke', () => {

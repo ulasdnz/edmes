@@ -1,39 +1,22 @@
+import { setTimeout as sleep } from 'node:timers/promises'
 import { Types } from 'mongoose'
-import { getLatest, getStateDurations } from '../../lib/internal-api/run-mode-telemetry.client.js'
+import {
+  getLatest,
+  type RunModeRequestOptions,
+} from '../../lib/internal-api/run-mode-telemetry.client.js'
 import { logger } from '../../lib/logger.js'
+import { UnplannedStop } from '../unplanned-stop/unplanned-stop.model.js'
+import { openFromRunMode } from '../unplanned-stop/unplanned-stop.service.js'
+import { retryDelayMs } from './run-mode.decisions.js'
+import { withTagLock } from './run-mode.lock.js'
 import {
   handleRunModeSample,
   listMonitoredFromCursors,
   type MonitoredWorkCenter,
+  plannedStopCovering,
+  replayStoredSamples,
 } from './run-mode.processor.js'
 import { RunModeProcessingState } from './run-mode-processing-state.model.js'
-
-export interface ReconcileOptions {
-  now?: Date
-  monitored?: MonitoredWorkCenter[]
-}
-
-export async function reconcileOnBoot(options: ReconcileOptions = {}): Promise<void> {
-  const now = options.now ?? new Date()
-  const monitored = options.monitored ?? (await listMonitoredFromCursors())
-  if (monitored.length === 0) {
-    logger.info('Run-mode reconciler: no monitored work centers', {
-      event: 'run_mode.reconciler.empty',
-    })
-    return
-  }
-
-  logger.info('Run-mode reconciler started', {
-    event: 'run_mode.reconciler.start',
-    count: monitored.length,
-  })
-
-  await Promise.all(monitored.map(m => reconcileOne(m, now)))
-
-  logger.info('Run-mode reconciler completed', {
-    event: 'run_mode.reconciler.done',
-  })
-}
 
 async function readCursor(target: MonitoredWorkCenter): Promise<Date | null> {
   const doc = await RunModeProcessingState.findOne({
@@ -45,89 +28,187 @@ async function readCursor(target: MonitoredWorkCenter): Promise<Date | null> {
   return doc?.lastProcessedOccurredAt ?? null
 }
 
+// Under the tag's lock, like every cursor update, and only while the tag has none: a cursor the
+// event path wrote while telemetry was asked means it has taken the tag over, and a cursor at the
+// latest sample would skip the samples it has not processed yet. A decision about the sample, if
+// given, is made in the same step, before the cursor
 async function initializeCursor(
   target: MonitoredWorkCenter,
   occurredAt: Date,
   value: number,
+  decide?: () => Promise<void>,
 ): Promise<void> {
-  await RunModeProcessingState.findOneAndUpdate(
-    {
-      workCenterId: new Types.ObjectId(target.workCenterId),
-      runModeTagId: new Types.ObjectId(target.runModeTagId),
-    },
-    { $set: { lastProcessedOccurredAt: occurredAt, lastProcessedValue: value } },
-    { upsert: true },
-  )
+  await withTagLock(target, async () => {
+    if (await readCursor(target)) return
+    await decide?.()
+    await RunModeProcessingState.findOneAndUpdate(
+      {
+        workCenterId: new Types.ObjectId(target.workCenterId),
+        runModeTagId: new Types.ObjectId(target.runModeTagId),
+      },
+      { $set: { lastProcessedOccurredAt: occurredAt, lastProcessedValue: value } },
+      { upsert: true },
+    )
+  })
 }
 
-async function reconcileOne(target: MonitoredWorkCenter, now: Date): Promise<void> {
-  try {
-    const cursor = await readCursor(target)
+export interface ReconcileOptions {
+  // The target was listed from its cursor, as boot reconciliation lists them. Only stopping the work
+  // center's monitoring deletes a cursor, so a target whose cursor is gone is skipped: starting it
+  // from its latest sample would monitor it again
+  fromCursor?: boolean
+}
 
-    if (cursor) {
-      // Chunked fetch: paginate state-durations to bound payload/memory per
-      // request, especially after long outages. handleRunModeSample's own
-      // cursor guard skips chunk-overlap duplicates (the sample at exactly
-      // `after` is included in the next chunk by design — see
-      // run-mode-telemetry.client / binary.calc opts.after).
-      const MAX_ITER = 100
-      let after: Date | undefined
-      let iter = 0
-      for (; iter < MAX_ITER; iter++) {
-        const { segments, hasMore, nextCursor } = await getStateDurations(
-          target.runModeTagId,
-          cursor,
-          now,
-          { after },
-        )
-        for (const seg of segments) {
-          const occurredAt = new Date(seg.from)
-          if (occurredAt.getTime() <= cursor.getTime()) continue
-          await handleRunModeSample({
-            workCenterId: target.workCenterId,
-            runModeTagId: target.runModeTagId,
-            value: seg.value,
-            occurredAt,
-          })
-        }
-        if (!hasMore || !nextCursor) break
-        after = new Date(nextCursor)
-      }
-      if (iter === MAX_ITER) {
-        logger.warn(
-          'Run-mode reconciler hit MAX_ITER cap; remaining transitions deferred to next boot',
-          {
-            event: 'run_mode.reconciler.max_iter',
-            workCenterId: target.workCenterId,
-            runModeTagId: target.runModeTagId,
-            maxIter: MAX_ITER,
-          },
-        )
-      }
-      return
-    }
+// Brings one work center up to `now` from telemetry: the samples stored after its cursor go through
+// the same rules as delivered ones, and without a cursor its latest sample does. It throws when it
+// cannot, such as when telemetry cannot answer, and logs nothing itself, so its requests log their
+// failures at debug: the caller that retries it logs the failure once, with the cause. Once the
+// signal aborts, it stops before its next request or replayed sample
+export async function reconcileWorkCenter(
+  target: MonitoredWorkCenter,
+  now: Date = new Date(),
+  signal?: AbortSignal,
+  { fromCursor = false }: ReconcileOptions = {},
+): Promise<void> {
+  const request: RunModeRequestOptions = { failureLogLevel: 'debug', signal }
+  let cursor = await readCursor(target)
 
-    // No cursor: fall back to latest value (debounce-aware via handleRunModeSample).
-    const latest = await getLatest(target.runModeTagId)
-    if (!latest) return
-    const occurredAt = new Date(latest.occurredAt)
-    if (latest.value >= 1) {
-      // Running: just initialize the cursor so future events are tracked.
-      await initializeCursor(target, occurredAt, latest.value)
-      return
+  if (!cursor && fromCursor) {
+    logger.debug('Run-mode reconciliation skipped: the work center is no longer monitored', {
+      event: 'run_mode.reconciler.skipped',
+      workCenterId: target.workCenterId,
+      runModeTagId: target.runModeTagId,
+    })
+    return
+  }
+
+  if (cursor) {
+    // A replay that reaches its page limit goes on from the cursor its samples advanced, until it
+    // reaches now. One that advanced nothing would only ask for the same pages again
+    while (!(await replayStoredSamples(target, cursor, now, request)).complete) {
+      const advanced = await readCursor(target)
+      if (!advanced || advanced.getTime() <= cursor.getTime()) {
+        throw new Error('Run-mode replay reached its page limit without moving the cursor')
+      }
+      cursor = advanced
     }
-    await handleRunModeSample({
+    return
+  }
+
+  // No cursor: fall back to latest value (debounce-aware via handleRunModeSample). Either way it
+  // acts only while the tag still has no cursor; one written meanwhile leaves the tag to the event
+  // path and rule 6
+  const latest = await getLatest(target.runModeTagId, request)
+  if (!latest) return
+  const occurredAt = new Date(latest.occurredAt)
+  if (latest.value >= 1) {
+    // Running: just initialize the cursor so future events are tracked.
+    await initializeCursor(target, occurredAt, latest.value)
+    return
+  }
+  // The machine still stands, and its stop at that sample was closed when its monitoring stopped:
+  // nothing tells what it did since, so the stop opens again at the time monitoring resumes
+  const closedAtStop = await UnplannedStop.exists({
+    workCenterId: new Types.ObjectId(target.workCenterId),
+    source: 'run_mode',
+    startAt: occurredAt,
+    endAt: { $ne: null },
+  })
+  if (closedAtStop) {
+    await initializeCursor(target, occurredAt, latest.value, async () => {
+      if (!(await plannedStopCovering(target.workCenterId, now))) {
+        await openFromRunMode(target.workCenterId, now)
+      }
+    })
+    return
+  }
+  await handleRunModeSample(
+    {
       workCenterId: target.workCenterId,
       runModeTagId: target.runModeTagId,
       value: latest.value,
       occurredAt,
-    })
-  } catch (err) {
-    logger.warn('Run-mode reconciler failed for work center', {
-      event: 'run_mode.reconciler.failed',
-      workCenterId: target.workCenterId,
-      runModeTagId: target.runModeTagId,
-      error: err instanceof Error ? err.message : err,
-    })
+    },
+    { onlyWithoutCursor: true },
+  )
+}
+
+// Retries one work center on the retry schedule until it succeeds, apart from the others, so one that
+// keeps failing holds up no other. Logs mark changes, not attempts: the first failure, with its
+// cause, and the success after it. Boot reconciliation and the tag map both reconcile this way
+export async function reconcileUntilDone(
+  target: MonitoredWorkCenter,
+  signal: AbortSignal,
+  options: ReconcileOptions = {},
+): Promise<void> {
+  let failures = 0
+  while (!signal.aborted) {
+    try {
+      await reconcileWorkCenter(target, new Date(), signal, options)
+      if (failures > 0) {
+        logger.info('Run-mode reconciler recovered for work center', {
+          event: 'run_mode.reconciler.recovered',
+          workCenterId: target.workCenterId,
+          runModeTagId: target.runModeTagId,
+          attempts: failures,
+        })
+      }
+      return
+    } catch (err) {
+      if (signal.aborted) return
+      failures++
+      if (failures === 1) {
+        logger.warn('Run-mode reconciler failed for work center; retrying until it succeeds', {
+          event: 'run_mode.reconciler.failed',
+          workCenterId: target.workCenterId,
+          runModeTagId: target.runModeTagId,
+          error: err instanceof Error ? err.message : err,
+          // Why telemetry could not answer: the HTTP status, the fetch error or the timeout
+          ...(err instanceof Error && typeof err.cause === 'string' ? { cause: err.cause } : {}),
+        })
+      }
+    }
+    // Stopping ends the wait at once
+    await sleep(retryDelayMs(failures), undefined, { signal }).catch(() => {})
   }
+}
+
+let boot: { controller: AbortController; done: Promise<void> } | null = null
+
+// Reconciles every work center that has a cursor, each on its own and in the background: startup
+// waits only for the list, so telemetry being down at boot only delays the reconciliation
+export async function startBootReconciliation(): Promise<void> {
+  if (boot) return
+  const monitored = await listMonitoredFromCursors()
+  if (monitored.length === 0) {
+    logger.info('Run-mode reconciler: no monitored work centers', {
+      event: 'run_mode.reconciler.empty',
+    })
+    return
+  }
+
+  logger.info('Run-mode reconciler started', {
+    event: 'run_mode.reconciler.start',
+    count: monitored.length,
+  })
+  const controller = new AbortController()
+  const done = Promise.all(
+    monitored.map(target => reconcileUntilDone(target, controller.signal, { fromCursor: true })),
+  ).then(() => {
+    if (controller.signal.aborted) return
+    logger.info('Run-mode reconciler completed', {
+      event: 'run_mode.reconciler.done',
+    })
+  })
+  boot = { controller, done }
+}
+
+// Cancels the retries still waiting and aborts the requests in flight. It resolves once the sample
+// being written is written, so nothing is written after the data connections close
+export async function stopBootReconciliation(): Promise<void> {
+  if (!boot) return
+  const { controller, done } = boot
+  boot = null
+  controller.abort()
+  await done
 }

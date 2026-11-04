@@ -6,7 +6,8 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test:e2e": "vitest run"
+    "test:e2e": "vitest run",
+    "test:capacity": "vitest run --config vitest.capacity.config.ts"
   },
   "devDependencies": {
     "@mes/testing": "workspace:*",

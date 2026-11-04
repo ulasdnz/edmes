@@ -1,4 +1,4 @@
-import { MONGO_IMAGE } from '@mes/testing'
+import { MONGO_IMAGE, REDIS_IMAGE } from '@mes/testing'
 import { MongoDBContainer, type StartedMongoDBContainer } from '@testcontainers/mongodb'
 import { GenericContainer, type StartedTestContainer } from 'testcontainers'
 
@@ -13,7 +13,7 @@ export async function setup() {
   }
   uri = uri.replace('localhost', '127.0.0.1')
 
-  redisContainer = await new GenericContainer('redis:7').withExposedPorts(6379).start()
+  redisContainer = await new GenericContainer(REDIS_IMAGE).withExposedPorts(6379).start()
   const redisPort = redisContainer.getMappedPort(6379)
   const redisUrl = `redis://127.0.0.1:${redisPort}`
 

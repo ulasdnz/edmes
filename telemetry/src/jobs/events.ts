@@ -46,15 +46,19 @@ export const emitEdgeDeviceDeleted = (edgeDeviceId: string) =>
 
 // Realtime telemetry events
 
+// previousOccurredAt is the tag's sample stored before this one, null for its first: a consumer
+// that processed a different one last knows it missed samples
 export const emitTagValueRecorded = (
   tagId: string,
   behavior: string,
   value: number,
   occurredAt: Date,
+  previousOccurredAt: Date | null,
 ) =>
   emit('tag.value.recorded', {
     tagId,
     behavior,
     value,
     occurredAt: occurredAt.toISOString(),
+    previousOccurredAt: previousOccurredAt?.toISOString() ?? null,
   })
