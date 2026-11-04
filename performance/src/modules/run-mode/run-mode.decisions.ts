@@ -270,7 +270,8 @@ export async function resolveDecision(
   if (await replaceIfSameSince(target, decision, next)) logDecisionResolved(target, decision, now)
 }
 
-// Ends the wait the deferral log started; waitedMs counts from the moment the decision was due
+// Ends the wait the deferral log started; waitedMs counts from the moment the decision was due: its
+// D had run out and it was pending
 export function logDecisionResolved(
   target: DecisionTarget,
   decision: PendingDecision,
@@ -281,7 +282,12 @@ export function logDecisionResolved(
     event: 'run_mode.decision.resolved',
     ...logFields(target, decision),
     attempts: decision.attempts,
-    waitedMs: now.getTime() - (new Date(decision.since).getTime() + decision.debounceMs),
+    waitedMs:
+      now.getTime() -
+      Math.max(
+        new Date(decision.since).getTime() + decision.debounceMs,
+        new Date(decision.pendingSince).getTime(),
+      ),
   })
 }
 

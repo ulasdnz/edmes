@@ -1235,7 +1235,7 @@ describe('A decision telemetry cannot answer waits on the retry schedule (scenar
 
   it('retries on schedule and logs only the deferral and the decision', async () => {
     const machine = await machineWithDebounce(60_000)
-    await deliver(machine, recorded(machine, 0, '10:00:00'))
+    await atServerTime(at('10:00:00'), () => deliver(machine, recorded(machine, 0, '10:00:00')))
     stubs.latest.mode = 'fail'
 
     const attempts = await tickEverySecond(
@@ -1295,7 +1295,7 @@ describe('A decision telemetry cannot answer waits on the retry schedule (scenar
 
   it('defers a decision MongoDB cannot write on the same schedule and asks telemetry only when it is due', async () => {
     const machine = await machineWithDebounce(60_000)
-    await deliver(machine, recorded(machine, 0, '10:00:00'))
+    await atServerTime(at('10:00:00'), () => deliver(machine, recorded(machine, 0, '10:00:00')))
 
     const attempts = await whileMongoRefusesStops(() =>
       tickEverySecond(
@@ -1353,7 +1353,8 @@ describe('A decision telemetry cannot answer waits on the retry schedule (scenar
     await writeDecision(
       machine.workCenterId,
       machine.runModeTagId,
-      afterPlannedSince('10:30:00', '10:30:00'),
+      // Written a second after E, so its wait counts from then
+      afterPlannedSince('10:30:00', '10:30:01'),
     )
     recorded(machine, 1, '10:30:10')
     stubs.stateDurations.mode = 'fail'
@@ -1396,7 +1397,7 @@ describe('A decision telemetry cannot answer waits on the retry schedule (scenar
           runModeTagId: machine.runModeTagId,
           since: at('10:30:00').toISOString(),
           attempts: 5,
-          waitedMs: 32_000,
+          waitedMs: 31_000,
         },
       ],
     ])
