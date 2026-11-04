@@ -40,6 +40,9 @@ RUN pnpm --filter performance-service exec tsc -b tsconfig.json
 # Deploy the versions pnpm-lock.yaml pins (including workspace dependencies)
 # into a clean "/prod/performance" folder. This completely isolates the service.
 RUN pnpm --filter=performance-service --prod deploy /prod/performance
+# i18next lists TypeScript as an optional peer for its type definitions, so the deploy carries
+# the whole compiler (23 MB); nothing loads it at runtime
+RUN rm -rf /prod/performance/node_modules/typescript /prod/performance/node_modules/.bin/tsc /prod/performance/node_modules/.bin/tsserver
 
 # Copy i18n translation files (outside dist, referenced via relative path from loaders)
 RUN cp -r performance/locales /prod/performance/locales
@@ -48,7 +51,8 @@ RUN cp -r performance/locales /prod/performance/locales
 # Stage 2: Runner (Production Image)
 # ---------------------------------------
 FROM node:26.13.0-alpine@sha256:c6ad9e9c1d80f6eb607c26b4b0a132ff7a2344fad1c78ea3baa2a7d4c8de6d94 AS runner
-RUN apk add --no-cache dumb-init
+# The service runs with node alone; npm stays out of the runtime image
+RUN apk add --no-cache dumb-init && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 
 WORKDIR /app
 

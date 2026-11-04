@@ -34,12 +34,16 @@ RUN pnpm --filter telemetry-service exec tsc -b tsconfig.json
 
 
 RUN pnpm --filter=telemetry-service --prod deploy /prod/telemetry
+# i18next lists TypeScript as an optional peer for its type definitions, so the deploy carries
+# the whole compiler (23 MB); nothing loads it at runtime
+RUN rm -rf /prod/telemetry/node_modules/typescript /prod/telemetry/node_modules/.bin/tsc /prod/telemetry/node_modules/.bin/tsserver
 
 # ---------------------------------------
 # Stage 2: Runner (Production Image)
 # ---------------------------------------
 FROM node:26.13.0-alpine@sha256:c6ad9e9c1d80f6eb607c26b4b0a132ff7a2344fad1c78ea3baa2a7d4c8de6d94 AS runner
-RUN apk add --no-cache dumb-init
+# The service runs with node alone; npm stays out of the runtime image
+RUN apk add --no-cache dumb-init && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 
 WORKDIR /app
 
