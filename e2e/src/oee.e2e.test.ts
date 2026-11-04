@@ -464,7 +464,8 @@ describe('OEE across telemetry, work-center, production and performance', () => 
   it('leaves no error in any service log', async () => {
     const logDir = inject('logDir')
     const errors: string[] = []
-    for (const file of await readdir(logDir)) {
+    // The run folder also holds each service's working folder
+    for (const file of (await readdir(logDir)).filter(name => name.endsWith('.log'))) {
       const lines = (await readFile(join(logDir, file), 'utf8')).split('\n')
       errors.push(...lines.filter(line => line.includes('"level":"error"')))
     }

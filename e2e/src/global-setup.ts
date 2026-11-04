@@ -1,5 +1,5 @@
 import { type ChildProcess, execFile, spawn } from 'node:child_process'
-import { createWriteStream, existsSync, readFileSync } from 'node:fs'
+import { createWriteStream, existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { mkdir, readdir, readFile, rm } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
@@ -116,8 +116,13 @@ function startProcess(name: ServiceName, runDir: string, env: NodeJS.ProcessEnv)
   const logFile = resolve(runDir, `${name}.log`)
   // A restarted service adds to the log of its earlier run
   const log = createWriteStream(logFile, { flags: 'a' })
+  // The service works in a folder of the run's own, as it works in /app in its image. In production
+  // mode dotenv reads .env from the working folder, and the service's own folder holds the
+  // developer's. Files the service writes, such as uploads, stay with the run as well.
+  const workDir = resolve(runDir, name)
+  mkdirSync(workDir, { recursive: true })
   const child = spawn(process.execPath, [entry], {
-    cwd: resolve(ROOT, name),
+    cwd: workDir,
     env,
     stdio: ['ignore', 'pipe', 'pipe'],
   })
@@ -267,7 +272,9 @@ export default async function setup(project: TestProject) {
   const containers: StartedTestContainer[] = [mongo, redis, startedBroker]
   const mqttUrl = `mqtt://${startedBroker.getHost()}:${startedBroker.getMappedPort(1883)}`
 
-  // Every variable the services read is set here, so a developer's local .env cannot leak in.
+  // The services' settings come from here, or are their defaults: a service process works in a
+  // folder without a .env (see startProcess), and an image holds none, so a developer's local .env
+  // cannot leak in.
   const shared = {
     NODE_ENV: 'production',
     LOG_LEVEL: 'info',
