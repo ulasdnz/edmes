@@ -1,11 +1,12 @@
 import type { AddressInfo } from 'node:net'
+import { REDIS_IMAGE } from '@mes/testing/images'
 import { GenericContainer, type StartedTestContainer } from 'testcontainers'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 let container: StartedTestContainer
 
 beforeAll(async () => {
-  container = await new GenericContainer('redis:7-alpine').withExposedPorts(6379).start()
+  container = await new GenericContainer(REDIS_IMAGE).withExposedPorts(6379).start()
   // Read by the config module when the imports below load it
   process.env.REDIS_URL = `redis://${container.getHost()}:${container.getMappedPort(6379)}`
 }, 120000)

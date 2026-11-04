@@ -24,6 +24,7 @@
     "ioredis": "^5.0.0"
   },
   "devDependencies": {
+    "@mes/testing": "workspace:*",
     "@types/node": "^26.6.5",
     "ioredis": "^5.0.0",
     "testcontainers": "^11.14.0",

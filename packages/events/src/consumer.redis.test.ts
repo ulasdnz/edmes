@@ -1,3 +1,4 @@
+import { REDIS_IMAGE } from '@mes/testing/images'
 import { Redis } from 'ioredis'
 import { GenericContainer, type StartedTestContainer } from 'testcontainers'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
@@ -13,7 +14,7 @@ let container: StartedTestContainer
 let redis: Redis
 
 beforeAll(async () => {
-  container = await new GenericContainer('redis:7-alpine').withExposedPorts(6379).start()
+  container = await new GenericContainer(REDIS_IMAGE).withExposedPorts(6379).start()
   redis = new Redis({ host: container.getHost(), port: container.getMappedPort(6379) })
 }, 120_000)
 

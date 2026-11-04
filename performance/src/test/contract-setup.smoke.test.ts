@@ -1,4 +1,4 @@
-import { MONGO_IMAGE } from '@mes/testing'
+import { MONGO_IMAGE, REDIS_IMAGE } from '@mes/testing'
 import { MongoDBContainer } from '@testcontainers/mongodb'
 import { Redis } from 'ioredis'
 import mongoose from 'mongoose'
@@ -20,7 +20,7 @@ describe('Testcontainers smoke gate', () => {
     uri = uri.replace('localhost', '127.0.0.1')
     conn = await mongoose.createConnection(uri).asPromise()
 
-    redisContainer = await new GenericContainer('redis:7').withExposedPorts(6379).start()
+    redisContainer = await new GenericContainer(REDIS_IMAGE).withExposedPorts(6379).start()
     redisPort = redisContainer.getMappedPort(6379)
   }, 120_000)
 
