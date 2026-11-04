@@ -170,6 +170,17 @@ describe('A planned stop that closes while the run mode cannot be read leaves a 
 
     expect(await storedCheck(machine)).toEqual(afterPlannedSince('10:30:00'))
     expect(await stopsOf(machine)).toEqual([])
+    // Only the failed request: the cursor names the tag, so the run mode is not left unchecked
+    expect(logs.lines()).toEqual([
+      [
+        'warn',
+        {
+          event: 'internal_api.work_center.fetch_failed',
+          status: 500,
+          workCenterId: machine.workCenterId,
+        },
+      ],
+    ])
   })
 
   it('leaves no check when the run mode can be read', async () => {
@@ -183,6 +194,8 @@ describe('A planned stop that closes while the run mode cannot be read leaves a 
     // The machine still stands, so its stop opens at the end of the planned stop
     expect(await stopsOf(machine)).toEqual([openRunModeStop('10:30:00')])
     expect(await storedCheck(machine)).toBeNull()
+    // Nothing failed and nothing waits for a decision
+    expect(logs.lines()).toEqual([])
   })
 
   it('leaves a pending debounce candidate of the same tag as it was', async () => {
@@ -197,6 +210,17 @@ describe('A planned stop that closes while the run mode cannot be read leaves a 
 
     expect(await storedCheck(machine)).toEqual(afterPlannedSince('10:30:00'))
     expect(await storedCandidate(machine)).toEqual(candidateSince('09:58:00'))
+    // The failed request names its cause; the check and the candidate wait without a line of their own
+    expect(logs.lines()).toEqual([
+      [
+        'warn',
+        {
+          event: 'internal_api.telemetry.fetch_failed',
+          path: `/internal/v1/historian/${machine.runModeTagId}/latest`,
+          status: 500,
+        },
+      ],
+    ])
   })
 
   it('logs that the run mode goes unchecked when neither work-center nor a cursor names the tag', async () => {

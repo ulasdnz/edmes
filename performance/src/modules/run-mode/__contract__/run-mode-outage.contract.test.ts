@@ -969,6 +969,8 @@ describe('The tick and a running signal decide the same candidate (scenario 5)',
 
     expect(await stopsOf(machine)).toEqual([runModeStop('10:00:00', '10:05:00')])
     expect(await storedCandidate(machine)).toEqual(candidateSince('10:06:00'))
+    // The late decision and the newer candidate are no failure of either writer
+    expect(logs.lines()).toEqual([])
   })
 
   // An answer telemetry computed before it stored the running sample still names T0; a stop opened
