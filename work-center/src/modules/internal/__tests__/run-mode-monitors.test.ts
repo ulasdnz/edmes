@@ -98,11 +98,12 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   fetchMock.mockReset()
+  // The part of a fetch response the internal clients read
   fetchMock.mockResolvedValue({
     ok: true,
     status: 200,
     json: async () => ({ data: { docs: [], inUse: false, workCenterIds: [] } }),
-  } as Response)
+  })
   await WorkCenter.deleteMany({})
 })
 

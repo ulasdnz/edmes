@@ -100,22 +100,26 @@ vi.mock('../../../lib/logger', () => ({
 let app: Express
 let sequence = 0
 
-const defaultFetchResponse = () =>
-  ({
-    ok: true,
-    status: 200,
-    json: async () => ({
-      data: {
-        docs: [],
-        inUse: false,
-        workCenterIds: [],
-      },
-    }),
-  }) as Response
+// The part of a fetch response the internal clients read
+const defaultFetchResponse = () => ({
+  ok: true,
+  status: 200,
+  json: async () => ({
+    data: {
+      docs: [],
+      inUse: false,
+      workCenterIds: [],
+    },
+  }),
+})
 
 const nextSuffix = () => String(++sequence).padStart(4, '0')
 
-const baseWeek = () => ({
+// Shift ids per weekday
+const baseWeek = (): Record<
+  'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday',
+  string[]
+> => ({
   monday: [],
   tuesday: [],
   wednesday: [],

@@ -1,5 +1,7 @@
 import { Types } from 'mongoose'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import type * as telemetry from '../../lib/internal-api/run-mode-telemetry.client.js'
+import type * as workCenter from '../../lib/internal-api/work-center.client.js'
 
 // Pending decisions and the cache live in Redis, so a real one runs. Performance builds its Redis
 // clients from REDIS_URL when their module loads, so Redis starts before the imports below run.
@@ -10,21 +12,19 @@ const { redis } = await vi.hoisted(async () => {
   return { redis }
 })
 
-// The segment shape telemetry's state-durations answers with
-type Segment = { state: number; start: string; end: string; durationMs: number }
-type Page = { segments: Segment[]; hasMore: boolean; nextCursor: string | null }
-const emptyPage = (): Page => ({ segments: [], hasMore: false, nextCursor: null })
+const emptyPage = (): telemetry.StateDurationsPage => ({
+  segments: [],
+  hasMore: false,
+  nextCursor: null,
+})
 
 const { getLatest, getStateDurations } = vi.hoisted(() => ({
-  getLatest: vi.fn(async () => null as null | { tagId: string; value: number; occurredAt: string }),
-  getStateDurations: vi.fn(
-    async () =>
-      ({ segments: [], hasMore: false, nextCursor: null }) as {
-        segments: Array<{ state: number; start: string; end: string; durationMs: number }>
-        hasMore: boolean
-        nextCursor: string | null
-      },
-  ),
+  getLatest: vi.fn<typeof telemetry.getLatest>(async () => null),
+  getStateDurations: vi.fn<typeof telemetry.getStateDurations>(async () => ({
+    segments: [],
+    hasMore: false,
+    nextCursor: null,
+  })),
 }))
 
 vi.mock('../../lib/internal-api/run-mode-telemetry.client.js', () => ({
@@ -33,7 +33,7 @@ vi.mock('../../lib/internal-api/run-mode-telemetry.client.js', () => ({
 }))
 
 const { getWorkCenter } = vi.hoisted(() => ({
-  getWorkCenter: vi.fn(async () => null as unknown as { _id: string } | null),
+  getWorkCenter: vi.fn<typeof workCenter.getById>(async () => null),
 }))
 vi.mock('../../lib/internal-api/work-center.client.js', () => ({
   getById: getWorkCenter,

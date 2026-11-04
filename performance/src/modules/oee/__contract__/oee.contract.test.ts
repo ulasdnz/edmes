@@ -4,7 +4,7 @@ import type { Server } from 'node:http'
 import { setTimeout as sleep } from 'node:timers/promises'
 import express from 'express'
 import { Types } from 'mongoose'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { SYSTEM_IDENTITY } from '../../../constants/identity.js'
 import { PlannedStop } from '../../planned-stop/planned-stop.model.js'
 import * as policyService from '../../policy/policy.service.js'
@@ -15,13 +15,16 @@ import { calculate } from '../oee.service.js'
 
 // ── Stub servers (lightweight Express, bound to fixed ports in env) ───────────
 
+// The body performance's telemetry client sends to both summaries
+type SummaryBody = { windows: Array<{ from: string; to: string }> }
+
 type StubHandlers = {
   getWorkCenter?: (id: string) => unknown
   getJobOrders?: (params: URLSearchParams) => unknown
   getProductStandardsBatch?: (body: unknown) => unknown
   getJobOrderRecordsBatch?: (body: unknown) => unknown
-  getProducedSummary?: (tagId: string, body: unknown) => unknown
-  getSpeedSummary?: (tagId: string, body: unknown) => unknown
+  getProducedSummary?: (tagId: string, body: SummaryBody) => unknown
+  getSpeedSummary?: (tagId: string, body: SummaryBody) => unknown
 }
 
 let handlers: StubHandlers = {}
@@ -82,17 +85,17 @@ function makeStubServers() {
 
 const servers: Server[] = []
 
+// Express calls back with the error when the port cannot be bound, such as one already in use
+const listen = (app: express.Express, port: number) =>
+  new Promise<void>((resolve, reject) => {
+    servers.push(app.listen(port, error => (error ? reject(error) : resolve())))
+  })
+
 beforeAll(async () => {
   const { wcApp, prodApp, telemApp } = makeStubServers()
-  await new Promise<void>(res => {
-    servers.push(wcApp.listen(19902, res))
-  })
-  await new Promise<void>(res => {
-    servers.push(prodApp.listen(19903, res))
-  })
-  await new Promise<void>(res => {
-    servers.push(telemApp.listen(19904, res))
-  })
+  await listen(wcApp, 19902)
+  await listen(prodApp, 19903)
+  await listen(telemApp, 19904)
   // Bootstrap here too — the previous file's afterEach may have wiped the DB
   // before this file's beforeEach runs for the very first test.
   await bootstrapSystemReasons()
@@ -190,7 +193,7 @@ function stoppedMsWithin(from: number, to: number, stopped: Stop[]) {
 // test): the raw counter delta of each requested window, in request order. The counter goes up
 // strokesPerMinute times a minute and stands still while the machine is stopped.
 function strokeCounter(strokesPerMinute: number, stopped: Stop[] = []) {
-  return (_tagId: string, body: { windows: Array<{ from: string; to: string }> }) => {
+  return (_tagId: string, body: SummaryBody) => {
     const windows = body.windows.map(w => {
       const from = new Date(w.from).getTime()
       const to = new Date(w.to).getTime()
@@ -205,7 +208,7 @@ function strokeCounter(strokesPerMinute: number, stopped: Stop[] = []) {
 // the speed area (speed × milliseconds) of each requested window, in request order. Each profile
 // entry sets the speed from its time on; the speed is zero while the machine is stopped.
 function speedProfile(profile: Array<{ from: Date; speed: number }>, stopped: Stop[] = []) {
-  return (_tagId: string, body: { windows: Array<{ from: string; to: string }> }) => {
+  return (_tagId: string, body: SummaryBody) => {
     const windows = body.windows.map(w => {
       const from = new Date(w.from).getTime()
       const to = new Date(w.to).getTime()

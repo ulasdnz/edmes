@@ -1,7 +1,8 @@
 import { CustomError } from '@mes/core'
 import { profileOperations } from '@mes/testing'
 import { Types } from 'mongoose'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest'
+import type * as workCenter from '../../lib/internal-api/work-center.client.js'
 
 const { cacheDel, cacheWrap, cacheWrapDedup } = vi.hoisted(() => ({
   cacheDel: vi.fn(async () => {}),
@@ -32,13 +33,7 @@ vi.mock('../../lib/internal-api/run-mode-telemetry.client.js', () => ({
 }))
 
 const { getWorkCenter } = vi.hoisted(() => ({
-  getWorkCenter: vi.fn(
-    async (_id: string) =>
-      null as unknown as {
-        _id: string
-        tagBindings?: { runModeTagId?: string }
-      } | null,
-  ),
+  getWorkCenter: vi.fn<typeof workCenter.getById>(async () => null),
 }))
 
 vi.mock('../../lib/internal-api/work-center.client.js', () => ({
@@ -347,7 +342,8 @@ describe('PlannedStopService', () => {
     })
 
     it('closes the planned stop when the work center service cannot be reached', async () => {
-      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => logger)
+      // spyOn would type the calls by winston's last overload, which takes no meta argument
+      const warn: MockInstance = vi.spyOn(logger, 'warn').mockImplementation(() => logger)
       try {
         const reason = await seedPlannedReason()
         const wcId = new Types.ObjectId().toString()

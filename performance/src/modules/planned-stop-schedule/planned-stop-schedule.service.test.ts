@@ -1,6 +1,6 @@
 import { Types } from 'mongoose'
 import { describe, expect, it } from 'vitest'
-import { Reason } from '../reason/reason.model.js'
+import { Reason, type ReasonUsage } from '../reason/reason.model.js'
 import { PlannedStopSchedule } from './planned-stop-schedule.model.js'
 import * as service from './planned-stop-schedule.service.js'
 
@@ -10,7 +10,7 @@ async function seedScheduledReason(
   overrides: Partial<{
     canBeScheduled: boolean
     isActive: boolean
-    usages: string[]
+    usages: ReasonUsage[]
   }> = {},
 ) {
   return Reason.create({

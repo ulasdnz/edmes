@@ -1,5 +1,5 @@
 import { Types } from 'mongoose'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ProductCategory } from '../product-category/product-category.model.js'
 import { Uom } from '../uom/uom.model.js'
 import { Product } from './product.model.js'

@@ -1,5 +1,5 @@
 import type { EventHandler } from '@mes/events'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../gateway/socket.js', () => ({
   emitToRooms: vi.fn(),

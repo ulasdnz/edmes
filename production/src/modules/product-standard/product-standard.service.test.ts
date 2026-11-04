@@ -1,5 +1,5 @@
 import { Types } from 'mongoose'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { JobOrder } from '../job-order/job-order.model.js'
 import { Product } from '../product/product.model.js'
 import { Uom } from '../uom/uom.model.js'
@@ -334,7 +334,7 @@ describe('ProductStandardService', () => {
       )
 
       expect(updated.idealOutputPerMinute).toBe(20)
-      expect(updated.updatedBy.toString()).toBe(userId)
+      expect(updated.updatedBy?.toString()).toBe(userId)
     })
 
     it('throws 404 for non-existent id', async () => {

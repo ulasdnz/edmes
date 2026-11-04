@@ -68,16 +68,7 @@ describe('shift.scheduler', () => {
   it('onShiftCreated schedules a new shift mid-run', async () => {
     await scheduler.startShiftScheduler()
     const s = await createShift('Day', 8, 16)
-    scheduler.onShiftCreated(
-      s as unknown as {
-        _id: unknown
-        name: string
-        startHour: number
-        startMinute: number
-        endHour: number
-        endMinute: number
-      },
-    )
+    scheduler.onShiftCreated(s)
     await vi.advanceTimersByTimeAsync(3 * 60 * 60 * 1000)
     expect(mockedStart).toHaveBeenCalledTimes(1)
   })
@@ -97,16 +88,7 @@ describe('shift.scheduler', () => {
     // Change end to 17:00
     s.endHour = 17
     await s.save()
-    scheduler.onShiftUpdated(
-      s as unknown as {
-        _id: unknown
-        name: string
-        startHour: number
-        startMinute: number
-        endHour: number
-        endMinute: number
-      },
-    )
+    scheduler.onShiftUpdated(s)
 
     await vi.advanceTimersByTimeAsync(3 * 60 * 60 * 1000) // → 08:00 IST
 

@@ -1,4 +1,4 @@
-import type { Model, PopulateOptions, QueryFilter } from 'mongoose'
+import type { Model, PopulateOptions, QueryFilter, Require_id } from 'mongoose'
 import { z } from 'zod'
 
 export const paginationSchema = z.object({
@@ -40,7 +40,7 @@ export async function paginate<T>(
   filters: Record<string, unknown>,
   input: PaginationInput,
   options: PaginateOptions = {},
-): Promise<PaginatedResult<T>> {
+): Promise<PaginatedResult<Require_id<T>>> {
   const { page, limit, search } = input
   const { codeField } = options
   const skip = (page - 1) * limit
@@ -77,7 +77,8 @@ export async function paginate<T>(
   }
 
   const [data, total] = await Promise.all([
-    dataQuery.exec() as Promise<T[]>,
+    // Lean documents keep their _id, which the schema's type may leave out
+    dataQuery.exec() as Promise<Require_id<T>[]>,
     // Counting matches reads every one of them; without a filter the collection's metadata
     // already holds the count
     Object.keys(query).length === 0

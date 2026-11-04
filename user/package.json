@@ -18,7 +18,7 @@
     "seed": "tsx src/database/seeders/index.ts",
     "migrate": "tsx src/database/migrations/index.ts",
     "migration:create": "tsx src/scripts/create-migration.ts",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json",
     "test": "vitest run",
     "test:contract": "vitest run --config vitest.contract.config.ts",
     "test:watch": "vitest",

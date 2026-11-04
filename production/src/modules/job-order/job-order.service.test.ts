@@ -1,6 +1,6 @@
 import { profileOperations } from '@mes/testing'
 import { Types } from 'mongoose'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { emitJobOrderEnded, emitJobOrderStarted, emitJobOrderUpdated } from '../../jobs/events.js'
 import { Product } from '../product/product.model.js'
 import { ProductStandard } from '../product-standard/product-standard.model.js'

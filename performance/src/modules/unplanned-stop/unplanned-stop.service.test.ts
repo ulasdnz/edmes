@@ -22,7 +22,7 @@ import * as events from '../../jobs/events.js'
 import { PlannedStop } from '../planned-stop/planned-stop.model.js'
 import * as policyService from '../policy/policy.service.js'
 import { bootstrapSystemReasons, MICRO_STOP_CODE } from '../reason/reason.bootstrap.js'
-import { Reason } from '../reason/reason.model.js'
+import { Reason, type ReasonUsage } from '../reason/reason.model.js'
 import { UnplannedStop } from './unplanned-stop.model.js'
 import * as service from './unplanned-stop.service.js'
 import { patchUnplannedStopSchema } from './unplanned-stop.validators.js'
@@ -33,7 +33,7 @@ async function seedReason(
   overrides: Partial<{
     code: string
     name: string
-    usages: string[]
+    usages: ReasonUsage[]
     canConvertFromUnplanned: boolean
     isActive: boolean
     affectsOee: boolean

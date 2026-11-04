@@ -1,13 +1,24 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+// The query the calculation sends to the historian, and the part of the cursor it reads
+type HistorianFilter = { occurredAt: { $gte: Date; $lt: Date } }
+type Sample = { occurredAt: Date; value: number }
+type SortedCursor = {
+  limit?: (n: number) => { toArray: () => Promise<Sample[]> }
+  toArray: () => Promise<Sample[]>
+}
+type Cursor = { sort: (spec: unknown) => SortedCursor }
+
 const { findOneMock, findMock, findToArrayMock } = vi.hoisted(() => {
   const findToArrayMock = vi.fn()
-  const findMock = vi.fn(() => ({
-    sort: vi.fn(() => ({
-      limit: vi.fn(() => ({ toArray: findToArrayMock })),
-      toArray: findToArrayMock,
-    })),
-  }))
+  const findMock = vi.fn(
+    (_filter: HistorianFilter): Cursor => ({
+      sort: vi.fn(() => ({
+        limit: vi.fn(() => ({ toArray: findToArrayMock })),
+        toArray: findToArrayMock,
+      })),
+    }),
+  )
   return { findOneMock: vi.fn(), findMock, findToArrayMock }
 })
 
@@ -216,8 +227,8 @@ describe('calculateStateDurations', () => {
         })),
       }
     }
-    findMock.mockImplementationOnce(filterAware as never)
-    findMock.mockImplementationOnce(filterAware as never)
+    findMock.mockImplementationOnce(filterAware)
+    findMock.mockImplementationOnce(filterAware)
     findOneMock.mockResolvedValue(null)
 
     const first = await calculateStateDurations('tag-1', rangeStart, mid)
@@ -328,7 +339,7 @@ describe('calculateStateDurations', () => {
       ]
 
       // Filter-aware mock: respects $gte/$lt and .limit(N).
-      findMock.mockImplementation((filter: { occurredAt: { $gte: Date; $lt: Date } }) => {
+      findMock.mockImplementation((filter: HistorianFilter) => {
         const { $gte, $lt } = filter.occurredAt
         const filtered = allDocs.filter(d => {
           const t = d.occurredAt.getTime()
@@ -340,7 +351,7 @@ describe('calculateStateDurations', () => {
           }),
           toArray: vi.fn().mockResolvedValue(filtered),
         })
-        return { sort: vi.fn(sortedSorted) } as never
+        return { sort: vi.fn(sortedSorted) }
       })
 
       // Baseline: state at <effectiveFrom. We dispatch by query: first call uses

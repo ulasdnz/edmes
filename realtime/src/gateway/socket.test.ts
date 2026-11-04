@@ -1,6 +1,6 @@
 import http from 'http'
 import type { Server } from 'socket.io'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { getIO, initSocketServer } from './socket.js'
 
 vi.mock('../lib/logger.js', () => ({
@@ -69,7 +69,7 @@ describe('SocketServer', () => {
       const handler = getConnectionHandler()
       handler(socket)
 
-      const joinHandler = socket.on.mock.calls.find(([event]: [string]) => event === 'join')?.[1]
+      const joinHandler = socket.on.mock.calls.find(([event]) => event === 'join')?.[1]
       joinHandler({ rooms: ['wc:abc', 'job_order'] })
 
       expect(socket.join).toHaveBeenCalledWith('wc:abc')
@@ -81,7 +81,7 @@ describe('SocketServer', () => {
       const handler = getConnectionHandler()
       handler(socket)
 
-      const joinHandler = socket.on.mock.calls.find(([event]: [string]) => event === 'join')?.[1]
+      const joinHandler = socket.on.mock.calls.find(([event]) => event === 'join')?.[1]
       joinHandler({ rooms: ['production_plan'] })
 
       expect(socket.join).toHaveBeenCalledWith('production_plan')
@@ -93,7 +93,7 @@ describe('SocketServer', () => {
       const handler = getConnectionHandler()
       handler(socket)
 
-      const joinHandler = socket.on.mock.calls.find(([event]: [string]) => event === 'join')?.[1]
+      const joinHandler = socket.on.mock.calls.find(([event]) => event === 'join')?.[1]
       joinHandler({ rooms: ['new_room'] })
 
       expect(socket.leave).toHaveBeenCalledWith('old_room')
@@ -105,7 +105,7 @@ describe('SocketServer', () => {
       const handler = getConnectionHandler()
       handler(socket)
 
-      const joinHandler = socket.on.mock.calls.find(([event]: [string]) => event === 'join')?.[1]
+      const joinHandler = socket.on.mock.calls.find(([event]) => event === 'join')?.[1]
       joinHandler({ rooms: ['wc:abc'] })
 
       expect(socket.leave).not.toHaveBeenCalledWith(socket.id)
@@ -116,7 +116,7 @@ describe('SocketServer', () => {
       const handler = getConnectionHandler()
       handler(socket)
 
-      const joinHandler = socket.on.mock.calls.find(([event]: [string]) => event === 'join')?.[1]
+      const joinHandler = socket.on.mock.calls.find(([event]) => event === 'join')?.[1]
       joinHandler({ rooms: 'not-an-array' })
 
       expect(socket.join).not.toHaveBeenCalled()
@@ -128,7 +128,7 @@ describe('SocketServer', () => {
       const handler = getConnectionHandler()
       handler(socket)
 
-      const joinHandler = socket.on.mock.calls.find(([event]: [string]) => event === 'join')?.[1]
+      const joinHandler = socket.on.mock.calls.find(([event]) => event === 'join')?.[1]
       joinHandler({ rooms: [] })
 
       expect(socket.leave).toHaveBeenCalledWith('old_room')
@@ -140,7 +140,7 @@ describe('SocketServer', () => {
       const handler = getConnectionHandler()
       handler(socket)
 
-      const joinHandler = socket.on.mock.calls.find(([event]: [string]) => event === 'join')?.[1]
+      const joinHandler = socket.on.mock.calls.find(([event]) => event === 'join')?.[1]
       joinHandler({ rooms: ['wc:abc'] })
 
       expect(socket.join).toHaveBeenCalledTimes(1)
@@ -152,7 +152,7 @@ describe('SocketServer', () => {
       const handler = getConnectionHandler()
       handler(socket)
 
-      const joinHandler = socket.on.mock.calls.find(([event]: [string]) => event === 'join')?.[1]
+      const joinHandler = socket.on.mock.calls.find(([event]) => event === 'join')?.[1]
 
       joinHandler({ rooms: ['room_a'] })
       expect(socket.join).toHaveBeenCalledWith('room_a')
@@ -170,7 +170,7 @@ describe('SocketServer', () => {
       const handler = getConnectionHandler()
       handler(socket)
 
-      const joinHandler = socket.on.mock.calls.find(([event]: [string]) => event === 'join')?.[1]
+      const joinHandler = socket.on.mock.calls.find(([event]) => event === 'join')?.[1]
       joinHandler({})
 
       expect(socket.join).not.toHaveBeenCalled()
@@ -181,7 +181,7 @@ describe('SocketServer', () => {
       const handler = getConnectionHandler()
       handler(socket)
 
-      const joinHandler = socket.on.mock.calls.find(([event]: [string]) => event === 'join')?.[1]
+      const joinHandler = socket.on.mock.calls.find(([event]) => event === 'join')?.[1]
       joinHandler({ rooms: 'wc:abc' })
 
       expect(socket.join).not.toHaveBeenCalled()
@@ -192,7 +192,7 @@ describe('SocketServer', () => {
       const handler = getConnectionHandler()
       handler(socket)
 
-      const joinHandler = socket.on.mock.calls.find(([event]: [string]) => event === 'join')?.[1]
+      const joinHandler = socket.on.mock.calls.find(([event]) => event === 'join')?.[1]
       joinHandler({ rooms: null })
 
       expect(socket.join).not.toHaveBeenCalled()

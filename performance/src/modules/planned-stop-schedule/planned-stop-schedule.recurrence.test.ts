@@ -23,7 +23,7 @@ describe('planned-stop-schedule.recurrence', () => {
       const occ = nextOccurrenceAfter(schedule, now)
       expect(occ).not.toBeNull()
       expect(occ?.plannedStartAt.toISOString()).toBe('2026-06-15T11:30:00.000Z')
-      expect(occ?.plannedEndAt.getTime() - occ?.plannedStartAt.getTime()).toBe(15 * 60 * 1000)
+      expect(occ && occ.plannedEndAt.getTime() - occ.plannedStartAt.getTime()).toBe(15 * 60 * 1000)
     })
 
     it('returns tomorrow when today has already passed', () => {

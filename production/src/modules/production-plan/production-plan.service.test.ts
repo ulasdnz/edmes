@@ -1,6 +1,6 @@
 import { profileOperations } from '@mes/testing'
 import mongoose, { Types } from 'mongoose'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { Product } from '../product/product.model.js'
 import { Uom } from '../uom/uom.model.js'
 import { ProductionPlan } from './production-plan.model.js'
@@ -40,12 +40,9 @@ const joSchema = new mongoose.Schema({
   workCenterId: { type: mongoose.Schema.Types.ObjectId },
   targetQuantity: { type: Number },
 })
-let JobOrder: mongoose.Model<any>
-try {
-  JobOrder = mongoose.model('JobOrder')
-} catch {
-  JobOrder = mongoose.model('JobOrder', joSchema)
-}
+const JobOrder = mongoose.models.JobOrder
+  ? mongoose.model<typeof joSchema>('JobOrder')
+  : mongoose.model('JobOrder', joSchema)
 
 describe('ProductionPlanService', () => {
   beforeEach(async () => {
@@ -123,7 +120,7 @@ describe('ProductionPlanService', () => {
       const updated = await service.update(created._id.toString(), { targetQuantity: 200 }, userId)
 
       expect(updated.targetQuantity).toBe(200)
-      expect(updated.updatedBy.toString()).toBe(userId)
+      expect(updated.updatedBy?.toString()).toBe(userId)
     })
 
     it('blocks productId change when children exist', async () => {
