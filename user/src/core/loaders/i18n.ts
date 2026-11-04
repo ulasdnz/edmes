@@ -12,6 +12,8 @@ export const initI18n = async () => {
     .use(i18nextMiddleware.LanguageDetector)
     .use(Backend)
     .init({
+      // Otherwise i18next prints a plain-text notice at start, which Loki gets no level from
+      showSupportNotice: false,
       fallbackLng: 'en',
       preload: ['en', 'tr'],
       supportedLngs: ['en', 'tr'],
