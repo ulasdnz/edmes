@@ -1,22 +1,14 @@
 import { Types } from 'mongoose'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { cacheDel, cacheWrap, cacheWrapDedup } = vi.hoisted(() => ({
-  cacheDel: vi.fn(async () => {}),
-  cacheWrap: vi.fn(async (_k: string, _t: number, loader: () => Promise<unknown>) => loader()),
-  cacheWrapDedup: vi.fn(async (_k: string, _t: number, loader: () => Promise<unknown>) => loader()),
-}))
-
-vi.mock('../../lib/cache.js', () => ({
-  cacheDel,
-  cacheWrap,
-  cacheWrapDedup,
-  cacheGet: vi.fn(),
-  cacheSet: vi.fn(),
-  cacheDelPattern: vi.fn(),
-  sharedCacheWrapDedup: vi.fn(),
-  sharedCacheDel: vi.fn(),
-}))
+// Events and the cache go to Redis, so a real one runs. Performance builds its Redis clients from
+// REDIS_URL when their module loads, so Redis starts before the imports below run.
+const { redis } = await vi.hoisted(async () => {
+  const { startRedisTestContainer } = await import('@mes/testing')
+  const redis = await startRedisTestContainer()
+  process.env.REDIS_URL = redis.url
+  return { redis }
+})
 
 const { getLatest } = vi.hoisted(() => ({
   getLatest: vi.fn(async () => null),
@@ -34,6 +26,7 @@ vi.mock('../../lib/internal-api/work-center.client.js', () => ({
   invalidate: vi.fn(async () => {}),
 }))
 
+import { closeRedis, initRedis, redisClient } from '../../lib/redis.js'
 import { PlannedStop } from '../planned-stop/planned-stop.model.js'
 import { bootstrapSystemReasons } from '../reason/reason.bootstrap.js'
 import { Reason } from '../reason/reason.model.js'
@@ -47,6 +40,20 @@ import {
 } from './planned-stop-schedule.scheduler.js'
 
 const userId = new Types.ObjectId().toString()
+
+beforeAll(async () => {
+  await initRedis()
+})
+
+afterAll(async () => {
+  await closeRedis()
+  await redis.stop()
+})
+
+// The database is emptied after every test, so the cache is too
+beforeEach(async () => {
+  await redisClient.flushall()
+})
 
 async function seedScheduledReason() {
   return Reason.create({

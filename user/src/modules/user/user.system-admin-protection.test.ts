@@ -1,9 +1,34 @@
 import bcrypt from 'bcryptjs'
-import { describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+
+// Events and the auth cache go to Redis, so a real one runs. The user service builds its Redis
+// clients from REDIS_URL when their module loads, so Redis starts before the imports below run.
+const { redis } = await vi.hoisted(async () => {
+  const { startRedisTestContainer } = await import('@mes/testing')
+  const redis = await startRedisTestContainer()
+  process.env.REDIS_URL = redis.url
+  return { redis }
+})
+
 import { SYSTEM_ADMIN_ROLE_NAME, SYSTEM_ADMIN_USERNAME } from '../../constants/system-admin.js'
+import { closeRedis, initRedis, redisClient } from '../../lib/redis.js'
 import Role from '../role/role.model.js'
 import User from './user.model.js'
 import { adminUpdateUser, deleteUser, updateUser } from './user.service.js'
+
+beforeAll(async () => {
+  await initRedis()
+})
+
+afterAll(async () => {
+  await closeRedis()
+  await redis.stop()
+})
+
+// The database is emptied after every test, so the cache is too
+beforeEach(async () => {
+  await redisClient.flushall()
+})
 
 const createSystemAdminFixture = async () => {
   const role = await Role.create({

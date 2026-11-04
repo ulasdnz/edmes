@@ -1,24 +1,18 @@
 import { profileOperations } from '@mes/testing'
 import { Types } from 'mongoose'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { cacheDel, cacheWrap } = vi.hoisted(() => ({
-  cacheDel: vi.fn(async () => {}),
-  cacheWrap: vi.fn(async (_key: string, _ttl: number, loader: () => Promise<unknown>) => loader()),
-}))
-
-vi.mock('../../lib/cache.js', () => ({
-  cacheDel,
-  cacheWrap,
-  cacheGet: vi.fn(),
-  cacheSet: vi.fn(),
-  cacheDelPattern: vi.fn(),
-  cacheWrapDedup: vi.fn(),
-  sharedCacheWrapDedup: vi.fn(),
-  sharedCacheDel: vi.fn(),
-}))
+// Events and the cache go to Redis, so a real one runs. Performance builds its Redis clients from
+// REDIS_URL when their module loads, so Redis starts before the imports below run.
+const { redis } = await vi.hoisted(async () => {
+  const { startRedisTestContainer } = await import('@mes/testing')
+  const redis = await startRedisTestContainer()
+  process.env.REDIS_URL = redis.url
+  return { redis }
+})
 
 import * as events from '../../jobs/events.js'
+import { closeRedis, initRedis, redisClient } from '../../lib/redis.js'
 import { PlannedStop } from '../planned-stop/planned-stop.model.js'
 import * as policyService from '../policy/policy.service.js'
 import { bootstrapSystemReasons, MICRO_STOP_CODE } from '../reason/reason.bootstrap.js'
@@ -28,6 +22,20 @@ import * as service from './unplanned-stop.service.js'
 import { patchUnplannedStopSchema } from './unplanned-stop.validators.js'
 
 const userId = new Types.ObjectId().toString()
+
+beforeAll(async () => {
+  await initRedis()
+})
+
+afterAll(async () => {
+  await closeRedis()
+  await redis.stop()
+})
+
+// The database is emptied after every test, so the cache is too
+beforeEach(async () => {
+  await redisClient.flushall()
+})
 
 async function seedReason(
   overrides: Partial<{

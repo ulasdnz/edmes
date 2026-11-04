@@ -1,27 +1,26 @@
 import { CustomError } from '@mes/core'
 import { profileOperations } from '@mes/testing'
 import { Types } from 'mongoose'
-import { beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest'
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  type MockInstance,
+  vi,
+} from 'vitest'
 import type * as workCenter from '../../lib/internal-api/work-center.client.js'
 
-const { cacheDel, cacheWrap, cacheWrapDedup } = vi.hoisted(() => ({
-  cacheDel: vi.fn(async () => {}),
-  cacheWrap: vi.fn(async (_key: string, _ttl: number, loader: () => Promise<unknown>) => loader()),
-  cacheWrapDedup: vi.fn(async (_key: string, _ttl: number, loader: () => Promise<unknown>) =>
-    loader(),
-  ),
-}))
-
-vi.mock('../../lib/cache.js', () => ({
-  cacheDel,
-  cacheWrap,
-  cacheWrapDedup,
-  cacheGet: vi.fn(),
-  cacheSet: vi.fn(),
-  cacheDelPattern: vi.fn(),
-  sharedCacheWrapDedup: vi.fn(),
-  sharedCacheDel: vi.fn(),
-}))
+// Events and the cache go to Redis, so a real one runs. Performance builds its Redis clients from
+// REDIS_URL when their module loads, so Redis starts before the imports below run.
+const { redis } = await vi.hoisted(async () => {
+  const { startRedisTestContainer } = await import('@mes/testing')
+  const redis = await startRedisTestContainer()
+  process.env.REDIS_URL = redis.url
+  return { redis }
+})
 
 const { getLatest } = vi.hoisted(() => ({
   getLatest: vi.fn(async () => null as null | { tagId: string; value: number; occurredAt: string }),
@@ -42,6 +41,7 @@ vi.mock('../../lib/internal-api/work-center.client.js', () => ({
 }))
 
 import { logger } from '../../lib/logger.js'
+import { closeRedis, initRedis, redisClient } from '../../lib/redis.js'
 import { bootstrapSystemReasons } from '../reason/reason.bootstrap.js'
 import { Reason } from '../reason/reason.model.js'
 import { UnplannedStop } from '../unplanned-stop/unplanned-stop.model.js'
@@ -50,6 +50,20 @@ import * as service from './planned-stop.service.js'
 import { patchPlannedStopSchema } from './planned-stop.validators.js'
 
 const userId = new Types.ObjectId().toString()
+
+beforeAll(async () => {
+  await initRedis()
+})
+
+afterAll(async () => {
+  await closeRedis()
+  await redis.stop()
+})
+
+// The database is emptied after every test, so the cache is too
+beforeEach(async () => {
+  await redisClient.flushall()
+})
 
 async function seedPlannedReason(
   overrides: Partial<{ canStartManually: boolean; isActive: boolean }> = {},

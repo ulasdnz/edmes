@@ -1,10 +1,35 @@
 import { Types } from 'mongoose'
-import { describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+
+// Events and the cache go to Redis, so a real one runs. Performance builds its Redis clients from
+// REDIS_URL when their module loads, so Redis starts before the imports below run.
+const { redis } = await vi.hoisted(async () => {
+  const { startRedisTestContainer } = await import('@mes/testing')
+  const redis = await startRedisTestContainer()
+  process.env.REDIS_URL = redis.url
+  return { redis }
+})
+
+import { closeRedis, initRedis, redisClient } from '../../lib/redis.js'
 import { Reason, type ReasonUsage } from '../reason/reason.model.js'
 import { PlannedStopSchedule } from './planned-stop-schedule.model.js'
 import * as service from './planned-stop-schedule.service.js'
 
 const userId = new Types.ObjectId().toString()
+
+beforeAll(async () => {
+  await initRedis()
+})
+
+afterAll(async () => {
+  await closeRedis()
+  await redis.stop()
+})
+
+// The database is emptied after every test, so the cache is too
+beforeEach(async () => {
+  await redisClient.flushall()
+})
 
 async function seedScheduledReason(
   overrides: Partial<{
