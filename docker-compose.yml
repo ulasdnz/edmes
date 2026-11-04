@@ -63,7 +63,7 @@ services:
       - "traefik.http.middlewares.body-limit.buffering.maxRequestBodyBytes=26214400"
 
   mongodb:
-    image: mongo:9.0.2@sha256:f5c6240ae8fccc21cf75acc6462929b3394a7a5a7abd934b6b0e7ada5eb5fe95
+    image: mongo:9.0.4@sha256:452bdaf2127b8ff851e31410a267809b9829eded219979f2210e7c7efb85a058
     container_name: mongodb_dev
     restart: unless-stopped
     logging: *logging
@@ -395,7 +395,7 @@ services:
           memory: 256M
 
   loki:
-    image: grafana/loki:3.4.1@sha256:1d0c5ddc7644b88956aa0bd775ad796d9635180258a225d6ab3552751d5e2a66
+    image: grafana/loki:3.7.9@sha256:0db216b630ae1f348a1584c67f3cead8b4c1fc839169a39501db664744158e28
     container_name: loki
     restart: unless-stopped
     logging: *logging
@@ -415,7 +415,7 @@ services:
           memory: 300M
 
   alloy:
-    image: grafana/alloy:v1.21.2@sha256:89a5a320168387336b9ac3c850609c3ba7757eadd4ae5f1d819deb35e9854b18
+    image: grafana/alloy:v1.21.3@sha256:8ab871206bd2d8f89277f53abffee5f452a293980788d52f85fa183a87a505a4
     container_name: alloy
     restart: unless-stopped
     logging: *logging
@@ -447,7 +447,7 @@ services:
           memory: 128M
 
   grafana:
-    image: grafana/grafana:11.6.0@sha256:62d2b9d20a19714ebfe48d1bb405086081bc602aa053e28cf6d73c7537640dfb
+    image: grafana/grafana:11.6.16@sha256:d67af92050b8d93b393dc741864752a69c9da1ffa39c1bb9af49ad5d9e47d2c3
     container_name: grafana
     restart: unless-stopped
     logging: *logging
