@@ -12,12 +12,12 @@
     },
     "test": {
       "dependsOn": ["^build"],
-      "inputs": ["src/**/*.ts"],
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/docker-compose.yml"],
       "outputs": []
     },
     "test:contract": {
       "dependsOn": ["^build"],
-      "inputs": ["src/**/*.ts", "src/test/contracts/**/*.ts"]
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/docker-compose.yml"]
     },
     "lint": {
       "inputs": ["**/*.ts", "**/*.js", "biome.json"]
