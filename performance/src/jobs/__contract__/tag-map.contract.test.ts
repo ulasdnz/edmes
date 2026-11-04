@@ -24,6 +24,7 @@ import {
   storedCandidate,
   storedCheck,
   stubs,
+  tick,
   watchDecisionLogs,
 } from '../../modules/run-mode/__contract__/run-mode-outage.harness.js'
 import { leaveAfterPlannedCheck } from '../../modules/run-mode/run-mode.processor.js'
@@ -548,6 +549,35 @@ describe('A work center that stops being monitored loses its run-mode state', ()
         },
       ],
       unmonitored(retagged),
+    ])
+  })
+
+  it.each([
+    0, 60_000,
+  ])('opens the stop again when monitoring resumes while the machine stands (D = %i ms)', async debounceMs => {
+    const machine = await machineWithDebounce(debounceMs)
+    bind(machine)
+    await deliver(machine, recorded(machine, 0, '10:00:00'))
+    await tick('10:01:00')
+    expect(await stopsOf(machine)).toEqual([openRunModeStop('10:00:00')])
+
+    bind(machine, 'archived')
+    await atServerTime(at('10:20:00'), () => workCenterEvent('work_center.archived', machine))
+    // Reactivated while the machine still stands: the reconciliation starts it from its latest sample
+    bind(machine)
+    await atServerTime(at('10:40:00'), async () => {
+      await workCenterEvent('work_center.reactivated', machine)
+      await vi.waitFor(async () =>
+        expect(await cursorsOf(machine)).toEqual([cursorAt(machine, '10:00:00')]),
+      )
+    })
+    await tick('10:41:00')
+    await deliver(machine, recorded(machine, 1, '10:50:00'))
+
+    // Nothing tells what the machine did while it was not monitored
+    expect(await stopsOf(machine)).toEqual([
+      runModeStop('10:00:00', '10:20:00'),
+      runModeStop('10:40:00', '10:50:00'),
     ])
   })
 

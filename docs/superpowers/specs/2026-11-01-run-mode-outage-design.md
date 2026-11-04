@@ -313,6 +313,10 @@ Covers the debounce candidate and the check after a planned stop.
   clock, under the same lock, and the stop is kept; `run_mode.tag_map.unmonitored` names it
   (`closedStopId`). Nothing tells the stop's end after that moment, and an operator can still edit it.
   A work center whose tag changed keeps the stop open: the new tag's first running signal closes it.
+- When monitoring resumes, by reactivation or by the same tag bound again, while the machine still
+  stands at the sample whose stop was closed that way, the reconciliation opens the stop again at the
+  time monitoring resumes, by the server's clock, unless a planned stop covers that time. The time
+  between is not counted, since nothing tells what the machine did while it was not monitored.
 - Only stopping monitoring deletes a cursor, so a replay that was asking telemetry when the cursor was
   deleted brings nothing back. A sample whose handling started from a cursor proceeds under the tag's
   lock only while that cursor exists; otherwise it decides nothing (`run_mode.sample.skipped`, debug),

@@ -5,12 +5,15 @@ import {
   type RunModeRequestOptions,
 } from '../../lib/internal-api/run-mode-telemetry.client.js'
 import { logger } from '../../lib/logger.js'
+import { UnplannedStop } from '../unplanned-stop/unplanned-stop.model.js'
+import { openFromRunMode } from '../unplanned-stop/unplanned-stop.service.js'
 import { retryDelayMs } from './run-mode.decisions.js'
 import { withTagLock } from './run-mode.lock.js'
 import {
   handleRunModeSample,
   listMonitoredFromCursors,
   type MonitoredWorkCenter,
+  plannedStopCovering,
   replayStoredSamples,
 } from './run-mode.processor.js'
 import { RunModeProcessingState } from './run-mode-processing-state.model.js'
@@ -27,14 +30,17 @@ async function readCursor(target: MonitoredWorkCenter): Promise<Date | null> {
 
 // Under the tag's lock, like every cursor update, and only while the tag has none: a cursor the
 // event path wrote while telemetry was asked means it has taken the tag over, and a cursor at the
-// latest sample would skip the samples it has not processed yet
+// latest sample would skip the samples it has not processed yet. A decision about the sample, if
+// given, is made in the same step, before the cursor
 async function initializeCursor(
   target: MonitoredWorkCenter,
   occurredAt: Date,
   value: number,
+  decide?: () => Promise<void>,
 ): Promise<void> {
   await withTagLock(target, async () => {
     if (await readCursor(target)) return
+    await decide?.()
     await RunModeProcessingState.findOneAndUpdate(
       {
         workCenterId: new Types.ObjectId(target.workCenterId),
@@ -98,6 +104,22 @@ export async function reconcileWorkCenter(
   if (latest.value >= 1) {
     // Running: just initialize the cursor so future events are tracked.
     await initializeCursor(target, occurredAt, latest.value)
+    return
+  }
+  // The machine still stands, and its stop at that sample was closed when its monitoring stopped:
+  // nothing tells what it did since, so the stop opens again at the time monitoring resumes
+  const closedAtStop = await UnplannedStop.exists({
+    workCenterId: new Types.ObjectId(target.workCenterId),
+    source: 'run_mode',
+    startAt: occurredAt,
+    endAt: { $ne: null },
+  })
+  if (closedAtStop) {
+    await initializeCursor(target, occurredAt, latest.value, async () => {
+      if (!(await plannedStopCovering(target.workCenterId, now))) {
+        await openFromRunMode(target.workCenterId, now)
+      }
+    })
     return
   }
   await handleRunModeSample(

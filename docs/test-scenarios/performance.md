@@ -325,6 +325,7 @@ While a planned stop over 10:00 to 11:00 is active, every sample is processed an
 - [HIGH] a work center's reconciliation is waiting on telemetry when its tag is unbound → the reconciliation is cancelled before the state is deleted, so telemetry's late answer writes no candidate and no cursor
 - [HIGH] rule 6's replay is waiting on telemetry when the refresh stops monitoring the work center → once telemetry answers, neither the replayed stopped sample nor the signal that started the replay is decided: no cursor, no candidate and no stop for the old tag
 - [HIGH] a work center whose run-mode stop opened at 10:00 is archived, deleted (work-center answers 404), or loses its run-mode tag at 10:20 by the server's clock → the stop is closed at 10:20 and kept, and `run_mode.tag_map.unmonitored` names it in `closedStopId`; a work center whose run-mode tag changes meanwhile keeps its stop open, for the new tag's first running signal to close
+- [CRITICAL] with D = 0 and with D = 60 s: the machine stops at 10:00 and its stop opens; the work center is archived at 10:20 and reactivated at 10:40 by the server's clock while the machine still stands, and it runs at 10:50 → exactly the stops `[10:00, 10:20]` and `[10:40, 10:50]`: the stop closed at 10:20 opens again at the time monitoring resumes, and the time in between is not counted
 - each work center that stops being monitored logs one `run_mode.tag_map.unmonitored` (info)
 
 ---
