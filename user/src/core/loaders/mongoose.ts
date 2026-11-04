@@ -3,7 +3,6 @@ import { config } from '../../config/index.js'
 import { logger } from '../../lib/logger.js'
 
 // Register models up-front so index ensure phase sees all schemas.
-import '../../modules/password-recovery/password-recovery.model.js'
 import '../../modules/role/role.model.js'
 import '../../modules/speciality/speciality.model.js'
 import '../../modules/user/user.model.js'

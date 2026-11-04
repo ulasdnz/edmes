@@ -9,7 +9,6 @@
 - [Global Conventions](#global-conventions)
 - [Auth: Register](#post-apiv1authregister)
 - [Auth: Login](#post-apiv1authlogin)
-- [Password Recovery](#password-recovery)
 - [Users: Self ("Me")](#users-self-me)
 - [Users: Admin](#users-admin)
 - [Users: Lookup](#users-lookup)
@@ -190,74 +189,6 @@ The 429 response includes `remainingSeconds` in the error data.
 - Blocking window: `LOGIN_BLOCKING_DURATION_MS` (default 300000ms = 5 min)
 - Sliding window: if blocking period expires, counter resets on next failure
 - Successful login resets counter to 0
-
----
-
-## Password Recovery
-
-All public — no auth required.
-
-### POST /api/v1/password-recoveries
-
-Request a recovery code. Code is delivered out-of-band (email/SMS).
-
-| | |
-|---|---|
-| **Auth** | None |
-| **Status** | `200 OK` |
-
-```typescript
-// Request
-{ email: string }  // valid email
-
-// Response
-{
-  "success": true,
-  "message": "success.verify",
-  "data": { "email": "user@example.com", "expiredAt": "2026-03-17T12:02:00Z" }
-}
-```
-
-- Rate limit: 5 requests per hour per user. Exceeding returns generic success (no error — prevents user enumeration).
-- Non-existent email returns generic success (prevents user enumeration).
-- Code: 5-digit numeric (10000-99999), bcrypt-hashed.
-- TTL: 2 minutes. MongoDB TTL index auto-deletes expired records.
-- Previous active codes for the same user are invalidated on new request.
-
-### POST /api/v1/password-recoveries/verify
-
-Verify a recovery code without changing password.
-
-```typescript
-// Request
-{
-  email: string   // valid email
-  code:  number   // integer, 10000-99999
-}
-
-// Response — same shape as request endpoint
-```
-
-| Status | Key | When |
-|--------|-----|------|
-| 400 | `password_recovery.invalid_or_expired_code` | No matching active code |
-
-### POST /api/v1/password-recoveries/verify-and-reset
-
-Verify code and set new password in one step.
-
-```typescript
-// Request
-{
-  email:       string  // valid email
-  code:        number  // integer, 10000-99999
-  newPassword: string  // min 1 char
-}
-```
-
-- Changes password, sets `passwordChangedAt`, resets failed login counters.
-- Marks recovery code as used.
-- Invalidates auth cache — existing JWTs become invalid.
 
 ---
 
@@ -783,7 +714,6 @@ Access restricted at the network level by Traefik gateway (internal routes are n
 | `role.not_found` | 404 | Role ID not in database |
 | `speciality.not_found` | 404 | Speciality ID not in database |
 | `speciality.name_in_use` | 409 | Speciality name uniqueness conflict |
-| `password_recovery.invalid_or_expired_code` | 400 | Wrong or expired recovery code |
 | `upload.only_images` | 500 | Non-image file uploaded |
 | `error.invalid_id` | 400 | Invalid ObjectId format |
 
@@ -867,7 +797,7 @@ Returned by all user endpoints. Sensitive fields are excluded.
     ├─ express.static('public')
     ├─ express.static('uploads')
     │
-    ├─ [Public routes: /docs, /health, /ready, /auth/*, /password-recoveries/*]
+    ├─ [Public routes: /docs, /health, /ready, /auth/*]
     │
     ├─ authenticate (JWT verify + consolidated auth context)
     │

@@ -84,9 +84,5 @@
   "speciality": {
     "name_in_use": "Uzmanlık adı zaten kullanımda",
     "not_found": "Uzmanlık bulunamadı"
-  },
-  "password_recovery": {
-    "max_attempts_reached": "Maksimum şifre kurtarma deneme sayısına ulaşıldı. Lütfen daha sonra tekrar deneyin.",
-    "invalid_or_expired_code": "Doğrulama kodu geçersiz veya süresi dolmuş."
   }
 }

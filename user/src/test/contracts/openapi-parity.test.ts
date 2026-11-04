@@ -1,7 +1,6 @@
 import fs from 'fs'
 import path from 'path'
 import { describe, expect, it } from 'vitest'
-import { passwordRecoveryPaths } from '../../modules/password-recovery/password-recovery.openapi.js'
 import { rolePaths } from '../../modules/role/role.openapi.js'
 import { specialityPaths } from '../../modules/speciality/speciality.openapi.js'
 import { userPaths } from '../../modules/user/user.openapi.js'
@@ -15,14 +14,12 @@ const ROUTE_FILES = [
   'src/modules/user/user.routes.ts',
   'src/modules/role/role.routes.ts',
   'src/modules/speciality/speciality.routes.ts',
-  'src/modules/password-recovery/password-recovery.routes.ts',
 ]
 
 const combinedOpenApiPaths = {
   ...userPaths,
   ...rolePaths,
   ...specialityPaths,
-  ...passwordRecoveryPaths,
 }
 
 const normalizeToOpenApiPath = (routePath: string): string =>

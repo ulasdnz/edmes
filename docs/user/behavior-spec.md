@@ -8,7 +8,6 @@
 
 - [Authentication Flow](#authentication-flow)
 - [Login Blocking (Brute Force Protection)](#login-blocking-brute-force-protection)
-- [Password Recovery Flow](#password-recovery-flow)
 - [User Lifecycle](#user-lifecycle)
 - [Role Lifecycle](#role-lifecycle)
 - [Speciality Lifecycle](#speciality-lifecycle)
@@ -178,78 +177,6 @@ Failed login counter updates use `findByIdAndUpdate` with `$set` — this does *
 
 ---
 
-## Password Recovery Flow
-
-```
-Client                Service               MongoDB            Out-of-band
-  │                      │                     │                    │
-  │ POST /password-      │                     │                    │
-  │ recoveries           │                     │                    │
-  │─────────────────────▶│                     │                    │
-  │                      │ find user by email  │                    │
-  │                      │────────────────────▶│                    │
-  │                      │                     │                    │
-  │                      │ rate limit check    │                    │
-  │                      │ (5/hour/user)       │                    │
-  │                      │────────────────────▶│                    │
-  │                      │                     │                    │
-  │                      │ generate 5-digit    │                    │
-  │                      │ code (10000-99999)  │                    │
-  │                      │                     │                    │
-  │                      │ bcrypt hash code    │                    │
-  │                      │                     │                    │
-  │                      │ create recovery doc │                    │
-  │                      │────────────────────▶│                    │
-  │                      │                     │                    │
-  │                      │ invalidate siblings │                    │
-  │                      │ (set expiredAt=now) │                    │
-  │                      │────────────────────▶│                    │
-  │                      │                     │                    │
-  │ 200 { email,         │                     │                    │
-  │       expiredAt }    │                     │  deliver code ────▶│
-  │◀─────────────────────│                     │  (email/SMS)       │
-  │                      │                     │                    │
-  │ POST /password-      │                     │                    │
-  │ recoveries/          │                     │                    │
-  │ verification-and-    │                     │                    │
-  │ update               │                     │                    │
-  │─────────────────────▶│                     │                    │
-  │                      │ find active docs    │                    │
-  │                      │ (up to 5, newest    │                    │
-  │                      │  first)             │                    │
-  │                      │────────────────────▶│                    │
-  │                      │                     │                    │
-  │                      │ bcrypt compare each │                    │
-  │                      │                     │                    │
-  │                      │ hash new password   │                    │
-  │                      │ set passwordChangedAt                    │
-  │                      │ reset failedLogin   │                    │
-  │                      │ mark code isUsed    │                    │
-  │                      │────────────────────▶│                    │
-  │                      │                     │                    │
-  │                      │ invalidate auth     │                    │
-  │                      │ cache (status)      │                    │
-  │                      │                     │                    │
-  │ 200 OK               │                     │                    │
-  │◀─────────────────────│                     │                    │
-```
-
-### Anti-Enumeration Design
-
-- **User not found**: returns generic success response (same shape as real response)
-- **Rate limit exceeded**: logs warning, returns generic success response
-- **No error codes** that distinguish "user exists" from "user doesn't exist"
-
-### Recovery Code Properties
-
-- 5-digit numeric: `crypto.randomInt(10000, 100000)`
-- Bcrypt hashed (cost 10) before storage
-- TTL: 2 minutes (MongoDB TTL index auto-deletes)
-- New request invalidates all previous active codes for the same user
-- Verification checks up to 5 active documents (newest first)
-
----
-
 ## User Lifecycle
 
 ### Create
@@ -293,7 +220,6 @@ Client                Service               MongoDB            Out-of-band
 2. Auth cache invalidated (scope `all`)
 3. Event: `user.deleted` → `events.user` stream
 4. Avatar file on disk: **NOT deleted**
-5. PasswordRecovery documents: **NOT deleted** (TTL handles cleanup)
 
 ### Password Reset (Admin)
 
@@ -396,7 +322,6 @@ deleteSpeciality(id)
 | Update user | neither changed | — | No invalidation |
 | Delete user | always | `all` | Clears both keys |
 | Reset password | always | `status` | Clears `auth:status:<userId>` |
-| Recovery update | always | `status` | Clears `auth:status:<userId>` |
 | Update role perms | always | `context` | Clears for ALL users with this role |
 | Delete role | always | `context` | Clears for ALL affected users |
 
@@ -437,7 +362,6 @@ All events published to stream: **`events.user`**
 
 - `updateAvatar` — no event
 - `adminResetPassword` — no event
-- `verificationAndUpdate` (password recovery) — no event
 - Login/logout — no event
 - Failed login recording — no event
 
@@ -497,8 +421,6 @@ All events published to stream: **`events.user`**
 
 3. **User delete — orphaned avatar**: the avatar file on disk is not deleted when a user is hard-deleted. Only `updateAvatar` deletes the old file.
 
-4. **User delete — no PasswordRecovery cleanup**: relies on MongoDB TTL index (documents auto-expire). Not a functional issue, but recovery docs exist briefly for deleted users.
-
 ---
 
 ## Audit Logging
@@ -510,7 +432,6 @@ All events published to stream: **`events.user`**
 | User | via `save()` | via `save()` or `findOneAndUpdate` | via `findOneAndDelete` |
 | Role | via `save()` | via `findOneAndUpdate` | via `findOneAndDelete` |
 | Speciality | via `save()` | via `findOneAndUpdate` | via `findOneAndDelete` |
-| PasswordRecovery | **not audited** | — | — |
 | AuditLog | **not audited** | — | — |
 
 ### What Is NOT Audited
@@ -519,7 +440,6 @@ All events published to stream: **`events.user`**
 - Cache invalidation events
 - Event publishing
 - Avatar file operations
-- Password recovery requests/verification
 - Failed login counter updates (`findByIdAndUpdate` — not hooked)
 
 ### Audit Entry Fields
@@ -547,7 +467,6 @@ The `post('save')` hook fires on ALL `save()` calls — both initial creation an
 - `adminUpdateUser` (admin update via PATCH /:id)
 - `updateAvatar`
 - `adminResetPassword`
-- `verificationAndUpdate` (password recovery)
 
 **Operations that correctly produce `operation: 'update'`:**
 - `updateRole` (uses `findByIdAndUpdate`)
@@ -627,7 +546,7 @@ There is no check like "can this admin modify this specific user?" — if you ha
 
 | Field | Managed By |
 |-------|-----------|
-| password | Register, admin reset, password recovery only |
+| password | Register and admin reset only |
 | passwordChangedAt | Set automatically on password change |
 | failedLoginAttempts | Login flow only |
 | lastFailedLoginAt | Login flow only |
@@ -751,9 +670,9 @@ Static files served via `express.static('uploads')`. Avatar URLs stored as `/upl
 
 ### 11. Password Not Validated on Self-Update
 
-**What**: `updateMeSchema` and `adminUpdateUserSchema` do not include a `password` field. Password can only be changed via admin reset or password recovery.
+**What**: `updateMeSchema` and `adminUpdateUserSchema` do not include a `password` field. Password can only be changed via an admin reset.
 
-**Impact**: Users cannot change their own password via the profile update endpoint. This may be intentional (forcing password recovery flow) or an oversight.
+**Impact**: Users cannot change their own password via the profile update endpoint. This may be intentional (passwords change through an admin reset) or an oversight.
 
 ### 12. `isDefault` on Role — No Auto-Assignment
 

@@ -175,8 +175,8 @@ services:
       - "traefik.http.routers.user.entrypoints=web"
       - "traefik.http.routers.user.middlewares=global-compress@docker,secure-headers@docker,rate-limit@docker,body-limit@docker"
       - "traefik.http.services.user.loadbalancer.server.port=3000"
-      # The unauthenticated routes, sign-in and password recovery, get the stricter per-IP limit
-      - "traefik.http.routers.user-auth.rule=PathPrefix(`/api/v1/auth`) || PathPrefix(`/api/v1/password-recoveries`)"
+      # Sign-in needs no token, so it gets the stricter per-IP limit
+      - "traefik.http.routers.user-auth.rule=PathPrefix(`/api/v1/auth`)"
       - "traefik.http.routers.user-auth.entrypoints=web"
       - "traefik.http.routers.user-auth.middlewares=global-compress@docker,secure-headers@docker,auth-rate-limit@docker,body-limit@docker"
       - "traefik.http.routers.user-auth.priority=10"

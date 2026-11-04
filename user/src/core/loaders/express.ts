@@ -12,8 +12,6 @@ import { sharedCacheWrapDedup } from '../../lib/cache.js'
 import { httpLoggerMiddleware, logger, morganMiddleware } from '../../lib/logger.js'
 import { generateOpenApiDocument } from '../../lib/openapi/setup.js'
 import { redisClient } from '../../lib/redis.js'
-import { passwordRecoveryPaths } from '../../modules/password-recovery/password-recovery.openapi.js'
-import passwordRecoveryRoutes from '../../modules/password-recovery/password-recovery.routes.js'
 import { rolePaths } from '../../modules/role/role.openapi.js'
 import roleRoutes from '../../modules/role/role.routes.js'
 import { specialityPaths } from '../../modules/speciality/speciality.openapi.js'
@@ -68,7 +66,6 @@ export const initExpress = async () => {
     ...userPaths,
     ...rolePaths,
     ...specialityPaths,
-    ...passwordRecoveryPaths,
   }
   const openApiSpec = generateOpenApiDocument(combinedPaths)
 
@@ -98,7 +95,6 @@ export const initExpress = async () => {
 
   // ─── Public auth routes (no auth required) ──────────────────────────────────
   app.use('/api/v1', authRoutes)
-  app.use('/api/v1', passwordRecoveryRoutes)
 
   // ─── Protected API routes ───────────────────────────────────────────────────
   const apiRouter = Router()

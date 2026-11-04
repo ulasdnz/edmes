@@ -60,10 +60,6 @@
     "name_in_use": "Speciality name already in use",
     "not_found": "Speciality not found"
   },
-  "password_recovery": {
-    "max_attempts_reached": "Maximum password recovery attempts reached. Please try again later.",
-    "invalid_or_expired_code": "Invalid or expired verification code."
-  },
   "upload": {
     "only_images": "Only JPEG, PNG or WebP images are allowed",
     "file_too_large": "File must be 5 MB or smaller",

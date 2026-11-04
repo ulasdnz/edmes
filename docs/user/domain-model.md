@@ -11,7 +11,6 @@
 - [Role](#role)
 - [Speciality](#speciality)
 - [AuditLog](#auditlog)
-- [PasswordRecovery](#passwordrecovery)
 - [Entity Relationships](#entity-relationships)
 - [Validation Architecture](#validation-architecture)
 - [Index Strategy](#index-strategy)
@@ -35,10 +34,6 @@
 │   │          │  workCenterIds[]                                 │
 │   │          │─ ─ ─ ─ ─ ─ ─ ▶ [station-service]                │
 │   └──────────┘                                                  │
-│        │                                                        │
-│        │ userId    ┌──────────────────┐                          │
-│        └──────────▶│ PasswordRecovery │  (TTL: auto-expire)     │
-│                    └──────────────────┘                          │
 │                                                                 │
 │   ┌──────────┐                                                  │
 │   │ AuditLog │  (append-only, tracks all model mutations)       │
@@ -83,7 +78,7 @@
 | `isActiveDirectoryUser` | Boolean | no | `false` | — |
 | `failedLoginAttempts` | Number | no | `0` | `select: false` |
 | `lastFailedLoginAt` | Date | no | `null` | `select: false` |
-| `passwordChangedAt` | Date | no | — | set on password reset/recovery |
+| `passwordChangedAt` | Date | no | — | set on password reset |
 | `createdAt` | Date | auto | auto | — |
 | `updatedAt` | Date | auto | auto | — |
 
@@ -136,7 +131,7 @@ export type IUser = InferSchemaType<typeof userSchema> & {
 | name | 2-24 chars, trim | register, updateMe |
 | surname | min 1, trim | register, updateMe |
 | email | `z.email()` | register, updateMe |
-| password | 8-20 chars | register, adminCreate, adminReset, recovery |
+| password | 8-20 chars | register, adminCreate, adminReset |
 | gender | `enum ['male', 'female', 'other']` | updateMe, adminUpdate |
 | language | `enum ['en', 'tr']` | updateMe, adminUpdate |
 | birthDate | `z.coerce.date()` | updateMe, adminUpdate |
@@ -254,7 +249,7 @@ Minimal entity — no relationships, no virtuals, no special indexes beyond uniq
 
 ### Audit Plugin Hooks
 
-Applied to: `User`, `Role`, `Speciality`. NOT applied to: `AuditLog`, `PasswordRecovery`.
+Applied to: `User`, `Role`, `Speciality`. NOT applied to: `AuditLog`.
 
 | Hook | Mongoose Event | Audit Operation |
 |------|----------------|-----------------|
@@ -277,49 +272,6 @@ const { userId, ip, traceId } = getContext() ?? {
 
 ---
 
-## PasswordRecovery
-
-**Collection:** `password_recoveries` (explicit)
-**File:** `user/src/modules/password-recovery/password-recovery.model.ts`
-**Timestamps:** `createdAt`, `updatedAt`
-
-### Fields
-
-| Field | Type | Required | Default | Notes |
-|-------|------|----------|---------|-------|
-| `_id` | ObjectId | auto | auto | — |
-| `userId` | ObjectId | yes | — | `ref: 'User'`, indexed |
-| `codeHash` | String | yes | — | bcrypt hash of 5-digit recovery code |
-| `expiredAt` | Date | yes | — | TTL index target |
-| `isUsed` | Boolean | yes | `false` | — |
-| `createdAt` | Date | auto | auto | — |
-| `updatedAt` | Date | auto | auto | — |
-
-### Indexes
-
-| Fields | Type | Notes |
-|--------|------|-------|
-| `{ expiredAt: 1 }` | TTL | `expireAfterSeconds: 0` — MongoDB auto-deletes when `expiredAt` passes |
-| `{ userId: 1, isUsed: 1, expiredAt: 1 }` | compound | active token lookups |
-
-### Lifecycle
-
-1. **Created** when user requests password recovery
-2. **All siblings invalidated** (previous active codes get `expiredAt = now`)
-3. **Verified** via bcrypt comparison (up to 5 active docs checked)
-4. **Used** — `isUsed = true` after successful password reset
-5. **Expired** — MongoDB TTL index auto-deletes the document
-
-### Constants (Not Configurable)
-
-```typescript
-MAX_ATTEMPTS_PER_HOUR = 5        // rate limit per user
-RECOVERY_CODE_TTL_MS  = 120000   // 2 minutes
-RECOVERY_LOOKUP_LIMIT = 5        // max active docs to check
-```
-
----
-
 ## Entity Relationships
 
 ### Same-Service References
@@ -337,11 +289,6 @@ User.specialities[] ───▶ Speciality._id
   │ Population: none (raw IDs only)
   │ Cascade on Speciality delete: NONE — orphaned IDs remain
   └ Orphan risk: YES — no cleanup handler exists
-
-PasswordRecovery.userId ▶ User._id
-  │ Type: ObjectId with ref: 'User'
-  │ Cascade on User delete: NONE — documents TTL-expire naturally
-  └ Not a problem in practice (expired docs are auto-cleaned)
 ```
 
 ### Cross-Service References
@@ -373,7 +320,6 @@ User.defaultDashboardId ─▶ [future service] Dashboard._id
 | User → Department | cross-service | many-to-one | Redis Streams event |
 | User → Station | cross-service | many-to-many | expected via event |
 | User → Dashboard | cross-service | one-to-one | **none** |
-| PasswordRecovery → User | same-service | many-to-one | TTL auto-expire |
 | AuditLog → any model | same-service | many-to-one | append-only, no cascade |
 
 ---
@@ -454,8 +400,6 @@ MONGO_INDEX_STRATEGY:
 | `specialities` | `name` | unique | prevent duplicate speciality names |
 | `audit_logs` | `{ model, documentId, timestamp }` | compound | document history queries |
 | `audit_logs` | `{ userId, timestamp }` | compound | user activity queries |
-| `password_recoveries` | `{ expiredAt }` | TTL | auto-delete expired tokens |
-| `password_recoveries` | `{ userId, isUsed, expiredAt }` | compound | active token lookups |
 
 ### Migration Note
 
