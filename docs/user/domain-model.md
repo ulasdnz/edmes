@@ -108,7 +108,7 @@ roleNames: {
 | Fields | Type | Name | Notes |
 |--------|------|------|-------|
 | `username` | unique | implicit | from `unique: true` |
-| `email` | unique | `users_email_unique` | also created by migration |
+| `email` | unique | implicit | from `unique: true` |
 | `roles` | regular | implicit | for user-by-role lookups |
 | `departmentId` | regular | implicit | for user-by-department lookups |
 | `workCenterIds` | regular | implicit | for user-by-work-center lookups |
@@ -404,9 +404,9 @@ MONGO_INDEX_STRATEGY:
 | `audit_logs` | `{ model, documentId, timestamp }` | compound | document history queries |
 | `audit_logs` | `{ userId, timestamp }` | compound | user activity queries |
 
-### Migration Note
+### Indexes and migrations
 
-`20260102205332-add-user-index.ts` creates `users_email_unique` index imperatively. This is redundant with the `unique: true` on the Mongoose schema — the index is already created by Mongoose on connect. The migration exists for explicit control over index naming.
+The schemas own every index above: they are created at startup (`MONGO_INDEX_STRATEGY=ensure`, the production default). Migrations are for data changes and for indexes a schema cannot declare; creating a schema's index again under another name fails with an index conflict.
 
 ---
 

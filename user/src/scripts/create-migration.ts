@@ -35,17 +35,17 @@ export async function up(): Promise<void> {
 
   // Use mongoose.connection.collection('name') to ensure decoupling.
   
-  // Example:
-  // const db = mongoose.connection.db;
-  // await db.collection('users').createIndex({ email: 1 }, { unique: true });
+  // Example (indexes declared on a schema are created at startup; do not create them here):
+  // await mongoose.connection
+  //   .collection('users')
+  //   .updateMany({ locale: { $exists: false } }, { $set: { locale: 'tr' } });
 }
 
 export async function down(): Promise<void> {
   logger.info('Reverting migration: ${migrationName}');
 
   // Example:
-  // const db = mongoose.connection.db;
-  // await db.collection('users').dropIndex('users_email_unique');
+  // await mongoose.connection.collection('users').updateMany({}, { $unset: { locale: '' } });
 }
 `
 

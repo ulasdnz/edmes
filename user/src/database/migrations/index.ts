@@ -8,7 +8,6 @@ import { connectDB, disconnectDB } from '../../utils/db.js'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
-const MIGRATIONS_DIR = path.join(__dirname)
 const MIGRATION_COLLECTION = 'migrations'
 
 interface MigrationRecord {
@@ -16,7 +15,24 @@ interface MigrationRecord {
   appliedAt: Date
 }
 
-export async function runMigrations() {
+// The migrations in a directory in filename order, each named without its extension. Development
+// runs the TypeScript sources and the image the compiled JavaScript, so both count, and a migration
+// applied from one is applied for the other. Declaration files, tests and this runner do not
+export function listMigrations(dir: string): { name: string; file: string }[] {
+  return fs
+    .readdirSync(dir)
+    .filter(
+      file =>
+        /\.(ts|js)$/.test(file) &&
+        !file.endsWith('.d.ts') &&
+        !/\.(test|spec)\.(ts|js)$/.test(file) &&
+        !/^index\.(ts|js)$/.test(file),
+    )
+    .sort()
+    .map(file => ({ name: file.replace(/\.(ts|js)$/, ''), file: path.join(dir, file) }))
+}
+
+export async function runMigrations(dir: string = __dirname): Promise<void> {
   const needsConnect = mongoose.connection.readyState !== 1
   if (needsConnect) await connectDB()
 
@@ -24,41 +40,29 @@ export async function runMigrations() {
     const collection = mongoose.connection.collection<MigrationRecord>(MIGRATION_COLLECTION)
     await collection.createIndex({ name: 1 }, { unique: true })
 
-    const files = fs
-      .readdirSync(MIGRATIONS_DIR)
-      .filter(f => f.endsWith('.ts') && f !== 'index.ts')
-      .sort()
-
-    const appliedMigrationNames = new Set(
+    const applied = new Set(
       (await collection.find({}, { projection: { _id: 0, name: 1 } }).toArray()).map(m => m.name),
     )
+    const pending = listMigrations(dir).filter(migration => !applied.has(migration.name))
 
-    for (const file of files) {
-      if (appliedMigrationNames.has(file)) {
-        logger.info(`Skipping already applied migration: ${file}`)
-        continue
+    for (const migration of pending) {
+      const module = await import(pathToFileURL(migration.file).href)
+      // A migration that cannot run stops startup instead of being skipped on every boot
+      if (typeof module.up !== 'function') {
+        throw new Error(`Migration ${migration.name} exports no up() function`)
       }
 
-      const migrationPath = path.join(MIGRATIONS_DIR, file)
-      const migration = await import(pathToFileURL(migrationPath).href)
-
-      if (typeof migration.up !== 'function') {
-        logger.warn(`Migration has no up() function, skipping: ${file}`)
-        continue
-      }
-
-      logger.info(`Running migration: ${file}`)
-      await migration.up()
-
-      await collection.insertOne({
-        name: file,
-        appliedAt: new Date(),
-      })
-
-      logger.info(`Migration completed: ${file}`)
+      logger.info('Running migration', { event: 'db.migration.started', migration: migration.name })
+      await module.up()
+      await collection.insertOne({ name: migration.name, appliedAt: new Date() })
+      logger.info('Migration applied', { event: 'db.migration.applied', migration: migration.name })
     }
 
-    logger.info('All pending migrations processed successfully')
+    logger.info('Migrations up to date', {
+      event: 'db.migrations.completed',
+      applied: pending.length,
+      alreadyApplied: applied.size,
+    })
   } finally {
     if (needsConnect) await disconnectDB()
   }
@@ -68,7 +72,10 @@ if (process.argv[1] === __filename) {
   runMigrations()
     .then(() => process.exit(0))
     .catch(error => {
-      logger.error('Migration runner failed', error)
+      logger.error('Migration runner failed', {
+        event: 'db.migrations.failed',
+        error: error instanceof Error ? error.message : error,
+      })
       process.exit(1)
     })
 }
