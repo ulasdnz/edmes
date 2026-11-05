@@ -530,6 +530,38 @@ describe('TelemetryMqtt.close', () => {
       await telemetry.close()
     }
   })
+
+  it('closes at once while it holds a message back, and the broker delivers the rest again', async () => {
+    const telemetry = await telemetryWith({
+      MQTT_CLIENT_ID: 'closing-at-bound-telemetry',
+      MQTT_MAX_UNSTORED_MESSAGES: '2',
+    })
+    const store = slowStore()
+    // Large enough that what the broker sends ahead fills the buffers behind the message held back,
+    // as a backlog does after an outage
+    const burst = Array.from({ length: 1000 }, (_, i) => String(i).padEnd(200, '.'))
+    try {
+      await telemetry.initMqtt(store.store)
+      await publish('devices/plc-1/nodes/count', burst, QUEUEING_BROKER_URL)
+      await vi.waitFor(() => expect(store.handed).toHaveLength(2), { timeout: 5_000 })
+
+      const closing = telemetry.closeMqtt()
+      store.open()
+      const outcome = await Promise.race([
+        closing.then(() => 'closed'),
+        new Promise(resolve => setTimeout(resolve, 5_000, 'still closing')),
+      ])
+      expect(outcome).toBe('closed')
+
+      await telemetry.initMqtt(store.store)
+      await vi.waitFor(async () => expect(new Set(await storedValues())).toEqual(new Set(burst)), {
+        timeout: 20_000,
+      })
+    } finally {
+      store.open()
+      await telemetry.close()
+    }
+  })
 })
 
 describe('Mqtt.sessionLost', () => {

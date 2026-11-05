@@ -139,12 +139,15 @@ export const getMqttClient = (): MqttClient => {
   return client
 }
 
-// Stops taking messages, then lets the stores in progress finish: their messages are acknowledged
+// Stops taking messages, then lets the stores in progress finish: their messages are acknowledged.
+// The socket is closed outright. MQTT.js reads nothing after a message whose acknowledgement telemetry
+// withholds, so with a backlog behind it a graceful disconnect would wait for a socket close that
+// never comes. What telemetry did not acknowledge stays with the broker for the next connection.
 export const closeMqtt = async (): Promise<void> => {
   if (client) {
     closing = true
     heldBack = null
-    await client.endAsync()
+    await client.endAsync(true)
     await Promise.allSettled(unstored)
     logger.info('MQTT disconnected', { event: 'mqtt.disconnected' })
   }
