@@ -351,28 +351,31 @@ describe('The tag map when work-center cannot answer an update (scenario 9)', ()
       { timeout: 3_000 },
     )
     expect(received.latest).toHaveLength(2)
-    // Its first failure, with the cause, and its recovery; its requests log at debug
-    expect(logs.lines()).toEqual([
-      [
-        'warn',
-        {
-          event: 'run_mode.reconciler.failed',
-          workCenterId: machine.workCenterId,
-          runModeTagId: machine.runModeTagId,
-          error: 'error.telemetry_unreachable',
-          cause: 'HTTP 500',
-        },
-      ],
-      [
-        'info',
-        {
-          event: 'run_mode.reconciler.recovered',
-          workCenterId: machine.workCenterId,
-          runModeTagId: machine.runModeTagId,
-          attempts: 1,
-        },
-      ],
-    ])
+    // Its first failure, with the cause, and its recovery; its requests log at debug. The recovery
+    // is logged once the reconciliation returns, a moment after it stored the candidate
+    await vi.waitFor(() =>
+      expect(logs.lines()).toEqual([
+        [
+          'warn',
+          {
+            event: 'run_mode.reconciler.failed',
+            workCenterId: machine.workCenterId,
+            runModeTagId: machine.runModeTagId,
+            error: 'error.telemetry_unreachable',
+            cause: 'HTTP 500',
+          },
+        ],
+        [
+          'info',
+          {
+            event: 'run_mode.reconciler.recovered',
+            workCenterId: machine.workCenterId,
+            runModeTagId: machine.runModeTagId,
+            attempts: 1,
+          },
+        ],
+      ]),
+    )
   })
 })
 
