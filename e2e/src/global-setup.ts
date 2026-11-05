@@ -206,16 +206,23 @@ async function buildImage(name: ServiceName, runDir: string) {
 
 async function waitUntilReady({ name, logFile, closed, running }: Service) {
   const deadline = Date.now() + 60_000
+  let lastCheck = 'none'
   while (Date.now() < deadline && running()) {
     try {
-      const res = await fetch(`${serviceUrl(name)}/health/ready`)
+      const res = await fetch(`${serviceUrl(name)}/health/ready`, {
+        signal: AbortSignal.timeout(5_000),
+      })
       if (res.ok) return
-    } catch {
-      // not listening yet
+      lastCheck = `${res.status} ${(await res.text()).slice(0, 200)}`
+    } catch (err) {
+      // fetch throws "fetch failed" and carries the refused or dropped connection as its cause
+      lastCheck = String(err instanceof Error && err.cause ? err.cause : err)
     }
     await new Promise(r => setTimeout(r, 250))
   }
-  const reason = running() ? 'was not ready within 60s' : `exited with ${await closed}`
+  const reason = running()
+    ? `was not ready within 60s, last check: ${lastCheck}`
+    : `exited with ${await closed}`
   throw new Error(`${name} ${reason}. Last lines of ${logFile}:\n${await lastLines(logFile)}`)
 }
 
