@@ -127,7 +127,7 @@ Standard REST: POST (create), PUT (full replace), PATCH (partial update), DELETE
 
 - All Mongoose models must use `timestamps: true` (`createdAt`, `updatedAt` auto-managed).
 - Models that are created or modified by authenticated users include `createdBy` and `updatedBy` fields (user `_id`). Internal/system operations use `SYSTEM_IDENTITY`. These actor fields (`createdBy`, `updatedBy`, `startedBy`, `endedBy`) must be `Schema.Types.ObjectId` without `ref` — not `String`. No `ref` because the User model lives in a different service (cross-service boundary, populate not applicable). When assigning from a string userId in `.save()` patterns, use `new Types.ObjectId(userId)`.
-- Don't use `.lean()` on `findOneAndUpdate`/`findOneAndDelete` if the model uses `auditLogPlugin` — the post hooks call `doc.toObject()` which doesn't exist on lean results. `.lean()` on `find`/`findById` is fine (audit plugin doesn't hook those).
+- The audit log plugin (`createAuditLogPlugin` in `@mes/core/audit-log`, wrapped by each service's `lib/plugins/audit-log.plugin.ts`) records `save()`, `insertMany()` and the query writes (`updateOne`, `updateMany`, `findOneAndUpdate`, `deleteOne`, `deleteMany`, `findOneAndDelete`), lean or not. `bulkWrite()`, aggregation stages that write and the driver's collection methods bypass Mongoose middleware, so never change an audited model through them.
 - `__v` is hidden from all API responses: `toObject`/`toJSON` transforms on models + `.select('-__v')` on `.lean()` queries (since lean bypasses transforms). New models must do both.
 - Use `ref` on schema fields directly for population (`ref: 'Role'`), not Mongoose virtuals — virtuals + `.lean()` cause duplicate fields in responses.
 

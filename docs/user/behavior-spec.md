@@ -171,9 +171,9 @@ When a failed login arrives after the blocking window has expired:
 - A new window starts from `now`
 - This prevents permanent lockout from historical failures
 
-### Important: `findByIdAndUpdate` vs `findOneAndUpdate`
+### Failed-login counter and the audit log
 
-Failed login counter updates use `findByIdAndUpdate` with `$set` — this does **not** trigger the audit log plugin (which hooks `findOneAndUpdate`). This is intentional: login attempts are security metadata, not business data mutations.
+Failed login counter updates use `findByIdAndUpdate` with `$set`. `findByIdAndUpdate` runs Mongoose's `findOneAndUpdate` hooks, so the audit log records every counter change as an `update` (the password masked).
 
 ---
 
@@ -202,7 +202,7 @@ Failed login counter updates use `findByIdAndUpdate` with `$set` — this does *
 **Side effects on update:**
 1. Email uniqueness check (409 on conflict)
 2. `Object.assign(user, data); user.save()`
-3. Audit log entry: `operation: 'create'` (known behavior — uses `save()`)
+3. Audit log entry: `operation: 'update'`, with the state before
 4. Cache invalidation (conditional — see [Cache Rules](#cache-invalidation-rules))
 5. Event: `user.updated` → `events.user` stream
 
@@ -216,7 +216,7 @@ Failed login counter updates use `findByIdAndUpdate` with `$set` — this does *
 **Hard delete** — document permanently removed from MongoDB.
 
 **Side effects on delete:**
-1. `findByIdAndDelete()` → audit log: `operation: 'delete'`
+1. `User.deleteOne()` → audit log: `operation: 'delete'`, with the deleted state
 2. Auth cache invalidated (scope `all`)
 3. Event: `user.deleted` → `events.user` stream
 4. Avatar file on disk: **NOT deleted**
@@ -233,7 +233,7 @@ POST /users/:id/reset-password   (permission: writeUsers)
 3. `failedLoginAttempts = 0`, `lastFailedLoginAt = null`
 4. Auth cache invalidated (scope `status`)
 5. **No event emitted**
-6. Audit log: `operation: 'create'` (via `save()`)
+6. Audit log: `operation: 'update'` (via `save()`), with the state before
 
 ---
 
@@ -427,20 +427,26 @@ All events published to stream: **`events.user`**
 
 ### What Is Audited
 
-| Model | Create | Update | Delete |
-|-------|--------|--------|--------|
-| User | via `save()` | via `save()` or `findOneAndUpdate` | via `findOneAndDelete` |
-| Role | via `save()` | via `findOneAndUpdate` | via `findOneAndDelete` |
-| Speciality | via `save()` | via `findOneAndUpdate` | via `findOneAndDelete` |
-| AuditLog | **not audited** | — | — |
+Every write to `User`, `Role` and `Speciality` that goes through Mongoose, recorded by the shared
+plugin in `@mes/core/audit-log`:
+
+| Write | Entry |
+|-------|-------|
+| `save()` of a new document, `create()`, `insertMany()` | `create` |
+| `save()` of a document read from the database | `update`, with the state before |
+| `findOneAndUpdate()`, `findByIdAndUpdate()` | `update`, or `create` when an upsert inserts |
+| `updateOne()`, `updateMany()` | one `update` per document they change, `create` for an upsert |
+| `deleteOne()`, `deleteMany()`, `findOneAndDelete()` | one `delete` per deleted document, with its state |
+
+`AuditLog` itself is not audited. `bulkWrite()`, aggregation stages that write and the driver's
+collection methods (`mongoose.connection.collection(...)`, as migrations use) bypass the plugin.
 
 ### What Is NOT Audited
 
-- Login attempts (success/failure)
+- Login attempts as such (the failed-login counter's updates are audited, as updates of the user)
 - Cache invalidation events
 - Event publishing
 - Avatar file operations
-- Failed login counter updates (`findByIdAndUpdate` — not hooked)
 
 ### Audit Entry Fields
 
@@ -453,24 +459,10 @@ All events published to stream: **`events.user`**
   userId:           string,        // who (from ALS or SYSTEM_IDENTITY)
   ip:               string,        // client IP
   traceId:          string,        // distributed trace ID
-  document:         object | null, // post-operation snapshot
-  previousDocument: object | null  // pre-operation snapshot (updates only)
+  document:         object | null, // state after the write (null for a delete)
+  previousDocument: object | null  // state before the write (null for a create)
 }
 ```
-
-### Known Behavior: `save()` Logged as `create`
-
-The `post('save')` hook fires on ALL `save()` calls — both initial creation and subsequent updates via `Object.assign(user, data); user.save()`.
-
-**Operations that produce `operation: 'create'` when they should be `'update'`:**
-- `updateUser` (self-update via PATCH /me)
-- `adminUpdateUser` (admin update via PATCH /:id)
-- `updateAvatar`
-- `adminResetPassword`
-
-**Operations that correctly produce `operation: 'update'`:**
-- `updateRole` (uses `findByIdAndUpdate`)
-- `updateSpeciality` (uses `findByIdAndUpdate`)
 
 ---
 
@@ -612,69 +604,61 @@ Static files served via `express.static('uploads')`. Avatar URLs stored as `/upl
 
 ## Edge Cases & Known Behaviors
 
-### 1. Audit Log `save()` Operation Mismatch
-
-**What**: `post('save')` hook always logs `operation: 'create'`, even when the document is being updated via `Object.assign + save()`.
-
-**Impact**: Audit logs for user self-updates, admin updates, avatar changes, and password resets show `operation: 'create'` instead of `'update'`. The `previousDocument` field is `null` for these entries.
-
-**Workaround**: Query audit logs for a given `documentId` sorted by `timestamp` — the first entry is the real create, subsequent entries are updates regardless of the `operation` field.
-
-### 2. Multer Error Classification
+### 1. Multer Error Classification
 
 **What**: Non-image file upload throws `Error('upload.only_images')` — a plain Error, not a CustomError.
 
 **Impact**: Falls through to the generic 500 handler in production. The i18n key `upload.only_images` appears as the raw message rather than a translated string.
 
-### 3. `requirePermission` Bypasses i18n
+### 2. `requirePermission` Bypasses i18n
 
 **What**: The 403 response sends the literal key `'auth.insufficient_permissions'` via `res.json()` inline, not through the error handler.
 
 **Impact**: The message is not translated — clients always receive the English key regardless of `Accept-Language`.
 
-### 4. Speciality Deletion — No User Cleanup
+### 3. Speciality Deletion — No User Cleanup
 
 **What**: Unlike Role deletion (which does `$pull` on all users), Speciality deletion performs no cascade.
 
 **Impact**: Users retain deleted speciality ObjectIds in their `specialities[]` array. These are "ghost" references — they don't resolve to anything but don't cause errors either.
 
-### 5. Avatar Orphaning on User Delete
+### 4. Avatar Orphaning on User Delete
 
 **What**: `deleteUser` does not remove the user's avatar file from disk.
 
 **Impact**: Orphaned image files accumulate in `uploads/`. Only `updateAvatar` deletes old files. On an on-premises system with limited SSD (512GB-1TB), this could eventually matter.
 
-### 7. Self-Delete by Authenticated User
+### 5. Self-Delete by Authenticated User
 
 **What**: `DELETE /users/me` allows any authenticated user to permanently delete their own account.
 
 **Impact**: Hard delete — no recovery. Auth cache is invalidated so the token becomes useless immediately. No confirmation step in the API.
 
-### 8. Registration Without Role Assignment
+### 6. Registration Without Role Assignment
 
 **What**: New users via `POST /auth/register` get `roles: []` — no default role.
 
 **Impact**: After registration, the user can authenticate but has zero permissions. They can only access "me" endpoints. An admin must assign roles for the user to do anything useful.
 
-### 9. No Transaction on Role Delete Cascade
+### 7. No Transaction on Role Delete Cascade
 
 **What**: Role deletion and the subsequent `User.updateMany($pull)` are not in a MongoDB transaction.
 
 **Impact**: If the user update fails after the role is already deleted, users retain dangling ObjectIds. On next role population, these IDs simply won't resolve — functionally harmless but semantically incorrect.
 
-### 10. `USER_DELETION_RETENTION_DAYS` Defined But Unused
+### 8. `USER_DELETION_RETENTION_DAYS` Defined But Unused
 
 **What**: Config defines `USER_DELETION_RETENTION_DAYS` (default 30, transformed to `USER_DELETION_RETENTION_MS`), but no service logic references it.
 
 **Impact**: Currently dead code. Likely intended for future soft-delete or retention policy implementation.
 
-### 11. Password Not Validated on Self-Update
+### 9. Password Not Validated on Self-Update
 
 **What**: `updateMeSchema` and `adminUpdateUserSchema` do not include a `password` field. Password can only be changed via an admin reset.
 
 **Impact**: Users cannot change their own password via the profile update endpoint. This may be intentional (passwords change through an admin reset) or an oversight.
 
-### 12. `isDefault` on Role — No Auto-Assignment
+### 10. `isDefault` on Role — No Auto-Assignment
 
 **What**: The `isDefault` field on Role has no service-level logic — it's stored but never used for auto-assigning roles to new users.
 

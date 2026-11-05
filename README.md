@@ -96,7 +96,7 @@ events, health probes, logging, OpenAPI, the permission registry and test utilit
 
 ### Data
 
-- An [audit-log plugin](user/src/lib/plugins/audit-log.plugin.ts) records every create, update and
+- An [audit-log plugin](packages/core/src/audit-log.ts) records every create, update and
   delete with the user, IP, trace ID and the document before and after. Secrets are masked, and a
   failed audit write is logged without failing the request.
 - Actor fields (`createdBy`, `updatedBy`) and timestamps on every model; IDs from another service

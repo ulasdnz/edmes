@@ -249,16 +249,19 @@ Minimal entity — no relationships, no virtuals, no special indexes beyond uniq
 
 ### Audit Plugin Hooks
 
-Applied to: `User`, `Role`, `Speciality`. NOT applied to: `AuditLog`.
+Applied to: `User`, `Role`, `Speciality`. NOT applied to: `AuditLog`. The plugin is `createAuditLogPlugin` in `@mes/core/audit-log`; `user/src/lib/plugins/audit-log.plugin.ts` passes it this service's `AuditLog` model and logger.
 
 | Hook | Mongoose Event | Audit Operation |
 |------|----------------|-----------------|
-| `post('save')` | `doc.save()` | `create` |
-| `pre('findOneAndUpdate')` | query | stores old doc in WeakMap |
-| `post('findOneAndUpdate')` | query | `update` (with old/new diff) |
-| `post('findOneAndDelete')` | query | `delete` |
+| `pre('save')` | `doc.save()` | remembers whether the document is new, and reads the state before for one that is not |
+| `post('save')` | `doc.save()`, `create()` | `create` for a new document, `update` (old/new) for one read from the database |
+| `post('insertMany')` | model | `create` per document |
+| `pre/post('findOneAndUpdate')` | query (also `findByIdAndUpdate`) | `update` (old/new), `create` when an upsert inserts |
+| `pre/post('updateOne', 'updateMany')` | query (also `doc.updateOne()`) | `update` per changed document, `create` for an upsert |
+| `pre/post('deleteOne', 'deleteMany')` | query (also `doc.deleteOne()`) | `delete` per deleted document |
+| `post('findOneAndDelete')` | query (also `findByIdAndDelete`) | `delete` |
 
-**Known behavior**: `post('save')` fires on both initial creation and subsequent `doc.save()` updates. Operations using `Object.assign(user, data); user.save()` pattern (updateUser, updateAvatar, adminUpdateUser, adminResetPassword) produce audit entries with `operation: 'create'` instead of `'update'`.
+The pre hooks read the state before into `$locals` (save) or a `WeakMap` keyed by the query. The entries are written after the write returns; a failed audit write is logged and never fails the write.
 
 ### Context Resolution
 
