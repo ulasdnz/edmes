@@ -16,7 +16,7 @@ changes to the clients in real time.
   IP and request trace, with the document before and after.
 - **Query plans are tested.** List queries run under the MongoDB profiler in tests, which fail if a
   query stops using its compound index or sorts in memory.
-- **Tests run on real infrastructure.** The suites (923 unit, 203 contract, 13 end-to-end) run
+- **Tests run on real infrastructure.** The suites (937 unit, 203 contract, 13 end-to-end) run
   against real MongoDB, Redis and Mosquitto in Testcontainers rather than in-memory fakes. The
   end-to-end run fails on any service crash or error log line, not only on failed assertions.
 - **One command installs and upgrades a server**, online or without internet access, from
@@ -188,7 +188,7 @@ runs behind it are in [MQTT broker capacity](docs/operations/mqtt-broker-capacit
 
 | Suite | Runs against | Count |
 |---|---|---|
-| Unit | Real MongoDB in Testcontainers, and a real Redis where the code uses one | 923 |
+| Unit | Real MongoDB in Testcontainers, and a real Redis where the code uses one | 937 |
 | Contract | Each service's HTTP API and events, against real MongoDB and Redis | 203 |
 | End-to-end | The built services, started together against real MongoDB, Redis and Mosquitto | 13 |
 | Capacity | The broker and telemetry through a 30-minute outage | on demand |
@@ -258,8 +258,9 @@ pnpm test:e2e         # end-to-end
 - **No transactional outbox.** A write whose event fails to publish is kept and the failure is
   logged; an outbox would make the event as durable as the write.
 - **No multi-document transactions.** Deleting a role and removing it from users are two writes.
-- **The audit plugin covers single-document operations** (`save`, `findOneAndUpdate`,
-  `findOneAndDelete`), not bulk updates.
+- **Auditing costs reads, and bulk writes are not audited.** Updates and deletes read the
+  affected documents to record their state; `bulkWrite()` and the driver's collection methods
+  skip Mongoose middleware, so audited models are never changed through them.
 - **Traefik reads the Docker socket** to discover services; a socket proxy would narrow that access.
 
 ## Tech stack
