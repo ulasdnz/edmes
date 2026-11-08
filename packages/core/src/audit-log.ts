@@ -117,10 +117,12 @@ export function createAuditLogPlugin({ auditLog, logger, systemIdentity }: Audit
   }
 
   return (schema: Schema): void => {
-    // save() inserts a new document or updates one that was read
+    // save() inserts a new document or updates one that was read. A save that changes nothing
+    // writes nothing, so there is no state to read and nothing to record
     schema.pre('save', async function () {
       this.$locals.auditCreated = this.isNew
-      if (this.isNew) return
+      this.$locals.auditUnchanged = !this.isNew && !this.isModified()
+      if (this.isNew || this.$locals.auditUnchanged) return
       try {
         const model = this.constructor as unknown as AnyModel
         this.$locals.auditPrevious = await model.findById(this._id).lean()
@@ -137,8 +139,11 @@ export function createAuditLogPlugin({ auditLog, logger, systemIdentity }: Audit
     schema.post('save', doc => {
       const created = doc.$locals.auditCreated === true
       const previous = doc.$locals.auditPrevious
+      const unchanged = doc.$locals.auditUnchanged === true
       delete doc.$locals.auditCreated
       delete doc.$locals.auditPrevious
+      delete doc.$locals.auditUnchanged
+      if (unchanged) return
       const model = (doc.constructor as unknown as AnyModel).modelName
       const entry: AuditEntry = {
         operation: created ? 'create' : 'update',

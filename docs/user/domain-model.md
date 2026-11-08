@@ -253,8 +253,8 @@ Applied to: `User`, `Role`, `Speciality`. NOT applied to: `AuditLog`. The plugin
 
 | Hook | Mongoose Event | Audit Operation |
 |------|----------------|-----------------|
-| `pre('save')` | `doc.save()` | remembers whether the document is new, and reads the state before for one that is not |
-| `post('save')` | `doc.save()`, `create()` | `create` for a new document, `update` (old/new) for one read from the database |
+| `pre('save')` | `doc.save()` | remembers whether the document is new or unchanged, and reads the state before for one that changes |
+| `post('save')` | `doc.save()`, `create()` | `create` for a new document, `update` (old/new) for one read from the database, nothing for a save that changes nothing |
 | `post('insertMany')` | model | `create` per document |
 | `pre/post('findOneAndUpdate')` | query (also `findByIdAndUpdate`) | `update` (old/new), `create` when an upsert inserts |
 | `pre/post('updateOne', 'updateMany')` | query (also `doc.updateOne()`) | `update` per changed document, `create` for an upsert |

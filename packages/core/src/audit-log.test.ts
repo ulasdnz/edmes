@@ -73,6 +73,23 @@ describe('audit log plugin', () => {
     expect(entries[1].document).toMatchObject({ name: 'lathe', count: 2 })
   })
 
+  it('records nothing for a save() that changes nothing', async () => {
+    const created = await Item.create({ name: 'press', count: 1 })
+    await entriesOf(created._id, 1)
+
+    const item = await Item.findById(created._id).orFail()
+    item.name = 'press'
+    await item.save()
+    item.count = 2
+    await item.save()
+
+    const entries = await entriesOf(item._id, 2)
+    expect(entries.map(e => [e.operation, e.previousDocument?.count, e.document?.count])).toEqual([
+      ['create', undefined, 1],
+      ['update', 1, 2],
+    ])
+  })
+
   it('records findOneAndUpdate with the state before and after, whichever state it returns', async () => {
     const item = await Item.create({ name: 'press', count: 1 })
     await entriesOf(item._id, 1)
