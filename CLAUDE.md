@@ -31,6 +31,8 @@ pnpm format                        # format only
 pnpm test                          # all tests via turbo
 pnpm --filter user-service test    # user service unit tests
 pnpm test:contract                 # contract tests (user, work-center, production, performance, telemetry)
+pnpm openapi:emit                  # regenerate packages/api-client/openapi/*.json from the services
+pnpm --filter @mes/api-client generate  # regenerate the TypeScript types from those documents
 pnpm test:e2e                      # builds, then runs the services against real MongoDB, Redis and MQTT
 cd user && pnpm test:watch         # watch mode
 docker compose up -d --build       # full stack
@@ -63,6 +65,7 @@ testing → source-only (no build, vitest transpiles directly)
 | `@mes/openapi` | Zod-OpenAPI document generation |
 | `@mes/privileges` | Central RBAC privilege registry shared by all services and system-admin bootstrap |
 | `@mes/testing` | Shared test utilities (source-only, exports `src/index.ts` directly) |
+| `@mes/api-client` | Frontend, source-only: types generated from the services' OpenAPI documents, `ApiError` and `createApiClient` (openapi-fetch + openapi-react-query). Extends `tsconfig.web.json`; not a project reference |
 
 ### Service Apps
 
@@ -133,7 +136,7 @@ Standard REST: POST (create), PUT (full replace), PATCH (partial update), DELETE
 
 ### TypeScript / Imports
 
-- All packages: `"type": "module"` + NodeNext — **imports MUST use `.js` extensions** (even for `.ts` source).
+- All Node packages and services: `"type": "module"` + NodeNext — **imports MUST use `.js` extensions** (even for `.ts` source). Browser workspaces (`packages/api-client` and the frontend apps) extend `tsconfig.web.json` (Bundler resolution) and use extensionless imports.
 - Shared packages: `composite: true` for project references.
 - Service apps: extend `tsconfig.app.json` (`composite: false`, `verbatimModuleSyntax`).
 

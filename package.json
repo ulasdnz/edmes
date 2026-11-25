@@ -27,7 +27,7 @@
     "test:capacity": "turbo run build && pnpm --filter e2e-tests test:capacity"
   },
   "lint-staged": {
-    "*.{ts,mts,js,mjs,json,css,md}": [
+    "*.{ts,tsx,mts,js,mjs,json,css,md}": [
       "biome check --write --no-errors-on-unmatched --files-ignore-unknown=true"
     ]
   },
