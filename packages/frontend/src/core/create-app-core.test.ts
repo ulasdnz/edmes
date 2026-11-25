@@ -61,10 +61,14 @@ const dropped: Reply = res => res.destroy()
 async function startBackend(routes: Record<string, Reply[]>) {
   const requests: string[] = []
   const counts = new Map<string, number>()
+  const concurrency = { inFlight: 0, max: 0 }
   const http = createServer((req: IncomingMessage, res: ServerResponse) => {
     req.resume()
     const route = `${req.method} ${req.url?.split('?')[0]}`
     requests.push(route)
+    concurrency.inFlight++
+    concurrency.max = Math.max(concurrency.max, concurrency.inFlight)
+    res.on('close', () => concurrency.inFlight--)
     const replies = routes[route]
     if (!replies) {
       json(res, 404, { error: { code: 'not_found', message: 'not_found' } })
@@ -95,7 +99,7 @@ async function startBackend(routes: Record<string, Reply[]>) {
   const emit = (type: string, payload: Record<string, unknown>) =>
     io.to(type.split('.')[0] ?? '').emit(type, payload)
   const members = (room: string) => io.sockets.adapter.rooms.get(room)?.size ?? 0
-  return { url, emit, members, requests, count }
+  return { url, emit, members, requests, count, concurrency }
 }
 
 function memoryStorage(token?: string) {
@@ -208,6 +212,20 @@ describe('app core', () => {
     const requests = backend.count('GET /users/me')
     await sleep(200)
     expect(backend.count('GET /users/me')).toBe(requests)
+  })
+
+  it('sends one heartbeat at a time when /users/me is slow', async () => {
+    const slow: Reply = res => {
+      const timer = setTimeout(() => ok()(res), 150)
+      res.on('close', () => clearTimeout(timer))
+    }
+    const backend = await startBackend({ 'GET /users/me': [ok(), slow] })
+    const core = build(backend.url, { heartbeatMs: 30 })
+    await core.session.bootstrap()
+    await vi.waitFor(() => expect(backend.count('GET /users/me')).toBeGreaterThanOrEqual(3), {
+      timeout: 2000,
+    })
+    expect(backend.concurrency.max).toBe(1)
   })
 
   it.each([

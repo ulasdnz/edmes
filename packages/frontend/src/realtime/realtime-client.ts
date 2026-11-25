@@ -1,4 +1,4 @@
-import type { Query, QueryClient, QueryKey } from '@tanstack/react-query'
+import type { Query, QueryClient } from '@tanstack/react-query'
 import { io, type ManagerOptions, type SocketOptions } from 'socket.io-client'
 import {
   eventWorkCenterIds,
@@ -32,8 +32,9 @@ export interface RealtimeClientOptions {
 }
 
 interface Throttle {
-  timer: ReturnType<typeof setTimeout>
+  timer?: ReturnType<typeof setTimeout>
   pending: boolean
+  waiting: boolean
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -61,7 +62,7 @@ export function createRealtimeClient(options: RealtimeClientOptions): RealtimeCl
   let status: RealtimeStatus = 'idle'
   let since = new Date()
   let started = false
-  let connectedBefore = false
+  let cleanFirstAttempt = true
   let retryTimer: ReturnType<typeof setTimeout> | undefined
   let joinScheduled = false
   const statusListeners = new Set<(status: RealtimeStatus) => void>()
@@ -81,14 +82,16 @@ export function createRealtimeClient(options: RealtimeClientOptions): RealtimeCl
     retryTimer = undefined
   }
 
-  function join() {
+  function join(afterJoin?: () => void) {
     if (!socket.connected) return
     const rooms = [...roomCounts.keys()]
     socket.emit('join', { rooms }, (ack: unknown) => {
       const allowed = isRecord(ack) && Array.isArray(ack.rooms) ? ack.rooms : []
       const denied = rooms.filter(room => !allowed.includes(room))
       if (denied.length > 0) onRoomsDenied?.(denied)
+      if (rooms.length > 0) afterJoin?.()
     })
+    if (rooms.length === 0) afterJoin?.()
   }
 
   function scheduleJoin() {
@@ -100,25 +103,44 @@ export function createRealtimeClient(options: RealtimeClientOptions): RealtimeCl
     })
   }
 
-  function invalidate(queryHash: string, queryKey: QueryKey) {
-    void queryClient.invalidateQueries({ queryKey, exact: true, refetchType: 'active' })
-    const throttle: Throttle = {
-      pending: false,
-      timer: setTimeout(() => {
-        throttles.delete(queryHash)
-        if (throttle.pending) invalidate(queryHash, queryKey)
-      }, throttleMs),
+  // A change is refetched at most once per throttleMs, never by aborting a running fetch (its
+  // answer may predate the change), and a change seen during a fetch is refetched after it.
+  function flush(queryHash: string, throttle: Throttle) {
+    if (throttles.get(queryHash) !== throttle || throttle.timer || throttle.waiting) return
+    const query = queryClient.getQueryCache().get(queryHash)
+    if (!throttle.pending || !query) {
+      throttles.delete(queryHash)
+      return
     }
-    throttles.set(queryHash, throttle)
+    const running = query.state.fetchStatus === 'idle' ? undefined : query.promise
+    if (running) {
+      throttle.waiting = true
+      const settled = () => {
+        throttle.waiting = false
+        flush(queryHash, throttle)
+      }
+      running.then(settled, settled)
+      return
+    }
+    throttle.pending = false
+    void queryClient.invalidateQueries(
+      { queryKey: query.queryKey, exact: true, refetchType: 'active' },
+      { cancelRefetch: false },
+    )
+    throttle.timer = setTimeout(() => {
+      throttle.timer = undefined
+      flush(queryHash, throttle)
+    }, throttleMs)
   }
 
   function refetchThrottled(query: Query) {
-    const throttle = throttles.get(query.queryHash)
-    if (throttle) {
-      throttle.pending = true
-      return
+    let throttle = throttles.get(query.queryHash)
+    if (!throttle) {
+      throttle = { pending: false, waiting: false }
+      throttles.set(query.queryHash, throttle)
     }
-    invalidate(query.queryHash, query.queryKey)
+    throttle.pending = true
+    flush(query.queryHash, throttle)
   }
 
   function handleEvent(eventType: string, payload: unknown) {
@@ -136,13 +158,16 @@ export function createRealtimeClient(options: RealtimeClientOptions): RealtimeCl
   socket.on('connect', () => {
     clearRetry()
     setStatus('live')
-    join()
-    if (connectedBefore) void queryClient.invalidateQueries({ type: 'active' })
-    connectedBefore = true
+    // Events sent while the socket was not connected are lost (no replay), so every connect but a
+    // clean first attempt refetches what is on screen, after the rooms are joined.
+    if (cleanFirstAttempt) join()
+    else join(() => void queryClient.invalidateQueries({ type: 'active' }))
+    cleanFirstAttempt = false
   })
 
   socket.on('connect_error', error => {
     if (!started) return
+    cleanFirstAttempt = false
     if (error.message === 'auth.unauthenticated') {
       stop()
       onUnauthenticated()
@@ -171,6 +196,7 @@ export function createRealtimeClient(options: RealtimeClientOptions): RealtimeCl
   function start() {
     if (started) return
     started = true
+    cleanFirstAttempt = true
     setStatus('connecting')
     socket.connect()
   }

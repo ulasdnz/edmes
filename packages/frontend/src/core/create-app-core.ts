@@ -88,7 +88,16 @@ export function createAppCore(options: AppCoreOptions): AppCore {
   )
 
   let heartbeat: ReturnType<typeof setInterval> | undefined
+  let beating = false
   let previous = session.getState().status
+
+  function beat() {
+    if (beating) return
+    beating = true
+    void session.refresh().finally(() => {
+      beating = false
+    })
+  }
 
   session.subscribe(({ status }) => {
     if (status === previous) return
@@ -99,7 +108,7 @@ export function createAppCore(options: AppCoreOptions): AppCore {
       queryClient.clear()
     }
     if (HEARTBEAT_STATUSES.has(status)) {
-      heartbeat ??= setInterval(() => void session.refresh(), heartbeatMs)
+      heartbeat ??= setInterval(beat, heartbeatMs)
     } else {
       clearInterval(heartbeat)
       heartbeat = undefined

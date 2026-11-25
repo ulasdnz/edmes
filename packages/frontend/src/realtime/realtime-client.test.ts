@@ -16,6 +16,8 @@ import {
 interface TestServerOptions {
   reject?: (attempt: number, token: unknown) => string | undefined
   deny?: readonly string[]
+  ackDelayMs?: number
+  log?: string[]
 }
 
 const cleanups: Array<() => unknown> = []
@@ -51,12 +53,22 @@ async function startServer(options: TestServerOptions = {}) {
       )
       for (const room of allowed) socket.join(room)
       joins.push(rooms as string[])
-      if (typeof ack === 'function') ack({ rooms: allowed })
+      if (typeof ack !== 'function') return
+      const reply = () => {
+        options.log?.push('ack')
+        ack({ rooms: allowed })
+      }
+      if (options.ackDelayMs) ackTimers.push(setTimeout(reply, options.ackDelayMs))
+      else reply()
     })
   })
 
+  const ackTimers: Array<ReturnType<typeof setTimeout>> = []
   await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve))
-  cleanups.push(() => io.close())
+  cleanups.push(() => {
+    for (const timer of ackTimers) clearTimeout(timer)
+    return io.close()
+  })
   const url = `http://127.0.0.1:${(http.address() as AddressInfo).port}`
   const last = () => sockets[sockets.length - 1] as Socket
   return { url, io, handshakes, joins, sockets, last }
@@ -439,5 +451,113 @@ describe('realtime client', () => {
     expect(received).toEqual([{ userId: 'u1' }])
     expect(users.calls).toBe(1)
     expect(queryClient.getQueryState(usersKey)?.isInvalidated).toBe(false)
+  })
+
+  it('never aborts a running refetch and refetches once more after it', async () => {
+    const server = await startServer()
+    const { client, queryClient } = setup(server, { throttleMs: 50 })
+    const signals: AbortSignal[] = []
+    const release: Array<() => void> = []
+    cleanups.push(() => {
+      for (const resolve of release) resolve()
+    })
+    const observer = new QueryObserver(queryClient, {
+      queryKey: ['get', '/users', {}],
+      queryFn: async ({ signal }) => {
+        signals.push(signal)
+        if (signals.length === 2) await new Promise<void>(resolve => release.push(resolve))
+        return signals.length
+      },
+    })
+    cleanups.push(observer.subscribe(() => {}))
+    await vi.waitFor(() => expect(observer.getCurrentResult().data).toBe(1))
+    await live(client)
+    server.io.emit('user.updated', { userId: 'u1' })
+    await vi.waitFor(() => expect(signals).toHaveLength(2))
+    for (let i = 0; i < 5; i++) {
+      server.io.emit('user.updated', { userId: 'u1' })
+      await sleep(40)
+    }
+    expect(signals).toHaveLength(2)
+    expect(signals[1]?.aborted).toBe(false)
+    release[0]?.()
+    await vi.waitFor(() => expect(observer.getCurrentResult().data).toBe(3))
+    await sleep(150)
+    expect(signals).toHaveLength(3)
+    expect(signals[1]?.aborted).toBe(false)
+  })
+
+  it('keeps a slow query fresh while events keep arriving', async () => {
+    const server = await startServer()
+    const { client, queryClient } = setup(server, { throttleMs: 50 })
+    const key = ['get', '/users', {}]
+    let version = 0
+    const observer = new QueryObserver(queryClient, {
+      queryKey: key,
+      queryFn: async () => {
+        const seen = version
+        await sleep(150)
+        return seen
+      },
+    })
+    cleanups.push(observer.subscribe(() => {}))
+    await vi.waitFor(() => expect(observer.getCurrentResult().isSuccess).toBe(true))
+    await live(client)
+    const updatesBefore = queryClient.getQueryState(key)?.dataUpdateCount ?? 0
+    for (let i = 0; i < 20; i++) {
+      version++
+      server.io.emit('user.updated', { userId: 'u1' })
+      await sleep(30)
+    }
+    const updatesDuring = (queryClient.getQueryState(key)?.dataUpdateCount ?? 0) - updatesBefore
+    expect(updatesDuring).toBeGreaterThanOrEqual(2)
+    await vi.waitFor(() => expect(observer.getCurrentResult().data).toBe(20), { timeout: 2000 })
+  })
+
+  it('refetches what is on screen when the first connect follows a refusal', async () => {
+    const server = await startServer({
+      reject: attempt => (attempt === 1 ? 'auth.unavailable' : undefined),
+    })
+    const { client, queryClient } = setup(server)
+    const users = observe(queryClient, ['get', '/users', {}])
+    const optedOut = observe(queryClient, ['get', '/work-centers', {}], { realtime: false })
+    await loaded(users, optedOut)
+    await live(client)
+    await vi.waitFor(() => {
+      expect(users.calls).toBe(2)
+      expect(optedOut.calls).toBe(2)
+    })
+  })
+
+  it('fetches nothing more on a clean first connect', async () => {
+    const server = await startServer()
+    const { client, queryClient } = setup(server)
+    const users = observe(queryClient, ['get', '/users', {}])
+    await loaded(users)
+    await live(client)
+    await vi.waitFor(() => expect(server.joins).toHaveLength(1))
+    await sleep(100)
+    expect(users.calls).toBe(1)
+  })
+
+  it('refetches after the gateway has acknowledged the rejoin', async () => {
+    const log: string[] = []
+    const server = await startServer({ ackDelayMs: 100, log })
+    const { client, queryClient } = setup(server)
+    const observer = new QueryObserver(queryClient, {
+      queryKey: ['get', '/users', {}],
+      queryFn: async () => {
+        log.push('fetch')
+        return log.length
+      },
+    })
+    cleanups.push(observer.subscribe(() => {}))
+    await vi.waitFor(() => expect(log).toEqual(['fetch']))
+    client.subscribe(['wc:a'])
+    await live(client)
+    await vi.waitFor(() => expect(log).toEqual(['fetch', 'ack']))
+    server.last().conn.close()
+    await vi.waitFor(() => expect(log).toHaveLength(4), { timeout: 5000 })
+    expect(log).toEqual(['fetch', 'ack', 'ack', 'fetch'])
   })
 })
