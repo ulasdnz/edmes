@@ -2,6 +2,7 @@ import { runMigrations } from '../../database/migrations/index.js'
 import { initSubscribers } from '../../jobs/subscribers.js'
 import { logger } from '../../lib/logger.js'
 import { initRedis } from '../../lib/redis.js'
+import { ensureDefaultRoles } from './default-roles.js'
 import { initExpress } from './express.js'
 import { initMongoose } from './mongoose.js'
 import { ensureSystemAdmin } from './system-admin.js'
@@ -13,7 +14,8 @@ export const initLoaders = async () => {
     await initMongoose()
     await initRedis()
     await runMigrations()
-    await ensureSystemAdmin()
+    const { roleCreated } = await ensureSystemAdmin()
+    await ensureDefaultRoles({ firstInstall: roleCreated })
     await initSubscribers()
 
     const app = await initExpress()

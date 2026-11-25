@@ -19,6 +19,15 @@ const roleSchema = new Schema(
       type: [String],
       default: [],
     },
+    key: {
+      type: String,
+      unique: true,
+      sparse: true,
+    },
+    defaultPermissions: {
+      type: [String],
+      default: undefined,
+    },
   },
   {
     timestamps: true,
