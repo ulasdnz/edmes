@@ -198,7 +198,7 @@ All require authentication. No specific permission required — any authenticate
 
 ### GET /api/v1/users/me
 
-Returns the authenticated user's profile.
+Returns the authenticated user's profile, the plant timezone, the server time and the permissions the user holds through their roles.
 
 | | |
 |---|---|
@@ -206,7 +206,9 @@ Returns the authenticated user's profile.
 | **Permission** | None (self) |
 | **Status** | `200 OK` |
 
-Response: `SuccessResponse<UserResponse>`
+Response: `{ data: UserResponse, meta: { plantTimezone: string, serverTime: string, permissions: string[] } }`
+
+`meta.permissions` is the deduplicated list of permission codes from all the user's roles; it is empty for a user with no roles.
 
 ### PATCH /api/v1/users/me
 
@@ -613,6 +615,13 @@ Access restricted at the network level by Traefik gateway (internal routes are n
 
 ## Privilege Registry
 
+### Application
+
+| Code | Purpose |
+|------|---------|
+| `accessWebApp` | Sign in to the web app |
+| `accessOperatorPanel` | Sign in to the operator panel |
+
 ### Users
 
 | Code | Purpose |
@@ -621,7 +630,6 @@ Access restricted at the network level by Traefik gateway (internal routes are n
 | `writeUsers` | Edit users, reset passwords |
 | `createUsers` | Create new users |
 | `deleteUsers` | Delete users |
-| `accessUsersScreen` | UI access to the users screen |
 
 ### Roles
 
@@ -631,7 +639,6 @@ Access restricted at the network level by Traefik gateway (internal routes are n
 | `writeRoles` | Edit roles |
 | `createRoles` | Create new roles |
 | `deleteRoles` | Delete roles |
-| `accessRolesScreen` | UI access to the roles screen |
 
 ### Specialities
 
@@ -641,7 +648,6 @@ Access restricted at the network level by Traefik gateway (internal routes are n
 | `writeSpecialities` | Edit specialities |
 | `createSpecialities` | Create new specialities |
 | `deleteSpecialities` | Delete specialities |
-| `accessSpecialitiesScreen` | UI access to the specialities screen |
 
 ### Password Policy
 
@@ -658,20 +664,17 @@ Access restricted at the network level by Traefik gateway (internal routes are n
 | `writeDashboards` | Edit dashboards |
 | `createDashboards` | Create dashboards |
 | `deleteDashboards` | Delete dashboards |
-| `accessDashboardsScreen` | UI access to the dashboards screen |
 
 ### Settings
 
 | Code | Purpose |
 |------|---------|
 | `writeSystemSettings` | Modify system settings |
-| `accessSystemSettingsScreen` | UI access to the system settings screen |
 
 ### Logs
 
 | Code | Purpose |
 |------|---------|
-| `accessAuditLogsScreen` | UI access to the audit logs screen |
 
 ### Departments
 
@@ -681,7 +684,6 @@ Access restricted at the network level by Traefik gateway (internal routes are n
 | `writeDepartments` | Edit departments |
 | `createDepartments` | Create departments |
 | `deleteDepartments` | Delete departments |
-| `accessDepartmentsScreen` | UI access to the departments screen |
 
 ---
 

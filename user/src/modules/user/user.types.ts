@@ -10,4 +10,5 @@ export interface AuthResponse {
 export interface RuntimeContextResponse {
   plantTimezone: string
   serverTime: string
+  permissions: string[]
 }

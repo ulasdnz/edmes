@@ -51,7 +51,21 @@ export const userPaths: ZodOpenApiPathsObject = {
       security: securityRequirement,
       summary: 'Get current authenticated user profile',
       responses: {
-        '200': { description: 'User profile data with runtime plant context metadata' },
+        '200': {
+          description: 'User profile data with runtime plant context metadata and permissions',
+          content: {
+            'application/json': {
+              schema: z.object({
+                data: z.record(z.string(), z.unknown()),
+                meta: z.object({
+                  plantTimezone: z.string(),
+                  serverTime: z.string(),
+                  permissions: z.array(z.string()),
+                }),
+              }),
+            },
+          },
+        },
         '401': { description: 'Unauthorized' },
       },
     },

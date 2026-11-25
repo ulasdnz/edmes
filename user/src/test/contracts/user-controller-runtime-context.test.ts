@@ -25,7 +25,7 @@ describe('user.controller.getUser runtime context', () => {
       surname: 'One',
     }
     getUserMock.mockResolvedValue(user)
-    const req = { user: { id: 'user-1' } } as Request
+    const req = { user: { id: 'user-1', permissions: ['readUsers'] } } as Request
     const res = { json: vi.fn() } as unknown as Response
 
     await getUser(req, res)
@@ -36,6 +36,7 @@ describe('user.controller.getUser runtime context', () => {
       meta: {
         plantTimezone: 'Europe/Istanbul',
         serverTime: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/),
+        permissions: ['readUsers'],
       },
     })
   })

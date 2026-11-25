@@ -141,7 +141,7 @@ Standard REST: POST (create), PUT (full replace), PATCH (partial update), DELETE
 
 - `PRIVILEGES` in `@mes/privileges` is the **single source of truth** for all assignable permission codes. Every permission used in `requirePermission()` calls must exist there.
 - When adding a new module or feature, add its permission codes to `@mes/privileges` **first**. The system admin role auto-syncs to include all `PRIVILEGES` on startup.
-- Naming convention: camelCase verb+entity — `readEntity`, `writeEntity`, `createEntity`, `deleteEntity`, `accessEntityScreen`.
+- Naming convention: camelCase verb+entity — `readEntity`, `writeEntity`, `createEntity`, `deleteEntity`. Application access is two codes, `accessWebApp` and `accessOperatorPanel`; there are no per-screen codes.
 - `requirePermission('code')` from `@mes/auth` enforces permissions at route level; it checks string inclusion against the user's resolved permission array.
 - `SYSTEM_IDENTITY` (`'ffffffffffffffffffffffff'`) gets wildcard `['*']` for internal service-to-service calls. Real users (including the bootstrapped system admin) receive explicit permission codes.
 - The system admin role and user are protected from deletion and renaming via API guards.
