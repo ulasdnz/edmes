@@ -1,5 +1,5 @@
 import { Menu as MenuPrimitive } from '@base-ui/react/menu'
-import { cn } from 'cn'
+import { cn } from '@mes/ui/lib/utils'
 import { CheckIcon, ChevronRightIcon } from 'lucide-react'
 import type * as React from 'react'
 
@@ -82,7 +82,7 @@ function DropdownMenuItem({
       data-inset={inset}
       data-variant={variant}
       className={cn(
-        "relative flex min-h-(--control-h) w-full cursor-default items-center gap-2.5 rounded-md px-3 py-1.5 text-[13.5px] leading-[1.3] outline-hidden select-none focus:bg-surface-2 data-highlighted:bg-surface-2 data-inset:pl-7 data-[variant=destructive]:text-state-unplanned-fg data-disabled:cursor-not-allowed data-disabled:text-text-3 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-[17px] [&_svg]:text-text-2 data-[variant=destructive]:[&_svg]:text-state-unplanned-fg",
+        "relative flex min-h-(--control-h) w-full cursor-default items-center gap-2.5 rounded-md px-3 py-1.5 text-[13.5px] leading-[1.3] outline-hidden select-none data-highlighted:bg-accent-bg data-highlighted:shadow-[inset_3px_0_0_var(--color-accent)] data-inset:pl-7 data-[variant=destructive]:text-state-unplanned-fg data-disabled:cursor-not-allowed data-disabled:text-text-3 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-[17px] [&_svg]:text-text-2 data-[variant=destructive]:[&_svg]:text-state-unplanned-fg",
         className,
       )}
       {...props}
@@ -107,7 +107,7 @@ function DropdownMenuSubTrigger({
       data-slot='dropdown-menu-sub-trigger'
       data-inset={inset}
       className={cn(
-        "relative flex min-h-(--control-h) w-full cursor-default items-center gap-2.5 rounded-md px-3 py-1.5 text-[13.5px] leading-[1.3] outline-hidden select-none focus:bg-surface-2 data-highlighted:bg-surface-2 data-inset:pl-7 data-[variant=destructive]:text-state-unplanned-fg data-disabled:cursor-not-allowed data-disabled:text-text-3 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-[17px] [&_svg]:text-text-2 data-[variant=destructive]:[&_svg]:text-state-unplanned-fg data-popup-open:bg-surface-2",
+        "relative flex min-h-(--control-h) w-full cursor-default items-center gap-2.5 rounded-md px-3 py-1.5 text-[13.5px] leading-[1.3] outline-hidden select-none data-highlighted:bg-accent-bg data-highlighted:shadow-[inset_3px_0_0_var(--color-accent)] data-inset:pl-7 data-[variant=destructive]:text-state-unplanned-fg data-disabled:cursor-not-allowed data-disabled:text-text-3 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-[17px] [&_svg]:text-text-2 data-[variant=destructive]:[&_svg]:text-state-unplanned-fg data-popup-open:bg-accent-bg",
         className,
       )}
       {...props}
@@ -153,7 +153,7 @@ function DropdownMenuCheckboxItem({
       data-slot='dropdown-menu-checkbox-item'
       data-inset={inset}
       className={cn(
-        "relative flex min-h-(--control-h) w-full cursor-default items-center gap-2.5 rounded-md px-3 py-1.5 text-[13.5px] leading-[1.3] outline-hidden select-none focus:bg-surface-2 data-highlighted:bg-surface-2 data-inset:pl-7 data-[variant=destructive]:text-state-unplanned-fg data-disabled:cursor-not-allowed data-disabled:text-text-3 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-[17px] [&_svg]:text-text-2 data-[variant=destructive]:[&_svg]:text-state-unplanned-fg pr-8",
+        "relative flex min-h-(--control-h) w-full cursor-default items-center gap-2.5 rounded-md px-3 py-1.5 text-[13.5px] leading-[1.3] outline-hidden select-none data-highlighted:bg-accent-bg data-highlighted:shadow-[inset_3px_0_0_var(--color-accent)] data-inset:pl-7 data-[variant=destructive]:text-state-unplanned-fg data-disabled:cursor-not-allowed data-disabled:text-text-3 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-[17px] [&_svg]:text-text-2 data-[variant=destructive]:[&_svg]:text-state-unplanned-fg pr-8",
         className,
       )}
       checked={checked}
@@ -189,7 +189,7 @@ function DropdownMenuRadioItem({
       data-slot='dropdown-menu-radio-item'
       data-inset={inset}
       className={cn(
-        "relative flex min-h-(--control-h) w-full cursor-default items-center gap-2.5 rounded-md px-3 py-1.5 text-[13.5px] leading-[1.3] outline-hidden select-none focus:bg-surface-2 data-highlighted:bg-surface-2 data-inset:pl-7 data-[variant=destructive]:text-state-unplanned-fg data-disabled:cursor-not-allowed data-disabled:text-text-3 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-[17px] [&_svg]:text-text-2 data-[variant=destructive]:[&_svg]:text-state-unplanned-fg pr-8",
+        "relative flex min-h-(--control-h) w-full cursor-default items-center gap-2.5 rounded-md px-3 py-1.5 text-[13.5px] leading-[1.3] outline-hidden select-none data-highlighted:bg-accent-bg data-highlighted:shadow-[inset_3px_0_0_var(--color-accent)] data-inset:pl-7 data-[variant=destructive]:text-state-unplanned-fg data-disabled:cursor-not-allowed data-disabled:text-text-3 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-[17px] [&_svg]:text-text-2 data-[variant=destructive]:[&_svg]:text-state-unplanned-fg pr-8",
         className,
       )}
       {...props}

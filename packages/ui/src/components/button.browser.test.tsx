@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { userEvent } from 'vitest/browser'
 import { render } from 'vitest-browser-react'
 import { Button } from './button'
 
@@ -27,6 +28,9 @@ describe('Button', () => {
     await expect.element(screen.getByRole('button')).toBeDisabled()
     await expect.element(screen.getByRole('button')).toHaveAttribute('aria-busy', 'true')
     await screen.getByRole('button').click({ force: true })
+    ;(screen.getByRole('button').element() as HTMLButtonElement).focus()
+    await userEvent.keyboard('{Enter}')
+    await userEvent.keyboard(' ')
     expect(onClick).not.toHaveBeenCalled()
   })
 })

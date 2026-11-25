@@ -43,7 +43,9 @@ function Button({
       aria-busy={pending || undefined}
       {...props}
     >
-      {pending && <Loader2Icon aria-hidden='true' className='animate-spin' />}
+      {pending && (
+        <Loader2Icon aria-hidden='true' className='animate-spin motion-reduce:animate-none' />
+      )}
       {children}
     </ButtonPrimitive>
   )
