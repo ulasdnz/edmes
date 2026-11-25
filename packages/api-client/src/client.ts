@@ -19,20 +19,29 @@ export interface ApiClient {
 export function createApiClient(options: ApiClientOptions): ApiClient {
   const { baseUrl = '/api/v1', getToken, getLocale, onUnauthorized, timeoutMs = 15000 } = options
 
+  const sentWith = new Map<string, string | null>()
+
   const middleware: Middleware = {
-    onRequest({ request }) {
+    onRequest({ request, id }) {
       const token = getToken()
+      sentWith.set(id, token)
       if (token) request.headers.set('Authorization', `Bearer ${token}`)
       request.headers.set('Accept-Language', getLocale())
       return request
     },
-    async onResponse({ response }) {
+    async onResponse({ response, id }) {
+      const token = sentWith.get(id)
+      sentWith.delete(id)
       if (response.ok) return undefined
       const error = await apiErrorFromResponse(response)
-      if (error.status === 401 && error.code === 'auth.unauthenticated') onUnauthorized()
+      if (error.status === 401 && error.code === 'auth.unauthenticated' && token === getToken()) {
+        onUnauthorized()
+      }
       throw error
     },
-    onError({ error }) {
+    onError({ error, id }) {
+      sentWith.delete(id)
+      if (error instanceof DOMException && error.name === 'AbortError') return undefined
       return toApiError(error)
     },
   }

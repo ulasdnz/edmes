@@ -1,6 +1,7 @@
 import { createServer, type IncomingHttpHeaders, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { ApiError } from './api-error'
 import { createApiClient } from './client'
 
 interface Seen {
@@ -29,11 +30,19 @@ async function serve(reply: Reply) {
   return { seen, baseUrl: `http://127.0.0.1:${port}`, server }
 }
 
-function setup(baseUrl: string, options: { token?: string | null; timeoutMs?: number } = {}) {
-  const onUnauthorized = vi.fn()
+function setup(
+  baseUrl: string,
+  options: {
+    token?: string | null
+    timeoutMs?: number
+    getToken?: () => string | null
+    onUnauthorized?: () => void
+  } = {},
+) {
+  const onUnauthorized = vi.fn(options.onUnauthorized)
   const { fetchClient } = createApiClient({
     baseUrl,
-    getToken: () => (options.token === undefined ? 'tkn' : options.token),
+    getToken: options.getToken ?? (() => (options.token === undefined ? 'tkn' : options.token)),
     getLocale: () => 'tr',
     onUnauthorized,
     timeoutMs: options.timeoutMs,
@@ -159,5 +168,69 @@ describe('createApiClient', () => {
       status: 502,
       code: 'client.unexpected_response',
     })
+  })
+
+  it('calls onUnauthorized for a 401 auth.unauthenticated on any path, not for another code', async () => {
+    const unauthenticated = await serve({ status: 401, body: envelope('auth.unauthenticated') })
+    const first = setup(unauthenticated.baseUrl)
+    await expect(first.fetchClient.GET('/users/me')).rejects.toMatchObject({ status: 401 })
+    expect(first.onUnauthorized).toHaveBeenCalledTimes(1)
+
+    const other = await serve({ status: 401, body: envelope('auth.token_revoked') })
+    const second = setup(other.baseUrl)
+    await expect(second.fetchClient.GET('/users/me')).rejects.toMatchObject({
+      status: 401,
+      code: 'auth.token_revoked',
+    })
+    expect(second.onUnauthorized).not.toHaveBeenCalled()
+  })
+
+  it('rejects with the original abort error when the caller aborts', async () => {
+    const { baseUrl } = await serve({ status: 200, delayMs: 200 })
+    const { fetchClient } = setup(baseUrl)
+    const controller = new AbortController()
+    const call = fetchClient.GET('/users/languages', { signal: controller.signal })
+    setTimeout(() => controller.abort(), 20)
+    const error = await call.then(
+      () => undefined,
+      (e: unknown) => e,
+    )
+    expect(error).not.toBeInstanceOf(ApiError)
+    expect(error).toMatchObject({ name: 'AbortError' })
+  })
+
+  it('does not end a newer session when a request sent with an old token answers 401', async () => {
+    const { baseUrl } = await serve({
+      status: 401,
+      body: envelope('auth.unauthenticated'),
+      delayMs: 100,
+    })
+    let token: string | null = 'old'
+    const { fetchClient, onUnauthorized } = setup(baseUrl, { getToken: () => token })
+    const call = fetchClient.GET('/users/languages')
+    token = 'new'
+    await expect(call).rejects.toMatchObject({ status: 401, code: 'auth.unauthenticated' })
+    expect(onUnauthorized).not.toHaveBeenCalled()
+  })
+
+  it('calls onUnauthorized once when two requests with the same token answer 401', async () => {
+    const { baseUrl } = await serve({
+      status: 401,
+      body: envelope('auth.unauthenticated'),
+      delayMs: 50,
+    })
+    let token: string | null = 'tkn'
+    const { fetchClient, onUnauthorized } = setup(baseUrl, {
+      getToken: () => token,
+      onUnauthorized: () => {
+        token = null
+      },
+    })
+    const results = await Promise.allSettled([
+      fetchClient.GET('/users/languages'),
+      fetchClient.GET('/users/me'),
+    ])
+    expect(results.map(r => r.status)).toEqual(['rejected', 'rejected'])
+    expect(onUnauthorized).toHaveBeenCalledTimes(1)
   })
 })

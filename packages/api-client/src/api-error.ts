@@ -30,6 +30,7 @@ export class ApiError extends Error {
 
 export function toApiError(error: unknown): ApiError {
   if (error instanceof ApiError) return error
+  if (error instanceof DOMException && error.name === 'AbortError') throw error
   if (error instanceof DOMException && error.name === 'TimeoutError') {
     return new ApiError({ kind: 'timeout', code: 'client.timeout', cause: error })
   }

@@ -37,7 +37,7 @@ jobs:
       - run: pnpm exec biome ci --diagnostic-level=error .
       - run: pnpm typecheck
       # The emit imports the shared packages' dist, which typecheck has just built
-      - run: pnpm openapi:emit && pnpm --filter @mes/api-client generate && git diff --exit-code packages/api-client
+      - run: pnpm openapi:emit && pnpm --filter @mes/api-client generate && git diff --exit-code packages/api-client && test -z "$(git ls-files --others --exclude-standard packages/api-client)"
 
   audit:
     name: Production dependency audit
