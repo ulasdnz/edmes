@@ -47,10 +47,23 @@ export function createSessionStore(options: SessionStoreOptions): SessionStore {
   const { storageKey, storage, api } = options
   const store = createStore<SessionState>()(() => ({ ...ANONYMOUS, status: 'unknown' }))
 
-  const getToken = () => storage.getItem(storageKey)
+  let sequence = 0
+
+  const getToken = () => {
+    try {
+      return storage.getItem(storageKey)
+    } catch {
+      return null
+    }
+  }
 
   function logout() {
-    storage.removeItem(storageKey)
+    sequence++
+    try {
+      storage.removeItem(storageKey)
+    } catch {
+      // the session ends in memory even when the token cannot be removed
+    }
     store.setState(ANONYMOUS)
   }
 
@@ -72,17 +85,24 @@ export function createSessionStore(options: SessionStoreOptions): SessionStore {
     })
   }
 
-  async function load() {
+  async function load(): Promise<ApiError | undefined> {
     const token = getToken()
+    if (token === null) return undefined
+    const mine = ++sequence
+    const isStale = () => mine !== sequence || getToken() !== token
     try {
       const me = await fetchMe()
-      if (getToken() === token) apply(me)
+      if (!isStale()) apply(me)
     } catch (error) {
       const failure = toApiError(error)
-      if (failure.kind === 'aborted' || getToken() !== token) return
-      if (failure.status === 401 && failure.code === 'auth.unauthenticated') logout()
-      else store.setState({ status: 'unreachable' })
+      if (failure.kind === 'aborted' || isStale()) return undefined
+      if (failure.status === 401 && failure.code === 'auth.unauthenticated') {
+        logout()
+        return failure
+      }
+      store.setState({ status: 'unreachable' })
     }
+    return undefined
   }
 
   async function bootstrap() {
@@ -90,6 +110,10 @@ export function createSessionStore(options: SessionStoreOptions): SessionStore {
       logout()
       return
     }
+    await load()
+  }
+
+  async function refresh() {
     await load()
   }
 
@@ -104,13 +128,13 @@ export function createSessionStore(options: SessionStoreOptions): SessionStore {
     if (!token) {
       throw new ApiError({ kind: 'http', status: 200, code: 'client.unexpected_response' })
     }
-    storage.setItem(storageKey, token)
     try {
-      apply(await fetchMe())
+      storage.setItem(storageKey, token)
     } catch (error) {
-      if (getToken() === token) logout()
-      throw toApiError(error)
+      throw new ApiError({ kind: 'network', code: 'client.storage_unavailable', cause: error })
     }
+    const ended = await load()
+    if (ended) throw ended
   }
 
   return {
@@ -119,7 +143,7 @@ export function createSessionStore(options: SessionStoreOptions): SessionStore {
     getToken,
     bootstrap,
     login,
-    refresh: load,
+    refresh,
     logout,
     can: code => {
       const { permissions } = store.getState()

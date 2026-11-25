@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { createApiClient } from '@mes/api-client'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createSessionStore, type SessionStore, type TokenStorageKey } from './session-store'
 
 type Handler = (req: IncomingMessage, res: ServerResponse) => void
@@ -283,5 +283,86 @@ describe('session store', () => {
     unsubscribe()
     store.logout()
     expect(seen).toEqual(['authenticated'])
+  })
+
+  it('ends in anonymous when removeItem throws on logout', async () => {
+    const { handler } = scripted([ok()])
+    const { store, storage } = build(await listen(handler), { token: 'tkn' })
+    await store.bootstrap()
+    storage.removeItem = () => {
+      throw new DOMException('blocked', 'SecurityError')
+    }
+    store.logout()
+    expect(store.getState()).toMatchObject({ status: 'anonymous', user: null, permissions: [] })
+  })
+
+  it('is anonymous when getItem throws and bootstrap does not reject', async () => {
+    const { handler, requests } = scripted([ok()])
+    const { store, storage } = build(await listen(handler), { token: 'tkn' })
+    storage.getItem = () => {
+      throw new DOMException('blocked', 'SecurityError')
+    }
+    expect(store.getToken()).toBeNull()
+    await store.bootstrap()
+    expect(store.getState().status).toBe('anonymous')
+    expect(requests).toEqual([])
+  })
+
+  it('rejects login with an ApiError and stays anonymous when setItem throws', async () => {
+    const { handler } = scripted([res => json(res, 200, { data: { user, token: 'tkn' } }), ok()])
+    const { store, storage } = build(await listen(handler))
+    await store.bootstrap()
+    storage.setItem = () => {
+      throw new DOMException('quota', 'QuotaExceededError')
+    }
+    await expect(store.login({ email: 'a@b.co', password: 'pw' })).rejects.toMatchObject({
+      name: 'ApiError',
+      code: 'client.storage_unavailable',
+    })
+    expect(store.getState().status).toBe('anonymous')
+  })
+
+  it('never lets an older refresh answer overwrite a newer one', async () => {
+    const held: ServerResponse[] = []
+    const baseUrl = await listen((_req, res) => {
+      held.push(res)
+    })
+    const { store } = build(baseUrl, { token: 'tkn' })
+    const first = store.refresh()
+    const second = store.refresh()
+    await vi.waitFor(() => expect(held).toHaveLength(2))
+    json(
+      held[1] as ServerResponse,
+      200,
+      me(['readUsers', 'writeUsers'], '2030-01-01T00:00:00.000Z'),
+    )
+    await second
+    json(held[0] as ServerResponse, 200, me(['readUsers'], '2026-11-25T10:00:00.000Z'))
+    await first
+    expect(store.getState().permissions).toEqual(['readUsers', 'writeUsers'])
+    expect(store.getState().serverClock?.toIso()).toMatch(/^2030-01-01/)
+  })
+
+  it('keeps the token and resolves login when the follow-up /users/me answers 503', async () => {
+    const { handler } = scripted([
+      res => json(res, 200, { data: { user, token: 'tkn' } }),
+      unavailable,
+      ok(),
+    ])
+    const { store, storage } = build(await listen(handler))
+    await store.login({ email: 'a@b.co', password: 'pw' })
+    expect(store.getState().status).toBe('unreachable')
+    expect(storage.getItem('edmes.web.token')).toBe('tkn')
+    await store.refresh()
+    expect(store.getState().status).toBe('authenticated')
+  })
+
+  it('makes no request on refresh without a token', async () => {
+    const { handler, requests } = scripted([unavailable])
+    const { store } = build(await listen(handler))
+    await store.bootstrap()
+    await store.refresh()
+    expect(requests).toEqual([])
+    expect(store.getState().status).toBe('anonymous')
   })
 })
