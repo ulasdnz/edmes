@@ -1,6 +1,6 @@
 import createFetchClient, { type Client, type Middleware } from 'openapi-fetch'
 import createQueryClient, { type OpenapiQueryClient } from 'openapi-react-query'
-import { apiErrorFromResponse, toApiError } from './api-error'
+import { apiErrorFromResponse, isAbortError, toApiError } from './api-error'
 import type { paths } from './paths'
 
 export interface ApiClientOptions {
@@ -34,14 +34,19 @@ export function createApiClient(options: ApiClientOptions): ApiClient {
       sentWith.delete(id)
       if (response.ok) return undefined
       const error = await apiErrorFromResponse(response)
-      if (error.status === 401 && error.code === 'auth.unauthenticated' && token === getToken()) {
+      if (
+        error.status === 401 &&
+        error.code === 'auth.unauthenticated' &&
+        token !== null &&
+        token === getToken()
+      ) {
         onUnauthorized()
       }
       throw error
     },
     onError({ error, id }) {
       sentWith.delete(id)
-      if (error instanceof DOMException && error.name === 'AbortError') return undefined
+      if (isAbortError(error)) return undefined
       return toApiError(error)
     },
   }

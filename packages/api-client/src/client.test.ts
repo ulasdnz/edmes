@@ -1,7 +1,7 @@
 import { createServer, type IncomingHttpHeaders, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ApiError } from './api-error'
+import { ApiError, isAbortError, toApiError } from './api-error'
 import { createApiClient } from './client'
 
 interface Seen {
@@ -232,5 +232,57 @@ describe('createApiClient', () => {
     ])
     expect(results.map(r => r.status)).toEqual(['rejected', 'rejected'])
     expect(onUnauthorized).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not call onUnauthorized for a 401 answering a request sent without a token', async () => {
+    const { baseUrl } = await serve({ status: 401, body: envelope('auth.unauthenticated') })
+    const { fetchClient, onUnauthorized } = setup(baseUrl, { token: null })
+    await expect(fetchClient.GET('/users/languages')).rejects.toMatchObject({ status: 401 })
+    expect(onUnauthorized).not.toHaveBeenCalled()
+  })
+
+  it('isAbortError is true for a caller abort, false for a timeout and a refused connection', async () => {
+    const slow = await serve({ status: 200, delayMs: 200 })
+    const controller = new AbortController()
+    const aborted = setup(slow.baseUrl).fetchClient.GET('/users/languages', {
+      signal: controller.signal,
+    })
+    setTimeout(() => controller.abort(), 20)
+    const abortError = await aborted.then(
+      () => undefined,
+      (e: unknown) => e,
+    )
+    expect(isAbortError(abortError)).toBe(true)
+
+    const timeout = await setup(slow.baseUrl, { timeoutMs: 50 })
+      .fetchClient.GET('/users/languages')
+      .then(
+        () => undefined,
+        (e: unknown) => e,
+      )
+    expect(isAbortError(timeout)).toBe(false)
+
+    const gone = await serve({ status: 200 })
+    await new Promise<void>(resolve => gone.server.close(() => resolve()))
+    const refused = await setup(gone.baseUrl)
+      .fetchClient.GET('/users/languages')
+      .then(
+        () => undefined,
+        (e: unknown) => e,
+      )
+    expect(isAbortError(refused)).toBe(false)
+  })
+})
+
+describe('toApiError', () => {
+  it('maps an abort error to kind aborted without throwing', () => {
+    const error = toApiError(new DOMException('aborted', 'AbortError'))
+    expect(error).toMatchObject({ kind: 'aborted', status: 0, code: 'client.aborted' })
+  })
+
+  it('returns an ApiError for a non-Error value without throwing', () => {
+    for (const value of ['boom', undefined, null, 42]) {
+      expect(toApiError(value)).toBeInstanceOf(ApiError)
+    }
   })
 })

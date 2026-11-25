@@ -1,4 +1,4 @@
-export type ApiErrorKind = 'http' | 'network' | 'timeout'
+export type ApiErrorKind = 'http' | 'network' | 'timeout' | 'aborted'
 
 export interface ApiErrorInit {
   kind: ApiErrorKind
@@ -28,9 +28,15 @@ export class ApiError extends Error {
   }
 }
 
+export function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === 'AbortError'
+}
+
 export function toApiError(error: unknown): ApiError {
   if (error instanceof ApiError) return error
-  if (error instanceof DOMException && error.name === 'AbortError') throw error
+  if (isAbortError(error)) {
+    return new ApiError({ kind: 'aborted', code: 'client.aborted', cause: error })
+  }
   if (error instanceof DOMException && error.name === 'TimeoutError') {
     return new ApiError({ kind: 'timeout', code: 'client.timeout', cause: error })
   }
