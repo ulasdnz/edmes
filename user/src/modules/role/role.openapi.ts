@@ -2,9 +2,21 @@
  * Role OpenAPI path registrations.
  */
 
+import { z } from 'zod'
 import type { ZodOpenApiPathsObject } from 'zod-openapi'
 import { securityRequirement } from '../../lib/openapi/setup.js'
 import { createRoleSchema, roleIdParamSchema, updateRoleSchema } from './role.validators.js'
+
+const roleResponseSchema = z.object({
+  _id: z.string(),
+  name: z.string(),
+  description: z.string().nullable().optional(),
+  permissions: z.array(z.string()),
+  key: z.string().optional(),
+  defaultPermissions: z.array(z.string()).optional(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+})
 
 export const rolePaths: ZodOpenApiPathsObject = {
   '/roles': {
@@ -13,7 +25,12 @@ export const rolePaths: ZodOpenApiPathsObject = {
       security: securityRequirement,
       summary: 'List all roles (requires readRoles permission)',
       responses: {
-        '200': { description: 'Array of roles' },
+        '200': {
+          description: 'Array of roles',
+          content: {
+            'application/json': { schema: z.object({ data: z.array(roleResponseSchema) }) },
+          },
+        },
         '403': { description: 'Forbidden' },
       },
     },
@@ -38,7 +55,10 @@ export const rolePaths: ZodOpenApiPathsObject = {
       summary: 'Get role by ID',
       requestParams: { path: roleIdParamSchema },
       responses: {
-        '200': { description: 'Role data' },
+        '200': {
+          description: 'Role data',
+          content: { 'application/json': { schema: z.object({ data: roleResponseSchema }) } },
+        },
         '404': { description: 'Role not found' },
       },
     },

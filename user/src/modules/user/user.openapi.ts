@@ -12,6 +12,32 @@ import {
   userListSchema,
 } from './user.validators.js'
 
+const userResponseSchema = z.object({
+  _id: z.string(),
+  username: z.string(),
+  email: z.string(),
+  name: z.string(),
+  surname: z.string(),
+  roles: z.array(z.string()),
+  gender: z.enum(['male', 'female', 'other']).optional(),
+  countryCode: z.string().optional(),
+  birthDate: z.string().optional(),
+  photoUrl: z.string().nullable().optional(),
+  language: z.enum(['en', 'tr']),
+  personalNumber: z.string().nullable().optional(),
+  departmentId: z.string().nullable().optional(),
+  workCenterIds: z.array(z.string()),
+  specialities: z.array(z.string()),
+  defaultDashboardId: z.string().nullable().optional(),
+  props: z.record(z.string(), z.string()),
+  isActivated: z.boolean(),
+  isActiveDirectoryUser: z.boolean(),
+  passwordChangedAt: z.string().optional(),
+  mustChangePassword: z.boolean(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+})
+
 export const userPaths: ZodOpenApiPathsObject = {
   // ── Auth (public, no auth) ──────────────────────────────────────────────────
   '/auth/register': {
@@ -56,7 +82,7 @@ export const userPaths: ZodOpenApiPathsObject = {
           content: {
             'application/json': {
               schema: z.object({
-                data: z.record(z.string(), z.unknown()),
+                data: userResponseSchema,
                 meta: z.object({
                   plantTimezone: z.string(),
                   serverTime: z.string(),
@@ -125,7 +151,10 @@ export const userPaths: ZodOpenApiPathsObject = {
       summary: 'Get user by ID (requires readUsers permission)',
       requestParams: { path: userIdParamSchema },
       responses: {
-        '200': { description: 'User data' },
+        '200': {
+          description: 'User data',
+          content: { 'application/json': { schema: z.object({ data: userResponseSchema }) } },
+        },
         '403': { description: 'Forbidden' },
         '404': { description: 'User not found' },
       },

@@ -15,6 +15,7 @@
     "build:watch": "tsc -b --watch",
     "build:clean": "tsc -b --clean && turbo run build --force",
     "dev": "turbo run dev",
+    "openapi:emit": "pnpm -r --if-present run openapi:emit",
     "typecheck": "turbo run typecheck",
     "clean": "turbo clean",
     "lint": "biome lint .",

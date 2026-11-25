@@ -34,7 +34,10 @@
       "!**/dist",
       "!**/node_modules",
       "!**/coverage",
-      "!**/.husky"
+      "!**/.husky",
+      "!packages/api-client/openapi",
+      "!packages/api-client/src/generated",
+      "!**/routeTree.gen.ts"
     ]
   }
 }

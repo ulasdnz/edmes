@@ -10,7 +10,7 @@ import { config } from '../../config/index.js'
 import { SYSTEM_IDENTITY } from '../../constants/identity.js'
 import { sharedCacheWrapDedup } from '../../lib/cache.js'
 import { httpLoggerMiddleware, logger, morganMiddleware } from '../../lib/logger.js'
-import { generateOpenApiDocument } from '../../lib/openapi/setup.js'
+import { openApiDocument } from '../../lib/openapi/document.js'
 import { redisClient } from '../../lib/redis.js'
 import jobOrderRecordsBatchRoutes from '../../modules/internal/job-order-records-batch.routes.js'
 import jobOrderWindowsRoutes from '../../modules/internal/job-order-windows.routes.js'
@@ -70,17 +70,14 @@ export const initExpress = async () => {
   app.disable('etag')
 
   // ─── API Documentation ──────────────────────────────────────────────────────
-  const combinedPaths = {}
-  const openApiSpec = generateOpenApiDocument(combinedPaths)
-
   app.get('/docs.json', (_req: Request, res: Response) => {
-    res.json(openApiSpec)
+    res.json(openApiDocument)
   })
 
   if (config.NODE_ENV !== 'production') {
     try {
       const { default: swaggerUi } = await import('swagger-ui-express')
-      app.use('/docs', swaggerUi.serve, swaggerUi.setup(openApiSpec))
+      app.use('/docs', swaggerUi.serve, swaggerUi.setup(openApiDocument))
     } catch (error) {
       logger.debug('Swagger UI not available — swagger-ui-express is not installed', {
         event: 'server.swagger.unavailable',

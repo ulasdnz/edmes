@@ -17,6 +17,13 @@ export interface PaginationMeta {
   totalPages: number
 }
 
+export const paginationMetaSchema = z.object({
+  page: z.number().int(),
+  limit: z.number().int(),
+  total: z.number().int(),
+  totalPages: z.number().int(),
+})
+
 export interface PaginatedResult<T> {
   data: T[]
   pagination: PaginationMeta
