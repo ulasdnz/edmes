@@ -1,6 +1,6 @@
 name: Release
 
-# A version tag publishes that version: the six service images on GHCR and the install package on
+# A version tag publishes that version: the seven images on GHCR and the install package on
 # the GitHub release. Tag a commit on main that passed CI.
 on:
   push:
@@ -21,7 +21,7 @@ jobs:
       packages: write
     strategy:
       matrix:
-        service: [user, telemetry, work-center, production, performance, realtime]
+        service: [user, telemetry, work-center, production, performance, realtime, frontend]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -41,7 +41,10 @@ jobs:
             echo "$image is already published" >&2
             exit 1
           fi
-          docker build -f "$SERVICE/Dockerfile" \
+          dockerfile=$SERVICE/Dockerfile
+          if [ "$SERVICE" = frontend ]; then dockerfile=apps/Dockerfile; fi
+          docker build -f "$dockerfile" \
+            --build-arg "EDMES_VERSION=$version" \
             --label "org.opencontainers.image.source=https://github.com/$REPOSITORY" \
             --label "org.opencontainers.image.version=$version" \
             -t "$image" .

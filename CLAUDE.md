@@ -34,6 +34,8 @@ pnpm test:contract                 # contract tests (user, work-center, producti
 pnpm openapi:emit                  # regenerate packages/api-client/openapi/*.json from the services
 pnpm --filter @mes/api-client generate  # regenerate the TypeScript types from those documents
 pnpm test:e2e                      # builds, then runs the services against real MongoDB, Redis and MQTT
+pnpm --filter web-app dev          # web app on :5173 (proxies /api, /uploads, /socket.io to localhost)
+pnpm --filter operator-panel dev   # operator panel (same proxy)
 cd user && pnpm test:watch         # watch mode
 docker compose up -d --build       # full stack
 docker compose up -d --build user  # rebuild user service only
@@ -71,6 +73,11 @@ testing → source-only (no build, vitest transpiles directly)
 
 - `user/` — User, Role, Speciality CRUD + auth. Express 5, Mongoose 9, Zod 4.
 - New services go in root directory (workspace configured). Follow `user/` structure exactly.
+
+### Frontend Apps
+
+- `apps/web/` (base `/`) and `apps/operator/` (base `/operator/`) — React + Vite; `apps/vite.shared.ts` holds their shared config. They use `@mes/api-client`, `@mes/frontend`, `@mes/ui`.
+- One image (`apps/Dockerfile`, `edmes-frontend`) serves both through nginx on 8080. Traefik routes every path no service router names to it (priority 1); `/api`, `/internal`, `/socket.io`, `/docs` and `/uploads` answer 404 there, never the SPA's HTML.
 
 ### Infrastructure
 
@@ -232,7 +239,7 @@ Types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`
 ## Docker
 
 - Two-phase build: `tsc -b` for packages, then service-level `tsc`.
-- Releases: a `vX.Y.Z` tag runs `.github/workflows/release.yml`, which pushes the six images to GHCR and attaches the install package. `install.sh` installs and upgrades a server; see `docs/operations/installation.md`.
+- Releases: a `vX.Y.Z` tag runs `.github/workflows/release.yml`, which pushes the seven images to GHCR and attaches the install package. `install.sh` installs and upgrades a server; see `docs/operations/installation.md`.
 - `.tsbuildinfo` excluded via `.dockerignore`.
 - `node-linker=hoisted` in Docker `.npmrc` for flat module resolution.
 - Named volumes persist all stateful data: MongoDB, Redis, user uploads, Loki, Grafana, Alloy positions.

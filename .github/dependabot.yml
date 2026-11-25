@@ -12,7 +12,7 @@ updates:
       actions:
         patterns: ['*']
 
-  # Moves the Node image the six service Dockerfiles pin, tag and digest, in one pull request a month
+  # Moves the Node and nginx images the service and frontend Dockerfiles pin, tag and digest, in one pull request a month
   - package-ecosystem: docker
     directories:
       - /user
@@ -21,6 +21,7 @@ updates:
       - /performance
       - /telemetry
       - /realtime
+      - /apps
     schedule:
       interval: monthly
     cooldown:
@@ -43,7 +44,7 @@ updates:
     ignore:
       - dependency-name: '*'
         update-types: ['version-update:semver-major']
-      # The six service images are this project's own, versioned by its releases
+      # The seven service images are this project's own, versioned by its releases
       - dependency-name: 'ghcr.io/ulasdnz/edmes-*'
     groups:
       infrastructure:

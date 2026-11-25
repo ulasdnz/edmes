@@ -1,4 +1,4 @@
-# Development only: builds the six service images from this checkout, tagged :dev. docker compose
+# Development only: builds the seven service images from this checkout, tagged :dev. docker compose
 # merges this file into docker-compose.yml on its own; the release package leaves it out, so an
 # install runs the published images.
 services:
@@ -26,3 +26,7 @@ services:
     build:
       context: .
       dockerfile: realtime/Dockerfile
+  frontend:
+    build:
+      context: .
+      dockerfile: apps/Dockerfile

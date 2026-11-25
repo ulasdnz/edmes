@@ -2,13 +2,14 @@
 
 EDMES runs on one Linux server with Docker. A release is a small package,
 `edmes-<version>.tar.gz`, with the compose file, the infrastructure settings and `install.sh`. The
-six service images come from `ghcr.io/ulasdnz`, tagged with the version; a version's images are
+seven images (the six services and the frontend, which serves the web app and the operator
+panel) come from `ghcr.io/ulasdnz`, tagged with the version; a version's images are
 never replaced, so every server on `1.0.0` runs the same images.
 
 ## Requirements
 
 - Docker Engine with the Compose plugin
-- Ports 80 (web and API), 1883 (MQTT for the devices) and 3001 (Grafana) free
+- Ports 80 (web app, operator panel and API), 1883 (MQTT for the devices) and 3001 (Grafana) free
 - Internet access to `ghcr.io` and Docker Hub, or the offline package (see below)
 
 ## First install
@@ -74,7 +75,7 @@ git tag v1.0.0
 git push origin v1.0.0
 ```
 
-The release workflow builds and pushes the six images, then attaches `edmes-1.0.0.tar.gz` to the
+The release workflow builds and pushes the seven images, then attaches `edmes-1.0.0.tar.gz` to the
 GitHub release. It refuses a version whose images already exist.
 
 ## Local development
