@@ -9,6 +9,7 @@ import './app.css'
 import { en } from './locales/en'
 import { tr } from './locales/tr'
 import { createAppRouter } from './router'
+import { followAssignments } from './station/follow-assignments'
 import { createStationStore, stationRoom } from './station/station-store'
 
 const deviceLanguage = (user?: string) => resolveLanguage({ user, browser: navigator.language })
@@ -34,6 +35,7 @@ const core = createAppCore({
   },
 })
 const router = createAppRouter(core, station)
+followAssignments(core, station)
 
 // A session that ends, or permissions that change, rerun the route guards of the open page.
 let previous = core.session.getState()

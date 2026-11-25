@@ -21,3 +21,14 @@ export function ScreenLoading(): ReactNode {
 export function ScreenTitle(props: { children: ReactNode }): ReactNode {
   return <h1 className='font-display text-2xl leading-tight font-semibold'>{props.children}</h1>
 }
+
+export function ServerUnreachable(): ReactNode {
+  const { t } = useTranslation()
+  return (
+    <FullScreen>
+      <output className='font-display text-lg font-semibold text-text-2'>
+        {t('common.unreachable')}
+      </output>
+    </FullScreen>
+  )
+}

@@ -28,6 +28,7 @@ export const en = {
     target: 'Target',
     noRunningJobOrder: 'No running job order',
     jobOrderFailed: 'The job order could not be loaded',
+    workCenterFailed: 'The work center could not be loaded',
   },
   notFound: {
     title: 'Page not found',

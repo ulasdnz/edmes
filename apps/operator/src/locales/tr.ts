@@ -29,6 +29,7 @@ export const tr: typeof en = {
     target: 'Hedef',
     noRunningJobOrder: 'Çalışan iş emri yok',
     jobOrderFailed: 'İş emri yüklenemedi',
+    workCenterFailed: 'İş merkezi yüklenemedi',
   },
   notFound: {
     title: 'Sayfa bulunamadı',

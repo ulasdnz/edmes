@@ -199,6 +199,9 @@ importers:
       babel-plugin-react-compiler:
         specifier: 'catalog:'
         version: 1.0.0
+      socket.io:
+        specifier: ^4.8.4
+        version: 4.8.4
       tailwindcss:
         specifier: 'catalog:'
         version: 4.3.5

@@ -4,7 +4,12 @@ import { Button } from '@mes/ui/components/button'
 import { createFileRoute, Outlet, redirect } from '@tanstack/react-router'
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { FullScreen, ScreenLoading, ScreenTitle } from '../components/screen-state'
+import {
+  FullScreen,
+  ScreenLoading,
+  ScreenTitle,
+  ServerUnreachable,
+} from '../components/screen-state'
 
 const BOOTSTRAP_RETRY_MS = 5000
 
@@ -40,13 +45,7 @@ function StationLayout() {
   }, [waitingForServer, session])
 
   if (waitingForServer) {
-    return (
-      <FullScreen>
-        <output className='font-display text-lg font-semibold text-text-2'>
-          {t('common.unreachable')}
-        </output>
-      </FullScreen>
-    )
+    return <ServerUnreachable />
   }
   if (!user) return null
   if (!can('accessOperatorPanel')) {
