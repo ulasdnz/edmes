@@ -1,3 +1,4 @@
+import { paginationMetaSchema } from '@mes/core/pagination'
 import { z } from 'zod'
 import type { ZodOpenApiPathsObject } from 'zod-openapi'
 import { securityRequirement } from '../../lib/openapi/setup.js'
@@ -36,6 +37,16 @@ const userResponseSchema = z.object({
   mustChangePassword: z.boolean(),
   createdAt: z.string(),
   updatedAt: z.string(),
+})
+
+const populatedRoleSchema = z.object({
+  _id: z.string(),
+  name: z.string(),
+  description: z.string().nullable().optional(),
+})
+
+const userWithRolesSchema = userResponseSchema.extend({
+  roles: z.array(z.union([z.string(), populatedRoleSchema])),
 })
 
 export const userPaths: ZodOpenApiPathsObject = {
@@ -124,7 +135,18 @@ export const userPaths: ZodOpenApiPathsObject = {
       summary: 'List users with pagination, search, and filtering',
       requestParams: { query: userListSchema },
       responses: {
-        '200': { description: 'Paginated list of users' },
+        '200': {
+          description:
+            'Paginated list of users; roles hold ids, or { _id, name, description } with ?populate=roles',
+          content: {
+            'application/json': {
+              schema: z.object({
+                data: z.array(userWithRolesSchema),
+                pagination: paginationMetaSchema,
+              }),
+            },
+          },
+        },
         '400': { description: 'Invalid query parameters' },
         '403': { description: 'Forbidden — missing readUsers permission' },
       },
@@ -259,7 +281,16 @@ export const userPaths: ZodOpenApiPathsObject = {
       summary: 'Get user by ID with populated roles (requires readUsers permission)',
       requestParams: { path: userIdParamSchema },
       responses: {
-        '200': { description: 'User data with populated roles' },
+        '200': {
+          description: 'User data with populated roles',
+          content: {
+            'application/json': {
+              schema: z.object({
+                data: userResponseSchema.extend({ roles: z.array(populatedRoleSchema) }),
+              }),
+            },
+          },
+        },
         '403': { description: 'Forbidden' },
         '404': { description: 'User not found' },
       },
