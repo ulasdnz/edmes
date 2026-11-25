@@ -8,8 +8,13 @@ export function installChunkReloadGuard(options: {
   const target = options.target ?? window
   target.addEventListener('vite:preloadError', event => {
     event.preventDefault()
-    if (options.storage.getItem(MARK)) return
-    options.storage.setItem(MARK, '1')
+    try {
+      if (options.storage.getItem(MARK)) return
+      options.storage.setItem(MARK, '1')
+    } catch {
+      // a mark that cannot be read or written cannot stop a reload loop: do not reload
+      return
+    }
     options.reload()
   })
 }

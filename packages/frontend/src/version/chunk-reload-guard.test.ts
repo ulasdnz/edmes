@@ -38,3 +38,19 @@ it('prevents the default error so the failed import is not rethrown', () => {
   target.dispatchEvent(event)
   expect(event.defaultPrevented).toBe(true)
 })
+
+it('does not reload and does not throw when the storage throws', () => {
+  const target = new EventTarget()
+  const reload = vi.fn()
+  const broken = {
+    getItem: () => {
+      throw new Error('denied')
+    },
+    setItem: () => {
+      throw new Error('denied')
+    },
+  }
+  installChunkReloadGuard({ storage: broken, reload, target })
+  expect(() => target.dispatchEvent(new Event('vite:preloadError'))).not.toThrow()
+  expect(reload).not.toHaveBeenCalled()
+})

@@ -16,6 +16,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   for (const stop of stops.splice(0)) stop()
+  server.closeAllConnections()
   if (server.listening) await new Promise<void>(resolve => server.close(() => resolve()))
 })
 
@@ -96,5 +97,60 @@ describe('startVersionCheck', () => {
     const seen = requests
     await new Promise(resolve => setTimeout(resolve, 100))
     expect(requests).toBe(seen)
+  })
+
+  it('reports again on the next check when the callback threw', async () => {
+    serveVersion('1.1.0')
+    const onMismatch = vi
+      .fn()
+      .mockImplementationOnce(() => {
+        throw new Error('consumer failed')
+      })
+      .mockImplementation(() => undefined)
+    const check = start(onMismatch)
+    await expect(check.checkNow()).rejects.toThrow('consumer failed')
+    await check.checkNow()
+    expect(onMismatch).toHaveBeenCalledTimes(2)
+    await check.checkNow()
+    expect(onMismatch).toHaveBeenCalledTimes(2)
+  })
+
+  it('reports nothing that answers after stop, and checkNow does nothing after stop', async () => {
+    let held: ServerResponse | undefined
+    let requests = 0
+    respond = res => {
+      requests++
+      held = res
+    }
+    const onMismatch = vi.fn()
+    const check = start(onMismatch)
+    const pending = check.checkNow()
+    await vi.waitFor(() => expect(held).toBeDefined())
+    check.stop()
+    held?.setHeader('content-type', 'application/json')
+    held?.end(JSON.stringify({ version: '1.1.0' }))
+    await pending
+    await check.checkNow()
+    expect(onMismatch).not.toHaveBeenCalled()
+    expect(requests).toBe(1)
+  })
+
+  it('does not start a second request while one is in flight', async () => {
+    let held: ServerResponse | undefined
+    let requests = 0
+    respond = res => {
+      requests++
+      held = res
+    }
+    const onMismatch = vi.fn()
+    const check = start(onMismatch)
+    const first = check.checkNow()
+    const second = check.checkNow()
+    await vi.waitFor(() => expect(held).toBeDefined())
+    held?.setHeader('content-type', 'application/json')
+    held?.end(JSON.stringify({ version: '1.1.0' }))
+    await Promise.all([first, second])
+    expect(requests).toBe(1)
+    expect(onMismatch).toHaveBeenCalledTimes(1)
   })
 })

@@ -8,6 +8,8 @@ describe('isUtcInstant', () => {
     expect(isUtcInstant('2026-04-04 12:30:00')).toBe(false)
     expect(isUtcInstant('2026-04-04T12:30:00+03:00')).toBe(false)
     expect(isUtcInstant('2026-13-04T12:30:00.000Z')).toBe(false)
+    expect(isUtcInstant('2026-02-30T12:30:00.000Z')).toBe(false)
+    expect(isUtcInstant('2026-04-04T25:30:00.000Z')).toBe(false)
   })
 })
 
@@ -40,5 +42,11 @@ describe('plantLocalToInstant', () => {
     expect(plantLocalToInstant('2026-10-25T02:30', 'Europe/Berlin')).toBe(
       '2026-10-25T00:30:00.000Z',
     )
+  })
+
+  it('rejects a local time that does not exist on the calendar', () => {
+    expect(() => plantLocalToInstant('2026-02-30T10:00', 'Europe/Berlin')).toThrow(RangeError)
+    expect(() => plantLocalToInstant('2026-04-04T25:00', 'Europe/Berlin')).toThrow(RangeError)
+    expect(() => plantLocalToInstant('2026-04-04T10:60', 'Europe/Berlin')).toThrow(RangeError)
   })
 })

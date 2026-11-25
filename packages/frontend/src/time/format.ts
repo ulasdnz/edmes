@@ -6,7 +6,9 @@ const DAY_MS = 24 * 60 * 60 * 1000
 const MINUTE_MS = 60 * 1000
 
 export function isUtcInstant(value: string): boolean {
-  return UTC_INSTANT.test(value) && !Number.isNaN(Date.parse(value))
+  if (!UTC_INSTANT.test(value)) return false
+  const parsed = new Date(value)
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 19) === value.slice(0, 19)
 }
 
 const STYLES: Record<'date' | 'time' | 'dateTime', Intl.DateTimeFormatOptions> = {
@@ -46,6 +48,9 @@ export function plantLocalToInstant(local: string, timeZone: string): string {
     number,
   ]
   const localAsUtc = Date.UTC(year, month - 1, day, hour, minute)
+  if (new Date(localAsUtc).toISOString().slice(0, 16) !== local) {
+    throw new RangeError(`Not a real plant-local time: ${local}`)
+  }
   const offsetBefore = tzOffset(timeZone, new Date(localAsUtc - DAY_MS))
   const offsetAfter = tzOffset(timeZone, new Date(localAsUtc + DAY_MS))
   if (Number.isNaN(offsetBefore) || Number.isNaN(offsetAfter)) {
