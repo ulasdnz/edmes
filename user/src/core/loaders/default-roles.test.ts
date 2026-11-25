@@ -1,6 +1,7 @@
 import { getInvalidPrivilegeCodes, PRIVILEGES } from '@mes/privileges'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_ROLES } from '../../constants/default-roles.js'
+import { emitRoleCreated, emitRoleUpdated } from '../../jobs/events.js'
 import Role from '../../modules/role/role.model.js'
 import { ensureDefaultRoles } from './default-roles.js'
 
@@ -17,7 +18,43 @@ const findRole = async (key: string) => {
 
 describe('ensureDefaultRoles', () => {
   beforeEach(async () => {
+    vi.mocked(emitRoleCreated).mockClear()
+    vi.mocked(emitRoleUpdated).mockClear()
     await ensureDefaultRoles({ firstInstall: true })
+  })
+
+  it('emits role.created once per role created and no update', async () => {
+    expect(emitRoleCreated).toHaveBeenCalledTimes(5)
+    const ids = (await Role.find({ key: { $exists: true } }).lean()).map(r => String(r._id))
+    expect(
+      vi
+        .mocked(emitRoleCreated)
+        .mock.calls.map(([id]) => id)
+        .sort(),
+    ).toEqual(ids.sort())
+    expect(emitRoleUpdated).not.toHaveBeenCalled()
+  })
+
+  it('emits nothing for a role that needs no change', async () => {
+    vi.mocked(emitRoleCreated).mockClear()
+    await ensureDefaultRoles({ firstInstall: false })
+    await ensureDefaultRoles({ firstInstall: true })
+    expect(emitRoleCreated).not.toHaveBeenCalled()
+    expect(emitRoleUpdated).not.toHaveBeenCalled()
+  })
+
+  it('creates the missing roles and leaves the existing ones alone on an interrupted first install', async () => {
+    await Role.deleteMany({ key: { $in: ['quality', 'operator', 'viewer'] } })
+    await Role.updateOne({ key: 'planner' }, { $set: { name: 'Planlamacı' } })
+    vi.mocked(emitRoleCreated).mockClear()
+
+    await ensureDefaultRoles({ firstInstall: true })
+
+    const keys = (await Role.find({ key: { $exists: true } }).lean()).map(r => r.key).sort()
+    expect(keys).toEqual(['operator', 'planner', 'quality', 'shiftSupervisor', 'viewer'])
+    expect(emitRoleCreated).toHaveBeenCalledTimes(3)
+    expect(emitRoleUpdated).not.toHaveBeenCalled()
+    expect((await findRole('planner')).name).toBe('Planlamacı')
   })
 
   it('creates the five roles on first install', async () => {
@@ -79,7 +116,9 @@ describe('ensureDefaultRoles', () => {
       { key: 'viewer' },
       { $pull: { permissions: 'readOee', defaultPermissions: 'readOee' } },
     )
+    vi.mocked(emitRoleUpdated).mockClear()
     await ensureDefaultRoles({ firstInstall: false })
+    expect(emitRoleUpdated).toHaveBeenCalledTimes(1)
     expect((await findRole('viewer')).permissions).toContain('readOee')
     expect((await findRole('viewer')).defaultPermissions).toContain('readOee')
 

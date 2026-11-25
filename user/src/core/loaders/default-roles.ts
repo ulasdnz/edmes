@@ -39,9 +39,7 @@ const syncDefaultRole = async (definition: DefaultRole): Promise<void> => {
     { returnDocument: 'after', runValidators: true },
   )
 
-  if (!role) {
-    throw new Error(`Default role ${definition.key} disappeared during bootstrap`)
-  }
+  if (!role) return
 
   await emitRoleUpdated(role._id.toString())
 

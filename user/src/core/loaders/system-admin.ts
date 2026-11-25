@@ -29,9 +29,7 @@ const sameStringSet = (left: string[], right: string[]): boolean => {
 export const isSystemAdminByUsername = (username: string): boolean =>
   config.SYSTEM_ADMIN_BOOTSTRAP_ENABLED && username === SYSTEM_ADMIN_USERNAME
 
-const ensureSystemAdminRole = async (
-  permissions: string[],
-): Promise<{ role: IRole; created: boolean }> => {
+const ensureSystemAdminRole = async (permissions: string[]): Promise<IRole> => {
   const existingRole = await Role.findOne({ name: SYSTEM_ADMIN_ROLE_NAME })
 
   if (!existingRole) {
@@ -49,7 +47,7 @@ const ensureSystemAdminRole = async (
       roleName: SYSTEM_ADMIN_ROLE_NAME,
     })
 
-    return { role, created: true }
+    return role
   }
 
   const nextPermissions = [...permissions]
@@ -58,7 +56,7 @@ const ensureSystemAdminRole = async (
     existingRole.description !== SYSTEM_ADMIN_ROLE_DESCRIPTION
 
   if (!shouldUpdate) {
-    return { role: existingRole, created: false }
+    return existingRole
   }
 
   const role = await Role.findOneAndUpdate(
@@ -84,7 +82,7 @@ const ensureSystemAdminRole = async (
     roleName: SYSTEM_ADMIN_ROLE_NAME,
   })
 
-  return { role, created: false }
+  return role
 }
 
 const ensureSystemAdminUser = async (roleId: string): Promise<void> => {
@@ -160,16 +158,16 @@ const ensureSystemAdminUser = async (roleId: string): Promise<void> => {
   })
 }
 
-export const ensureSystemAdmin = async (): Promise<{ roleCreated: boolean }> => {
+export const ensureSystemAdmin = async (): Promise<void> => {
   if (!config.SYSTEM_ADMIN_BOOTSTRAP_ENABLED) {
     logger.info('System admin bootstrap disabled', {
       event: 'bootstrap.system_admin.disabled',
     })
-    return { roleCreated: false }
+    return
   }
 
   const permissions = PRIVILEGES.map(privilege => privilege.code)
-  const { role, created } = await ensureSystemAdminRole(permissions)
+  const role = await ensureSystemAdminRole(permissions)
   await ensureSystemAdminUser(role._id.toString())
 
   logger.info('System admin bootstrap completed', {
@@ -178,6 +176,4 @@ export const ensureSystemAdmin = async (): Promise<{ roleCreated: boolean }> => 
     username: SYSTEM_ADMIN_USERNAME,
     permissionCount: permissions.length,
   })
-
-  return { roleCreated: created }
 }

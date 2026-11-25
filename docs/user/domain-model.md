@@ -185,12 +185,13 @@ permissions: z.array(
 
 ### Ready-made roles
 
-`ensureDefaultRoles` (`user/src/core/loaders/default-roles.ts`, definitions in `user/src/constants/default-roles.ts`) runs after the system admin bootstrap.
+`ensureDefaultRoles` (`user/src/core/loaders/default-roles.ts`, definitions in `user/src/constants/default-roles.ts`) runs at startup **before** the system administrator bootstrap, so the system administrator role is the marker that a first install finished.
 
-- On the first install (the run that creates the system administrator role) each missing ready-made role is created with `defaultPermissions` equal to its `permissions`.
-- In every later run a ready-made role that still exists (found by `key`) receives the codes that are in its definition now and were not in its `defaultPermissions`, added with `$addToSet`; `defaultPermissions` is then set to the current definition. Nothing is ever removed from `permissions`, so what the customer removed stays removed.
-- A ready-made role the customer deleted is not created again.
-- Writes emit `role.created` / `role.updated` and log `bootstrap.default_roles.*`.
+- A run is a first install when `SYSTEM_ADMIN_BOOTSTRAP_ENABLED` is on and the system administrator role does not exist yet. Each missing ready-made role (found by `key`) is then created with `defaultPermissions` equal to its `permissions`. A start interrupted before the administrator role was created is therefore a first install again: it creates the roles that are still missing and leaves the existing ones as they are.
+- With `SYSTEM_ADMIN_BOOTSTRAP_ENABLED` off nothing is created; roles that exist are still synchronized.
+- In every other run a ready-made role that still exists receives the codes that are in its definition now and were not in its `defaultPermissions`, added with `$addToSet`; `defaultPermissions` is then set to the current definition. Nothing is ever removed from `permissions`, so what the customer removed stays removed.
+- A ready-made role the customer deleted is not created again once the install has finished.
+- Writes emit `role.created` / `role.updated` (none for a role that needs no change) and log `bootstrap.default_roles.*`.
 
 ### isDefault Flag
 
