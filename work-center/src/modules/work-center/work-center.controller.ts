@@ -35,15 +35,10 @@ export const getWorkCenter = async (
   })
 }
 
-export const getWorkCenters = async (
-  req: Request,
-  res: Response<SuccessResponse<PaginatedResult<IWorkCenter>>>,
-) => {
+export const getWorkCenters = async (req: Request, res: Response<PaginatedResult<IWorkCenter>>) => {
   const result = await workCenterService.getWorkCenters(req.query as never, req.user!.workCenterIds)
 
-  res.json({
-    data: result as never,
-  })
+  res.json(result)
 }
 
 export const replaceWorkCenter = async (

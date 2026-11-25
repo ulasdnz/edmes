@@ -291,6 +291,21 @@ describe('Work Center Spec Compliance Review', () => {
     expect(res.body.data.shiftIds).toHaveLength(1)
   })
 
+  it('lists the visible work centers as { data: [...], pagination }', async () => {
+    const workCenterId = await createInternalWorkCenter(buildPhysicalWorkCenter())
+
+    const res = await request(app)
+      .get('/api/v1/work-centers')
+      .query({ status: 'active', limit: 100 })
+      .set('x-user-id', '507f1f77bcf86cd799439017')
+      .set('x-permissions', 'readWorkCenters')
+      .set('x-work-center-ids', workCenterId)
+
+    expect(res.status).toBe(200)
+    expect(res.body.data.map((wc: { _id: string }) => wc._id)).toEqual([workCenterId])
+    expect(res.body.pagination).toEqual({ page: 1, limit: 100, total: 1, totalPages: 1 })
+  })
+
   it('enforces public visibility membership through user workCenterIds', async () => {
     const workCenterId = await createInternalWorkCenter(buildPhysicalWorkCenter())
 
