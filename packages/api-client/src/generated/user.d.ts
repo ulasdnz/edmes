@@ -119,7 +119,44 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": {
+                            data: {
+                                user: {
+                                    _id: string;
+                                    username: string;
+                                    email: string;
+                                    name: string;
+                                    surname: string;
+                                    roles: string[];
+                                    /** @enum {string} */
+                                    gender?: "male" | "female" | "other";
+                                    countryCode?: string;
+                                    birthDate?: string;
+                                    photoUrl?: string | null;
+                                    /** @enum {string} */
+                                    language: "en" | "tr";
+                                    personalNumber?: string | null;
+                                    departmentId?: string | null;
+                                    workCenterIds: string[];
+                                    specialities: string[];
+                                    defaultDashboardId?: string | null;
+                                    props: {
+                                        [key: string]: string;
+                                    };
+                                    isActivated: boolean;
+                                    isActiveDirectoryUser: boolean;
+                                    passwordChangedAt?: string;
+                                    mustChangePassword: boolean;
+                                    createdAt: string;
+                                    updatedAt: string;
+                                    failedLoginAttempts: number;
+                                    lastFailedLoginAt?: string | null;
+                                };
+                                token: string;
+                            };
+                        };
+                    };
                 };
                 /** @description Invalid credentials */
                 401: {

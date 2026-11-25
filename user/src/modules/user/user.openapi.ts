@@ -75,7 +75,22 @@ export const userPaths: ZodOpenApiPathsObject = {
         content: { 'application/json': { schema: loginSchema } },
       },
       responses: {
-        '200': { description: 'Login successful, returns JWT token' },
+        '200': {
+          description: 'Login successful, returns JWT token',
+          content: {
+            'application/json': {
+              schema: z.object({
+                data: z.object({
+                  user: userResponseSchema.extend({
+                    failedLoginAttempts: z.number(),
+                    lastFailedLoginAt: z.string().nullable().optional(),
+                  }),
+                  token: z.string(),
+                }),
+              }),
+            },
+          },
+        },
         '401': { description: 'Invalid credentials' },
       },
     },

@@ -131,7 +131,171 @@
         },
         "responses": {
           "200": {
-            "description": "Login successful, returns JWT token"
+            "description": "Login successful, returns JWT token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "user": {
+                          "type": "object",
+                          "properties": {
+                            "_id": {
+                              "type": "string"
+                            },
+                            "username": {
+                              "type": "string"
+                            },
+                            "email": {
+                              "type": "string"
+                            },
+                            "name": {
+                              "type": "string"
+                            },
+                            "surname": {
+                              "type": "string"
+                            },
+                            "roles": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "gender": {
+                              "type": "string",
+                              "enum": [
+                                "male",
+                                "female",
+                                "other"
+                              ]
+                            },
+                            "countryCode": {
+                              "type": "string"
+                            },
+                            "birthDate": {
+                              "type": "string"
+                            },
+                            "photoUrl": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "language": {
+                              "type": "string",
+                              "enum": [
+                                "en",
+                                "tr"
+                              ]
+                            },
+                            "personalNumber": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "departmentId": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "workCenterIds": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "specialities": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "defaultDashboardId": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "props": {
+                              "type": "object",
+                              "propertyNames": {
+                                "type": "string"
+                              },
+                              "additionalProperties": {
+                                "type": "string"
+                              }
+                            },
+                            "isActivated": {
+                              "type": "boolean"
+                            },
+                            "isActiveDirectoryUser": {
+                              "type": "boolean"
+                            },
+                            "passwordChangedAt": {
+                              "type": "string"
+                            },
+                            "mustChangePassword": {
+                              "type": "boolean"
+                            },
+                            "createdAt": {
+                              "type": "string"
+                            },
+                            "updatedAt": {
+                              "type": "string"
+                            },
+                            "failedLoginAttempts": {
+                              "type": "number"
+                            },
+                            "lastFailedLoginAt": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "_id",
+                            "username",
+                            "email",
+                            "name",
+                            "surname",
+                            "roles",
+                            "language",
+                            "workCenterIds",
+                            "specialities",
+                            "props",
+                            "isActivated",
+                            "isActiveDirectoryUser",
+                            "mustChangePassword",
+                            "createdAt",
+                            "updatedAt",
+                            "failedLoginAttempts"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "token": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "user",
+                        "token"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
           },
           "401": {
             "description": "Invalid credentials"

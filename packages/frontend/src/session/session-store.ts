@@ -94,14 +94,14 @@ export function createSessionStore(options: SessionStoreOptions): SessionStore {
   }
 
   async function login(credentials: { email: string; password: string }) {
-    let token: unknown
+    let token: string | undefined
     try {
       const { data } = await api().fetchClient.POST('/auth/login', { body: credentials })
-      token = (data as { data?: { token?: unknown } } | undefined)?.data?.token
+      token = data?.data.token
     } catch (error) {
       throw toApiError(error)
     }
-    if (typeof token !== 'string') {
+    if (!token) {
       throw new ApiError({ kind: 'http', status: 200, code: 'client.unexpected_response' })
     }
     storage.setItem(storageKey, token)
