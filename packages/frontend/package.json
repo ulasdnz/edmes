@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     "./domain": "./src/domain/index.ts",
+    "./session": "./src/session/index.ts",
     "./time": "./src/time/index.ts",
     "./version": "./src/version/index.ts"
   },
@@ -13,9 +14,12 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@date-fns/tz": "^1.4.1"
+    "@date-fns/tz": "^1.4.1",
+    "@mes/api-client": "workspace:*",
+    "zustand": "catalog:"
   },
   "devDependencies": {
+    "@mes/privileges": "workspace:*",
     "@types/node": "^26.6.5",
     "@vitest/browser-playwright": "catalog:",
     "typescript": "^5.5.0",

@@ -19,6 +19,9 @@ catalogs:
     vitest-browser-react:
       specifier: ^2.3.0
       version: 2.3.0
+    zustand:
+      specifier: ^5.1.0
+      version: 5.1.0
 
 importers:
 
@@ -204,7 +207,16 @@ importers:
       '@date-fns/tz':
         specifier: ^1.4.1
         version: 1.5.0
+      '@mes/api-client':
+        specifier: workspace:*
+        version: file:packages/api-client
+      zustand:
+        specifier: 'catalog:'
+        version: 5.1.0(react@19.3.1)
     devDependencies:
+      '@mes/privileges':
+        specifier: workspace:*
+        version: link:../privileges
       '@types/node':
         specifier: ^26.6.5
         version: 26.6.5
@@ -1589,6 +1601,11 @@ packages:
 
   '@kwsites/file-exists@1.1.1':
     resolution: {integrity: sha512-m9/5YGR18lIwxSFDwfE3oA7bWuq9kdau6ugN4H2rJeyhFQZcG9AgSHkQtSD15a8WvTgfz9aikZMrKPHvbpqFiw==}
+
+  '@mes/api-client@file:packages/api-client':
+    resolution: {directory: packages/api-client, type: directory}
+    peerDependencies:
+      '@tanstack/react-query': 'catalog:'
 
   '@mongodb-js/saslprep@1.6.1':
     resolution: {integrity: sha512-D4CQtk9IwjCLAvCf1xvHEod3960q8XMUzfmdRU9qjUNlHnesGuTOvJcOTaPm9koZ1caUKA2aTbszZiAkcmSgmg==}
@@ -3974,6 +3991,24 @@ packages:
   zod@4.6.7:
     resolution: {integrity: sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg==}
 
+  zustand@5.1.0:
+    resolution: {integrity: sha512-ciJZlP48M1PTQbVQq81CGVFxHTLpZNrFjKqwjtCU34AWuXTZT/jrF3p9+fI84Cf1eSCMLapxqBy/SNTfwOBuqA==}
+    engines: {node: '>=12.20.0'}
+    peerDependencies:
+      '@types/react': '>=18.0.0'
+      immer: '>=9.0.6'
+      react: '>=18.0.0'
+      use-sync-external-store: '>=1.2.0'
+    peerDependenciesMeta:
+      '@types/react':
+        optional: true
+      immer:
+        optional: true
+      react:
+        optional: true
+      use-sync-external-store:
+        optional: true
+
 snapshots:
 
   '@babel/code-frame@7.29.7':
@@ -4372,6 +4407,11 @@ snapshots:
       debug: 4.4.3(supports-color@10.2.2)
     transitivePeerDependencies:
       - supports-color
+
+  '@mes/api-client@file:packages/api-client':
+    dependencies:
+      openapi-fetch: 0.17.0
+      openapi-react-query: 0.5.4(@tanstack/react-query@5.108.0(react@19.3.1))(openapi-fetch@0.17.0)
 
   '@mongodb-js/saslprep@1.6.1':
     dependencies:
@@ -6875,3 +6915,7 @@ snapshots:
       zod: 4.6.7
 
   zod@4.6.7: {}
+
+  zustand@5.1.0(react@19.3.1):
+    optionalDependencies:
+      react: 19.3.1
