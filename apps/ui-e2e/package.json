@@ -1,0 +1,16 @@
+{
+  "name": "ui-e2e",
+  "version": "1.0.0",
+  "description": "Both frontends in a real browser against the running Compose stack",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test:ui-e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "catalog:",
+    "@types/node": "^26.6.5",
+    "typescript": "^5.5.0"
+  }
+}

@@ -38,7 +38,10 @@
       "!**/.husky",
       "!packages/api-client/openapi",
       "!packages/api-client/src/generated",
-      "!**/routeTree.gen.ts"
+      "!**/routeTree.gen.ts",
+      "!apps/ui-e2e/playwright-report",
+      "!apps/ui-e2e/test-results",
+      "!apps/ui-e2e/logs"
     ]
   }
 }

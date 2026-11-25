@@ -45,6 +45,9 @@ catalog:
   vite: ^8.3.0
   vitest: ^5.1.0
   '@vitest/browser-playwright': ^5.1.0
+  # The version @vitest/browser-playwright resolves, so the UI end-to-end tests and the browser
+  # tests share one Playwright and one set of browsers
+  '@playwright/test': 1.65.1
   vitest-browser-react: ^2.3.0
   tailwindcss: ^4.3.0
   '@tailwindcss/vite': ^4.3.0

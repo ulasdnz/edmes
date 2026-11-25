@@ -34,6 +34,8 @@ pnpm test:contract                 # contract tests (user, work-center, producti
 pnpm openapi:emit                  # regenerate packages/api-client/openapi/*.json from the services
 pnpm --filter @mes/api-client generate  # regenerate the TypeScript types from those documents
 pnpm test:e2e                      # builds, then runs the services against real MongoDB, Redis and MQTT
+pnpm test:ui-e2e                   # starts the Compose stack, then both frontends in Chromium (Playwright)
+pnpm --filter ui-e2e exec playwright test <file>  # one UI end-to-end spec against the running stack
 pnpm --filter web-app dev          # web app on :5173 (proxies /api, /uploads, /socket.io to localhost)
 pnpm --filter operator-panel dev   # operator panel (same proxy)
 cd user && pnpm test:watch         # watch mode
@@ -220,6 +222,7 @@ Types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`
 
 - **Unit tests**: Vitest + `testcontainers` (real MongoDB in Docker via `@testcontainers/mongodb`). Files: `src/**/*.{test,spec}.ts`. One MongoDB per package run: the Vitest config's `globalSetup: ['@mes/testing/mongo-server']` starts it, and `setupMongoDatabase()` from `@mes/testing` (in each service's `src/test/setup.ts`, or in the test file) gives every test file a database of its own on it. A test that stops or restarts MongoDB starts its own container instead.
 - **Contract tests**: Vitest + `testcontainers`. Config: `vitest.contract.config.ts`.
+- **UI end-to-end tests** (`apps/ui-e2e`, `pnpm test:ui-e2e`): Playwright drives the web app and the operator panel in Chromium against the whole stack that `docker compose up -d --build --wait` starts at `E2E_BASE_URL` (default `http://localhost`). `src/seed.ts` signs in as the system admin from the root `.env` and creates, through the public API, uniquely named users, a role and a work center, so a run works on a stack that holds earlier data and changes nothing it did not create. The outage spec stops and starts the `user` service. Traces are always on; the teardown writes every service's log to `apps/ui-e2e/logs/`. The package's script is `test:ui-e2e`, not `test`, so `pnpm test` never needs the stack.
 - **Why testcontainers (not `mongodb-memory-server`)**: MongoDB has no official Alpine binaries, so `mongodb-memory-server` cannot pull a binary in our Alpine-based Docker images without manual `MONGOMS_SYSTEM_BINARY` workarounds. Testcontainers runs the MongoDB image `docker-compose.yml` pins, read through `MONGO_IMAGE` in `@mes/testing`, for unit, contract and e2e tests, which keeps test infrastructure identical to production and CI.
 - `@mes/testing` provides shared utilities (source-only, no build needed).
 
