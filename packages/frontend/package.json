@@ -5,7 +5,9 @@
   "type": "module",
   "exports": {
     "./core": "./src/core/index.ts",
+    "./data/user/users": "./src/data/user/users.ts",
     "./domain": "./src/domain/index.ts",
+    "./i18n": "./src/i18n/index.ts",
     "./realtime": "./src/realtime/index.ts",
     "./session": "./src/session/index.ts",
     "./time": "./src/time/index.ts",
@@ -19,10 +21,12 @@
     "@date-fns/tz": "^1.4.1",
     "@mes/api-client": "workspace:*",
     "socket.io-client": "^4.8.4",
+    "zod": "catalog:",
     "zustand": "catalog:"
   },
   "peerDependencies": {
     "@tanstack/react-query": "catalog:",
+    "i18next": "catalog:",
     "react": "catalog:"
   },
   "devDependencies": {
@@ -31,6 +35,7 @@
     "@types/node": "^26.6.5",
     "@types/react": "catalog:",
     "@vitest/browser-playwright": "catalog:",
+    "i18next": "catalog:",
     "react": "catalog:",
     "socket.io": "^4.8.4",
     "typescript": "^5.5.0",
