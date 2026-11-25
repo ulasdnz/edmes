@@ -11,6 +11,24 @@
         "$TURBO_ROOT$/packages/ui/src/**"
       ],
       "outputs": ["dist/**"]
+    },
+    "typecheck": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/apps/vite.shared.ts",
+        "$TURBO_ROOT$/packages/api-client/src/**",
+        "$TURBO_ROOT$/packages/frontend/src/**",
+        "$TURBO_ROOT$/packages/ui/src/**"
+      ]
+    },
+    "test": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/packages/api-client/src/**",
+        "$TURBO_ROOT$/packages/frontend/src/**",
+        "$TURBO_ROOT$/packages/ui/src/**"
+      ],
+      "outputs": []
     }
   }
 }
