@@ -3,6 +3,7 @@ import { Button } from '@mes/ui/components/button'
 import { cn } from '@mes/ui/lib/utils'
 import type { TFunction } from 'i18next'
 import {
+  Loader2Icon,
   LockIcon,
   type LucideIcon,
   RefreshCwIcon,
@@ -11,6 +12,21 @@ import {
 } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
+
+export function PageLoading(): ReactNode {
+  const { t } = useTranslation()
+  return (
+    <div className='grid min-h-screen place-items-center p-6'>
+      <output className='flex items-center gap-2 text-[13.5px] text-text-2'>
+        <Loader2Icon
+          aria-hidden='true'
+          className='size-4 animate-spin motion-reduce:animate-none'
+        />
+        {t('common.loading')}
+      </output>
+    </div>
+  )
+}
 
 export function apiErrorMessage(error: ApiError, t: TFunction): string {
   if (error.kind === 'network') return t('errors.network')

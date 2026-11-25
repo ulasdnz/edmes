@@ -12,25 +12,34 @@ import { UsersTable } from './users-table'
 
 const SEARCH_DELAY_MS = 300
 
-function SearchBox(props: {
+export function SearchBox(props: {
   value: string | undefined
   onChange: (value: string | undefined) => void
 }): ReactNode {
   const { t } = useTranslation()
   const [text, setText] = useState(props.value ?? '')
+  // The last value this box sent, or received from the address. While the address still lags
+  // behind a commit, its old value must not overwrite what was typed since.
+  const [committed, setCommitted] = useState(props.value)
   const [previous, setPrevious] = useState(props.value)
   if (props.value !== previous) {
     setPrevious(props.value)
-    if ((props.value ?? '') !== text.trim()) setText(props.value ?? '')
+    if (props.value !== committed) {
+      setCommitted(props.value)
+      setText(props.value ?? '')
+    }
   }
 
-  const commit = useEffectEvent((value: string) => props.onChange(value || undefined))
+  const commit = useEffectEvent((value: string | undefined) => {
+    setCommitted(value)
+    props.onChange(value)
+  })
   useEffect(() => {
-    const value = text.trim()
-    if (value === (props.value ?? '')) return
+    const value = text.trim() || undefined
+    if (value === committed) return
     const timer = setTimeout(() => commit(value), SEARCH_DELAY_MS)
     return () => clearTimeout(timer)
-  }, [text, props.value])
+  }, [text, committed])
 
   return (
     <div className='relative w-full max-w-75'>
@@ -51,9 +60,26 @@ function SearchBox(props: {
   )
 }
 
+// A correction replaces the history entry: pushing one would bring Back to the out-of-range
+// address, which corrects itself forward again.
+export type SearchChange = (next: Partial<UsersListSearch>, options?: { replace?: boolean }) => void
+
+export function useLastPageCorrection(props: {
+  page: number
+  totalPages: number
+  onSearchChange: SearchChange
+}): void {
+  const goToLastPage = useEffectEvent(() =>
+    props.onSearchChange({ page: props.totalPages }, { replace: true }),
+  )
+  useEffect(() => {
+    if (props.totalPages > 0 && props.page > props.totalPages) goToLastPage()
+  }, [props.totalPages, props.page])
+}
+
 export function UsersPage(props: {
   search: UsersListSearch
-  onSearchChange: (next: Partial<UsersListSearch>) => void
+  onSearchChange: SearchChange
 }): ReactNode {
   const { t } = useTranslation()
   const { api } = useAppCore()
@@ -61,10 +87,11 @@ export function UsersPage(props: {
   const query = useQuery(usersListOptions(api, props.search))
   const totalPages = query.data?.pagination.totalPages ?? 0
 
-  const goToLastPage = useEffectEvent(() => props.onSearchChange({ page: totalPages }))
-  useEffect(() => {
-    if (totalPages > 0 && props.search.page > totalPages) goToLastPage()
-  }, [totalPages, props.search.page])
+  useLastPageCorrection({
+    page: props.search.page,
+    totalPages,
+    onSearchChange: props.onSearchChange,
+  })
 
   let body: ReactNode
   if (query.data) {
@@ -109,7 +136,7 @@ export function UsersPage(props: {
         <div className='flex min-h-13 flex-wrap items-center gap-x-3 gap-y-2 border-b border-line-2 px-4 py-3'>
           <SearchBox
             value={props.search.search}
-            onChange={search => props.onSearchChange({ search, page: 1 })}
+            onChange={search => props.onSearchChange({ search, page: 1 }, { replace: true })}
           />
         </div>
         {body}

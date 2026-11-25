@@ -1,16 +1,21 @@
 import { useAppCore } from '@mes/frontend/core'
 import { createFileRoute, redirect, useRouter } from '@tanstack/react-router'
 import { z } from 'zod'
+import { PageLoading } from '../components/page-state'
 import { LoginPage } from '../features/auth/login-page'
 import { safeRedirect } from '../safe-redirect'
+import { whenSessionKnown } from '../session-ready'
 
 export const Route = createFileRoute('/login')({
   validateSearch: z.object({ redirect: z.string().optional().catch(undefined) }),
-  beforeLoad: ({ context, search }) => {
+  beforeLoad: async ({ context, search }) => {
+    await whenSessionKnown(context.core.session)
     if (context.core.session.getState().status === 'authenticated') {
       throw redirect({ href: safeRedirect(search.redirect), replace: true })
     }
   },
+  pendingComponent: PageLoading,
+  pendingMs: 0,
   component: Login,
 })
 

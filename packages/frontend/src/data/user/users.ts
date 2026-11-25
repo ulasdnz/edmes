@@ -9,8 +9,12 @@ export type User = UsersListResponse['data'][number]
 export const usersListSearchSchema = z.object({
   page: z.coerce.number().int().min(1).catch(1),
   size: z.union([z.literal(20), z.literal(50), z.literal(100)]).catch(20),
-  sort: z.string().optional(),
-  search: z.string().max(100).optional(),
+  sort: z.string().optional().catch(undefined),
+  // The router reads ?search=1234 as a number; it is still the text that was searched for.
+  search: z
+    .preprocess(value => (typeof value === 'number' ? String(value) : value), z.string().max(100))
+    .optional()
+    .catch(undefined),
 })
 
 export type UsersListSearch = z.infer<typeof usersListSearchSchema>

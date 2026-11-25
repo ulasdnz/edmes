@@ -4,17 +4,21 @@ import { createFileRoute, Outlet, redirect } from '@tanstack/react-router'
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AppSidebar } from '../components/app-sidebar'
-import { NoPermission } from '../components/page-state'
+import { NoPermission, PageLoading } from '../components/page-state'
 import { Topbar } from '../components/topbar'
+import { whenSessionKnown } from '../session-ready'
 
 const BOOTSTRAP_RETRY_MS = 5000
 
 export const Route = createFileRoute('/_app')({
-  beforeLoad: ({ context, location }) => {
+  beforeLoad: async ({ context, location }) => {
+    await whenSessionKnown(context.core.session)
     if (context.core.session.getState().status === 'anonymous') {
       throw redirect({ to: '/login', search: { redirect: location.href } })
     }
   },
+  pendingComponent: PageLoading,
+  pendingMs: 0,
   component: AppLayout,
 })
 

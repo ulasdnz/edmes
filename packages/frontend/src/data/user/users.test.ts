@@ -21,6 +21,17 @@ describe('users list', () => {
     expect(usersListSearchSchema.parse({})).toEqual({ page: 1, size: 20 })
   })
 
+  it('falls back for every hand-edited key instead of failing', () => {
+    // the router parses ?search=1234 as a number
+    expect(usersListSearchSchema.parse({ search: 1234 })).toEqual({
+      page: 1,
+      size: 20,
+      search: '1234',
+    })
+    expect(usersListSearchSchema.parse({ search: 'a'.repeat(101) })).toEqual({ page: 1, size: 20 })
+    expect(usersListSearchSchema.parse({ sort: 5 })).toEqual({ page: 1, size: 20 })
+  })
+
   it('keeps the rows of the previous request while the next one loads', () => {
     const api = createApiClient({
       getToken: () => null,

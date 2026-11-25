@@ -27,7 +27,12 @@ function Users() {
   return (
     <UsersPage
       search={search}
-      onSearchChange={next => void navigate({ search: previous => ({ ...previous, ...next }) })}
+      onSearchChange={(next, options) =>
+        void navigate({
+          search: previous => ({ ...previous, ...next }),
+          replace: options?.replace,
+        })
+      }
     />
   )
 }
