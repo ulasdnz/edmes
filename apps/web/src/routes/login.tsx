@@ -1,10 +1,9 @@
-import { useAppCore } from '@mes/frontend/core'
+import { useAppCore, whenSessionKnown } from '@mes/frontend/core'
 import { createFileRoute, redirect, useRouter } from '@tanstack/react-router'
 import { z } from 'zod'
 import { PageLoading } from '../components/page-state'
 import { LoginPage } from '../features/auth/login-page'
 import { safeRedirect } from '../safe-redirect'
-import { whenSessionKnown } from '../session-ready'
 
 export const Route = createFileRoute('/login')({
   validateSearch: z.object({ redirect: z.string().optional().catch(undefined) }),

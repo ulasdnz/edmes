@@ -1,6 +1,6 @@
 import type { ApiClient } from '@mes/api-client'
-import { createSessionStore } from '@mes/frontend/session'
 import { describe, expect, it } from 'vitest'
+import { createSessionStore } from '../session'
 import { whenSessionKnown } from './session-ready'
 
 function memoryStorage(): Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> {

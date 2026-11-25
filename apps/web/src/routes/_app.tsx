@@ -1,4 +1,4 @@
-import { useAppCore, useCan, useSession } from '@mes/frontend/core'
+import { useAppCore, useCan, useSession, whenSessionKnown } from '@mes/frontend/core'
 import { Banner } from '@mes/ui/components/banner'
 import { createFileRoute, Outlet, redirect } from '@tanstack/react-router'
 import { useEffect } from 'react'
@@ -6,7 +6,6 @@ import { useTranslation } from 'react-i18next'
 import { AppSidebar } from '../components/app-sidebar'
 import { NoPermission, PageLoading } from '../components/page-state'
 import { Topbar } from '../components/topbar'
-import { whenSessionKnown } from '../session-ready'
 
 const BOOTSTRAP_RETRY_MS = 5000
 

@@ -5,7 +5,9 @@
   "type": "module",
   "exports": {
     "./core": "./src/core/index.ts",
+    "./data/production/job-orders": "./src/data/production/job-orders.ts",
     "./data/user/users": "./src/data/user/users.ts",
+    "./data/work-center/work-centers": "./src/data/work-center/work-centers.ts",
     "./domain": "./src/domain/index.ts",
     "./i18n": "./src/i18n/index.ts",
     "./realtime": "./src/realtime/index.ts",

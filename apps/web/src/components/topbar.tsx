@@ -1,6 +1,4 @@
-import { useAppCore, useRealtimeStatus, useSession } from '@mes/frontend/core'
-import type { RealtimeStatus } from '@mes/frontend/realtime'
-import type { SessionStatus } from '@mes/frontend/session'
+import { useAppCore, useConnection, useSession } from '@mes/frontend/core'
 import { formatInstant, type ServerClock } from '@mes/frontend/time'
 import { ConnectionIndicator } from '@mes/ui/components/connection-indicator'
 import {
@@ -13,24 +11,6 @@ import {
 import { ChevronDownIcon, LogOutIcon } from 'lucide-react'
 import { type ReactNode, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-
-type Indicator = 'live' | 'reconnecting' | 'offline'
-
-function indicatorFor(session: SessionStatus, realtime: RealtimeStatus): Indicator {
-  if (session === 'unreachable' || realtime === 'unavailable') return 'offline'
-  if (realtime === 'connecting' || realtime === 'reconnecting') return 'reconnecting'
-  return 'live'
-}
-
-// The moment the session found the server unreachable; the realtime client keeps its own.
-function useUnreachableSince(status: SessionStatus): Date | null {
-  const unreachable = status === 'unreachable'
-  const [since, setSince] = useState<Date | null>(() => (unreachable ? new Date() : null))
-  useEffect(() => {
-    setSince(current => (unreachable ? (current ?? new Date()) : null))
-  }, [unreachable])
-  return unreachable ? since : null
-}
 
 function PlantClock(props: { clock: ServerClock; timeZone: string }): ReactNode {
   const { t, i18n } = useTranslation()
@@ -59,21 +39,13 @@ function initials(name: string, surname: string): string {
 export function Topbar(): ReactNode {
   const { t, i18n } = useTranslation()
   const { session } = useAppCore()
-  const { status, user, plantTimezone, serverClock } = useSession()
-  const realtime = useRealtimeStatus()
-  const unreachableSince = useUnreachableSince(status)
+  const { user, plantTimezone, serverClock } = useSession()
+  const connection = useConnection()
 
-  const indicator = indicatorFor(status, realtime.status)
   let label = t('common.live')
-  if (indicator === 'reconnecting') label = t('common.reconnecting')
-  if (indicator === 'offline') {
-    const candidates = [unreachableSince, realtime.status === 'unavailable' ? realtime.since : null]
-    const since =
-      candidates.reduce<Date | null>(
-        (earliest, value) => (value && (!earliest || value < earliest) ? value : earliest),
-        null,
-      ) ?? new Date()
-    const time = formatInstant(since.toISOString(), {
+  if (connection.status === 'reconnecting') label = t('common.reconnecting')
+  if (connection.status === 'offline') {
+    const time = formatInstant((connection.since ?? new Date()).toISOString(), {
       timeZone: plantTimezone ?? 'UTC',
       locale: i18n.language,
       style: 'time',
@@ -83,7 +55,7 @@ export function Topbar(): ReactNode {
 
   return (
     <header className='flex min-h-14 flex-wrap items-center gap-x-3.5 gap-y-2 border-b border-line bg-surface px-6 py-2'>
-      <ConnectionIndicator status={indicator} label={label} />
+      <ConnectionIndicator status={connection.status} label={label} />
       {serverClock && plantTimezone && <PlantClock clock={serverClock} timeZone={plantTimezone} />}
       <span className='flex-1' />
       {user && (

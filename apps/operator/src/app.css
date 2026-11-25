@@ -1,0 +1,9 @@
+@import "@mes/ui/globals.css";
+
+@source "../../../packages/ui/src";
+
+@layer base {
+  body {
+    background: var(--color-bg);
+  }
+}

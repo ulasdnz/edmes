@@ -6,10 +6,12 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useState,
   useSyncExternalStore,
 } from 'react'
 import type { RealtimeStatus } from '../realtime'
-import type { SessionState } from '../session'
+import type { SessionState, SessionStatus } from '../session'
+import { type Connection, connectionFor } from './connection'
 import type { AppCore } from './create-app-core'
 
 const AppCoreContext = createContext<AppCore | null>(null)
@@ -52,4 +54,26 @@ export function useRealtimeRooms(rooms: readonly string[]): void {
   const { realtime } = useAppCore()
   const key = [...rooms].sort().join('\n')
   useEffect(() => realtime.subscribe(key ? key.split('\n') : []), [realtime, key])
+}
+
+// The moment the session found the server unreachable; the realtime client keeps its own.
+function useUnreachableSince(status: SessionStatus): Date | null {
+  const unreachable = status === 'unreachable'
+  const [since, setSince] = useState<Date | null>(() => (unreachable ? new Date() : null))
+  useEffect(() => {
+    setSince(current => (unreachable ? (current ?? new Date()) : null))
+  }, [unreachable])
+  return unreachable ? since : null
+}
+
+export function useConnection(): Connection {
+  const { status } = useSession()
+  const realtime = useRealtimeStatus()
+  const unreachableSince = useUnreachableSince(status)
+  return connectionFor({
+    session: status,
+    unreachableSince,
+    realtime: realtime.status,
+    realtimeSince: realtime.since,
+  })
 }
