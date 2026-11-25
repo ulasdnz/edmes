@@ -10,9 +10,15 @@ catalogs:
     '@tanstack/react-query':
       specifier: ^5.108.0
       version: 5.108.0
+    '@types/react':
+      specifier: ^19.3.0
+      version: 19.3.0
     '@vitest/browser-playwright':
       specifier: ^5.1.0
       version: 5.1.1
+    react:
+      specifier: ^19.3.0
+      version: 19.3.1
     vitest:
       specifier: ^5.1.0
       version: 5.1.1
@@ -77,11 +83,11 @@ importers:
         version: 0.17.0
       openapi-react-query:
         specifier: ^0.5.4
-        version: 0.5.4(@tanstack/react-query@5.108.0(react@19.3.1))(openapi-fetch@0.17.0)
+        version: 0.5.4(@tanstack/react-query@5.108.0(@types/react@19.3.0)(react@19.3.1))(openapi-fetch@0.17.0)
     devDependencies:
       '@tanstack/react-query':
         specifier: 'catalog:'
-        version: 5.108.0(react@19.3.1)
+        version: 5.108.0(@types/react@19.3.0)(react@19.3.1)
       '@types/node':
         specifier: ^26.6.5
         version: 26.6.5
@@ -209,20 +215,35 @@ importers:
         version: 1.5.0
       '@mes/api-client':
         specifier: workspace:*
-        version: file:packages/api-client
+        version: link:../api-client
+      socket.io-client:
+        specifier: ^4.8.4
+        version: 4.8.4
       zustand:
         specifier: 'catalog:'
-        version: 5.1.0(react@19.3.1)
+        version: 5.1.0(@types/react@19.3.0)(react@19.3.1)
     devDependencies:
       '@mes/privileges':
         specifier: workspace:*
         version: link:../privileges
+      '@tanstack/react-query':
+        specifier: 'catalog:'
+        version: 5.108.0(@types/react@19.3.0)(react@19.3.1)
       '@types/node':
         specifier: ^26.6.5
         version: 26.6.5
+      '@types/react':
+        specifier: 'catalog:'
+        version: 19.3.0
       '@vitest/browser-playwright':
         specifier: 'catalog:'
         version: 5.1.1(playwright@1.65.1)(vite@7.3.1(@types/node@26.6.5)(jiti@2.6.1)(tsx@4.23.15)(yaml@2.9.1))(vitest@5.1.1)
+      react:
+        specifier: 'catalog:'
+        version: 19.3.1
+      socket.io:
+        specifier: ^4.8.4
+        version: 4.8.4
       typescript:
         specifier: ^5.5.0
         version: 5.9.3
@@ -231,7 +252,7 @@ importers:
         version: 5.1.1(@types/node@26.6.5)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(vite@7.3.1(@types/node@26.6.5)(jiti@2.6.1)(tsx@4.23.15)(yaml@2.9.1))
       vitest-browser-react:
         specifier: 'catalog:'
-        version: 2.3.0(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(vitest@5.1.1)
+        version: 2.3.0(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(vitest@5.1.1)
 
   packages/health:
     dependencies:
@@ -1602,11 +1623,6 @@ packages:
   '@kwsites/file-exists@1.1.1':
     resolution: {integrity: sha512-m9/5YGR18lIwxSFDwfE3oA7bWuq9kdau6ugN4H2rJeyhFQZcG9AgSHkQtSD15a8WvTgfz9aikZMrKPHvbpqFiw==}
 
-  '@mes/api-client@file:packages/api-client':
-    resolution: {directory: packages/api-client, type: directory}
-    peerDependencies:
-      '@tanstack/react-query': 'catalog:'
-
   '@mongodb-js/saslprep@1.6.1':
     resolution: {integrity: sha512-D4CQtk9IwjCLAvCf1xvHEod3960q8XMUzfmdRU9qjUNlHnesGuTOvJcOTaPm9koZ1caUKA2aTbszZiAkcmSgmg==}
 
@@ -1936,6 +1952,9 @@ packages:
 
   '@types/range-parser@1.2.7':
     resolution: {integrity: sha512-hKormJbkJqzQGhziax5PItDUTMAM9uE2XXQmM37dyd4hVM+5aVl7oVxMVUiVQn2oCQFN/LKCZdvSM0pFRqbSmQ==}
+
+  '@types/react@19.3.0':
+    resolution: {integrity: sha512-N0rFCuH9YoxG9/m61l9MfpJKfmLOVU0em7ipIz6TRgSSkvReLB9vL85GB+yr8Bs5leqpvg96JSwF4ZS1s4viQg==}
 
   '@types/readable-stream@4.0.23':
     resolution: {integrity: sha512-wwXrtQvbMHxCbBgjHaMGEmImFTQxxpfMOR/ZoQnXxB1woqkUbdLGFDgauo00Py9IudiaqSeiBiulSV9i6XIPig==}
@@ -2425,6 +2444,9 @@ packages:
   cross-spawn@7.0.6:
     resolution: {integrity: sha512-uV2QOWP2nWzsy2aMp8aRibhi9dlzF5Hgh5SHaB9OiTGEyDTiJJyx0uy51QXdyWbtAHNua4XJzUKca3OzKUd3vA==}
     engines: {node: '>= 8'}
+
+  csstype@3.2.4:
+    resolution: {integrity: sha512-PoKaoPzQapnEoqUSnHx1u6W6ku8CVEgKsnpmmzU3m1nwkidpPBQ8V/Zq2+bWNrsOKoKLwTGdbx6xF7BXP1zLVQ==}
 
   debug@2.6.9:
     resolution: {integrity: sha512-bC7ElrdJaJnPbAP+1EotYvqZsb3ecl5wi6Bfi6BJTUcNowp6cvspg0jXznRTKDjm/E7AdgFBVeAPVMNcKGsHMA==}
@@ -4408,11 +4430,6 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@mes/api-client@file:packages/api-client':
-    dependencies:
-      openapi-fetch: 0.17.0
-      openapi-react-query: 0.5.4(@tanstack/react-query@5.108.0(react@19.3.1))(openapi-fetch@0.17.0)
-
   '@mongodb-js/saslprep@1.6.1':
     dependencies:
       sparse-bitfield: 3.0.3
@@ -4568,10 +4585,12 @@ snapshots:
 
   '@tanstack/query-core@5.108.0': {}
 
-  '@tanstack/react-query@5.108.0(react@19.3.1)':
+  '@tanstack/react-query@5.108.0(@types/react@19.3.0)(react@19.3.1)':
     dependencies:
       '@tanstack/query-core': 5.108.0
       react: 19.3.1
+    optionalDependencies:
+      '@types/react': 19.3.0
 
   '@testcontainers/mongodb@11.14.0':
     dependencies:
@@ -4684,6 +4703,10 @@ snapshots:
   '@types/qs@6.15.0': {}
 
   '@types/range-parser@1.2.7': {}
+
+  '@types/react@19.3.0':
+    dependencies:
+      csstype: 3.2.4
 
   '@types/readable-stream@4.0.23':
     dependencies:
@@ -5237,6 +5260,8 @@ snapshots:
       path-key: 3.1.1
       shebang-command: 2.0.0
       which: 2.0.2
+
+  csstype@3.2.4: {}
 
   debug@2.6.9:
     dependencies:
@@ -6053,9 +6078,9 @@ snapshots:
     dependencies:
       openapi-typescript-helpers: 0.1.0
 
-  openapi-react-query@0.5.4(@tanstack/react-query@5.108.0(react@19.3.1))(openapi-fetch@0.17.0):
+  openapi-react-query@0.5.4(@tanstack/react-query@5.108.0(@types/react@19.3.0)(react@19.3.1))(openapi-fetch@0.17.0):
     dependencies:
-      '@tanstack/react-query': 5.108.0(react@19.3.1)
+      '@tanstack/react-query': 5.108.0(@types/react@19.3.0)(react@19.3.1)
       openapi-fetch: 0.17.0
       openapi-typescript-helpers: 0.1.0
 
@@ -6720,11 +6745,13 @@ snapshots:
       tsx: 4.23.15
       yaml: 2.9.1
 
-  vitest-browser-react@2.3.0(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(vitest@5.1.1):
+  vitest-browser-react@2.3.0(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(vitest@5.1.1):
     dependencies:
       react: 19.3.1
       react-dom: 19.3.1(react@19.3.1)
       vitest: 5.1.1(@types/node@26.6.5)(@vitest/browser-playwright@5.1.1)(@vitest/ui@5.1.1)(vite@7.3.1(@types/node@26.6.5)(jiti@2.6.1)(tsx@4.23.15)(yaml@2.9.1))
+    optionalDependencies:
+      '@types/react': 19.3.0
 
   vitest@4.1.12(@types/node@26.6.5)(@vitest/coverage-v8@4.1.12)(vite@7.3.1(@types/node@26.6.5)(jiti@2.6.1)(tsx@4.23.15)(yaml@2.9.1)):
     dependencies:
@@ -6916,6 +6943,7 @@ snapshots:
 
   zod@4.6.7: {}
 
-  zustand@5.1.0(react@19.3.1):
+  zustand@5.1.0(@types/react@19.3.0)(react@19.3.1):
     optionalDependencies:
+      '@types/react': 19.3.0
       react: 19.3.1
