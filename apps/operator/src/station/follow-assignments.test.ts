@@ -1,7 +1,9 @@
 import { workCentersListOptions } from '@mes/frontend/data/work-center/work-centers'
+import { QueryObserver } from '@tanstack/react-query'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   buildCore,
+  errorReply,
   me,
   memoryStorage,
   type Reply,
@@ -10,6 +12,7 @@ import {
   workCenters,
 } from '../test/backend'
 import { followAssignments } from './follow-assignments'
+import { visibleWorkCentersQuery } from './station-queries'
 import { createStationStore } from './station-store'
 
 const cleanups: Array<() => unknown> = []
@@ -71,5 +74,25 @@ describe('followAssignments', () => {
 
     backend.emit('user.updated', { userId: USER_ID })
     await vi.waitFor(() => expect(visible()).toEqual(['wc1', 'wc2']))
+  })
+
+  it('clears the station once the server answers again, when a screen shows the list', async () => {
+    const unavailable = errorReply(503, 'proxy.unavailable')
+    const { backend, core, store } = await signedIn(
+      [workCenters('wc1', 'wc2'), unavailable, unavailable, workCenters('wc2')],
+      'wc1',
+    )
+    // the station screen observes the list with the panel's recovery rule
+    const observer = new QueryObserver(core.queryClient, visibleWorkCentersQuery(core.api, 50))
+    cleanups.push(observer.subscribe(() => {}))
+    await vi.waitFor(() => expect(observer.getCurrentResult().status).toBe('success'))
+    expect(backend.count('GET /work-centers')).toBe(1)
+
+    backend.emit('user.updated', { userId: USER_ID })
+    await vi.waitFor(() => expect(store.getWorkCenterId()).toBeNull())
+    expect(backend.count('GET /work-centers')).toBe(4)
+    expect(observer.getCurrentResult().data?.data.map(workCenter => workCenter._id)).toEqual([
+      'wc2',
+    ])
   })
 })

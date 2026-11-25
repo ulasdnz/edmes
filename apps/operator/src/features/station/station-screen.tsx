@@ -34,6 +34,7 @@ export function StationScreen(props: {
 }): ReactNode {
   const { t } = useTranslation()
   const { api } = useAppCore()
+  const { status } = useSession()
   const { workCenterId, onStationGone } = props
   useRealtimeRooms([stationRoom(workCenterId)])
 
@@ -49,7 +50,9 @@ export function StationScreen(props: {
 
   const nameProblem = workCenter ? null : queryProblem(workCenters)
   const jobOrderProblem = runningJobOrder.data === undefined ? queryProblem(runningJobOrder) : null
-  const unreachable = nameProblem === 'unavailable' || jobOrderProblem === 'unavailable'
+  // The layout's banner already says so while the session finds the server unreachable.
+  const unreachable =
+    status !== 'unreachable' && (nameProblem === 'unavailable' || jobOrderProblem === 'unavailable')
 
   return (
     <main className='flex flex-1 flex-col gap-6 p-6'>
