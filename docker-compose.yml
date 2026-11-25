@@ -402,7 +402,7 @@ services:
     networks:
       - mes_network
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/healthz"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8080/healthz"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -420,7 +420,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: 0.25
+          cpus: '0.25'
           memory: 64M
 
   loki:
