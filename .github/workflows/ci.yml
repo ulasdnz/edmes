@@ -38,6 +38,19 @@ jobs:
       - run: pnpm typecheck
       # The emit imports the shared packages' dist, which typecheck has just built
       - run: pnpm openapi:emit && pnpm --filter @mes/api-client generate && git diff --exit-code packages/api-client && test -z "$(git ls-files --others --exclude-standard packages/api-client)"
+      # A second emit writes the same bytes, each document as JSON.stringify(document, null, 2) + '\n'
+      - run: |
+          pnpm openapi:emit
+          git diff --exit-code packages/api-client/openapi
+          for file in packages/api-client/openapi/*.json; do
+            node -e "const t = require('node:fs').readFileSync(process.argv[1], 'utf8'); if (t !== JSON.stringify(JSON.parse(t), null, 2) + '\n') { console.error(process.argv[1] + ' is not JSON.stringify(document, null, 2) with a final newline'); process.exit(1) }" "$file"
+          done
+      # The frontend packages stay workspace links, never file: copies
+      - run: '! grep -nE "file:packages/(api-client|frontend|ui)" pnpm-lock.yaml'
+      # Turbo passes EDMES_VERSION to the frontend builds
+      - run: |
+          EDMES_VERSION=9.9.9-check pnpm turbo run build --filter web-app
+          test "$(cat apps/web/dist/version.json)" = '{"version":"9.9.9-check"}'
 
   audit:
     name: Production dependency audit

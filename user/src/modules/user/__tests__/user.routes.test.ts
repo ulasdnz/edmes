@@ -1,4 +1,4 @@
-import { PRIVILEGES, VALID_PRIVILEGE_CODES } from '@mes/privileges'
+import { APPLICATION_PRIVILEGES, PRIVILEGES, VALID_PRIVILEGE_CODES } from '@mes/privileges'
 import type { Express, NextFunction, Request, Response } from 'express'
 import jwt from 'jsonwebtoken'
 import type { Types } from 'mongoose'
@@ -181,6 +181,59 @@ describe('User Routes Integration', () => {
       expect(res.body.meta.plantTimezone).toBe(config.PLANT_TIMEZONE)
     })
 
+    // scenario: UsersMe.permissions / happy path / one role with two permissions
+    it('returns the permissions of a single role sorted in meta', async () => {
+      routeAuthContextToApp()
+      const role = await Role.create({
+        name: 'me-role-single',
+        permissions: ['readUsers', 'accessWebApp'],
+      })
+      const token = await createUserToken('single', [role._id])
+
+      const res = await request(app).get('/api/v1/users/me').set('Authorization', `Bearer ${token}`)
+
+      expect(res.status).toBe(200)
+      expect([...res.body.meta.permissions].sort()).toEqual(['accessWebApp', 'readUsers'])
+    })
+
+    // scenario: UsersMe.permissions / happy path / plantTimezone and serverTime beside permissions
+    it('returns plantTimezone and serverTime beside permissions', async () => {
+      routeAuthContextToApp()
+      const role = await Role.create({ name: 'me-role-meta', permissions: ['readUsers'] })
+      const token = await createUserToken('meta', [role._id])
+
+      const res = await request(app).get('/api/v1/users/me').set('Authorization', `Bearer ${token}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.meta.plantTimezone).toBe(config.PLANT_TIMEZONE)
+      expect(res.body.meta.serverTime).toEqual(expect.any(String))
+      expect(res.body.meta.permissions).toEqual(['readUsers'])
+    })
+
+    // scenario: UsersMe.permissions / authorization / each caller gets own permissions
+    it('gives each caller the permissions of their own token', async () => {
+      routeAuthContextToApp()
+      const roleA = await Role.create({ name: 'me-role-iso-a', permissions: ['readUsers'] })
+      const roleB = await Role.create({
+        name: 'me-role-iso-b',
+        permissions: ['accessOperatorPanel'],
+      })
+      const tokenA = await createUserToken('isoa', [roleA._id])
+      const tokenB = await createUserToken('isob', [roleB._id])
+
+      const resA = await request(app)
+        .get('/api/v1/users/me')
+        .set('Authorization', `Bearer ${tokenA}`)
+      const resB = await request(app)
+        .get('/api/v1/users/me')
+        .set('Authorization', `Bearer ${tokenB}`)
+
+      expect(resA.status).toBe(200)
+      expect(resB.status).toBe(200)
+      expect(resA.body.meta.permissions).toEqual(['readUsers'])
+      expect(resB.body.meta.permissions).toEqual(['accessOperatorPanel'])
+    })
+
     it('returns an empty permission list for a user with no roles', async () => {
       routeAuthContextToApp()
       const token = await createUserToken('norole', [])
@@ -228,5 +281,18 @@ describe('User Routes Integration', () => {
     expect(VALID_PRIVILEGE_CODES.has('accessWebApp')).toBe(true)
     expect(VALID_PRIVILEGE_CODES.has('accessOperatorPanel')).toBe(true)
     expect(PRIVILEGES.filter(p => p.code.endsWith('Screen'))).toEqual([])
+  })
+
+  // scenario: Privileges.applicationCodes / constraints / APPLICATION_PRIVILEGES
+  it('defines exactly the two application privileges with their texts', () => {
+    expect([...APPLICATION_PRIVILEGES]).toEqual([
+      { code: 'accessWebApp', text: 'Access Web App' },
+      { code: 'accessOperatorPanel', text: 'Access Operator Panel' },
+    ])
+  })
+
+  // scenario: Privileges.applicationCodes / constraints / order of PRIVILEGES
+  it('lists the two application privileges first', () => {
+    expect(PRIVILEGES.slice(0, 2)).toEqual([...APPLICATION_PRIVILEGES])
   })
 })
