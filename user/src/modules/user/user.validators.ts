@@ -113,6 +113,10 @@ export const userListSchema = paginationSchema.extend({
     .enum(['true', 'false'])
     .transform(v => v === 'true')
     .optional(),
+  withoutWorkCenter: z
+    .enum(['true', 'false'])
+    .transform(v => v === 'true')
+    .optional(),
   departmentId: objectIdSchema.optional(),
   roles: objectIdSchema.optional(),
   populate: z.string().optional(),

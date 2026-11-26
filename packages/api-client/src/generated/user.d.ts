@@ -171,6 +171,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/plant-time": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Plant timezone and server time, for the sign-in page */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description The plant timezone (IANA) and the server time as an ISO 8601 UTC instant */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                plantTimezone: string;
+                                serverTime: string;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/users/me": {
         parameters: {
             query?: never;
@@ -352,6 +393,7 @@ export interface paths {
                     sort?: string;
                     search?: string;
                     isActivated?: "true" | "false";
+                    withoutWorkCenter?: "true" | "false";
                     departmentId?: string;
                     roles?: string;
                     populate?: string;

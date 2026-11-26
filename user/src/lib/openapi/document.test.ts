@@ -48,4 +48,39 @@ describe('user service openapi document', () => {
     expect(user.properties).not.toHaveProperty('failedLoginAttempts')
     expect(user.properties).not.toHaveProperty('lastFailedLoginAt')
   })
+
+  // scenario: OpenApiDocument.plantTime / constraints / GET /auth/plant-time public with its schema
+  it('documents GET /auth/plant-time as public with plantTimezone and serverTime', () => {
+    type Prop = { type?: string; properties: Record<string, Prop> }
+    const doc = openApiDocument as unknown as {
+      paths: Record<
+        string,
+        Record<
+          string,
+          {
+            security?: unknown[]
+            responses: Record<string, { content: Record<string, { schema: Prop }> }>
+          }
+        >
+      >
+    }
+    const op = doc.paths['/auth/plant-time']?.get
+    expect(op).toBeDefined()
+    expect(op.security).toEqual([])
+    const data = op.responses['200'].content['application/json'].schema.properties.data
+    expect(Object.keys(data.properties).sort()).toEqual(['plantTimezone', 'serverTime'])
+    expect(data.properties.plantTimezone.type).toBe('string')
+    expect(data.properties.serverTime.type).toBe('string')
+  })
+
+  // scenario: OpenApiDocument.plantTime / constraints / /users get lists withoutWorkCenter
+  it('lists the withoutWorkCenter query parameter on GET /users', () => {
+    const doc = openApiDocument as unknown as {
+      paths: Record<string, Record<string, { parameters?: { name: string; in: string }[] }>>
+    }
+    const params = doc.paths['/users'].get.parameters ?? []
+    expect(params).toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: 'withoutWorkCenter', in: 'query' })]),
+    )
+  })
 })

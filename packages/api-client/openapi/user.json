@@ -293,6 +293,49 @@
         }
       }
     },
+    "/auth/plant-time": {
+      "get": {
+        "tags": [
+          "Auth"
+        ],
+        "security": [],
+        "summary": "Plant timezone and server time, for the sign-in page",
+        "responses": {
+          "200": {
+            "description": "The plant timezone (IANA) and the server time as an ISO 8601 UTC instant",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "plantTimezone": {
+                          "type": "string"
+                        },
+                        "serverTime": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "plantTimezone",
+                        "serverTime"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/users/me": {
       "get": {
         "tags": [
@@ -637,6 +680,17 @@
           {
             "in": "query",
             "name": "isActivated",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "withoutWorkCenter",
             "schema": {
               "type": "string",
               "enum": [

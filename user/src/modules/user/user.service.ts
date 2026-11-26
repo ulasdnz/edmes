@@ -256,10 +256,11 @@ export const getUser = async (userId: string): Promise<UserResponse> => {
 }
 
 export const getUsers = async (input: UserListInput): Promise<PaginatedResult<IUser>> => {
-  const { isActivated, departmentId, roles, populate, ...pagination } = input
+  const { isActivated, withoutWorkCenter, departmentId, roles, populate, ...pagination } = input
 
   const filters: Record<string, unknown> = {}
   if (isActivated !== undefined) filters.isActivated = isActivated
+  if (withoutWorkCenter) filters['workCenterIds.0'] = { $exists: false }
   if (departmentId) filters.departmentId = departmentId
   if (roles) filters.roles = roles
 
