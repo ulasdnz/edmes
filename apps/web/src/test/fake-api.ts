@@ -5,6 +5,8 @@ export interface ApiRequest {
   path: string
   query: URLSearchParams
   headers: Headers
+  // The body as text, empty for a request without one
+  body: string
 }
 
 export type ApiAnswer = { status?: number; body: unknown } | 'network-error'
@@ -23,6 +25,7 @@ export function serveApi(answer: (request: ApiRequest) => ApiAnswer | Promise<Ap
       path: url.pathname.slice('/api/v1'.length),
       query: url.searchParams,
       headers: request.headers,
+      body: request.body ? await request.text() : '',
     }
     asked.push(seen)
     const result = await answer(seen)

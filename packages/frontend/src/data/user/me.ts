@@ -59,22 +59,29 @@ export async function removeMyAvatar(api: ApiClient): Promise<SavedMe> {
   return bodyOf(data)
 }
 
-function useMyProfileMutation<T>(mutationFn: (input: T) => Promise<SavedMe>) {
+// The saved user replaces the cached profile at once, keeping its role names, and every read of
+// /users/me refetches
+function useMyProfileMutation<T>(api: ApiClient, mutationFn: (input: T) => Promise<SavedMe>) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['get', '/users/me'] }),
+    onSuccess: saved => {
+      queryClient.setQueryData<MeResponse>(myProfileOptions(api).queryKey, previous =>
+        previous ? { ...previous, data: { ...saved, roles: previous.data.roles } } : previous,
+      )
+      return queryClient.invalidateQueries({ queryKey: ['get', '/users/me'] })
+    },
   })
 }
 
 export function useUpdateMe(api: ApiClient) {
-  return useMyProfileMutation((body: UpdateMeBody) => updateMe(api, body))
+  return useMyProfileMutation(api, (body: UpdateMeBody) => updateMe(api, body))
 }
 
 export function useUploadMyAvatar(api: ApiClient) {
-  return useMyProfileMutation((file: File) => uploadMyAvatar(api, file))
+  return useMyProfileMutation(api, (file: File) => uploadMyAvatar(api, file))
 }
 
 export function useRemoveMyAvatar(api: ApiClient) {
-  return useMyProfileMutation((_: void) => removeMyAvatar(api))
+  return useMyProfileMutation(api, () => removeMyAvatar(api))
 }
