@@ -91,7 +91,12 @@ export const loginUser = async (data: LoginInput): Promise<AuthResponse> => {
     { expiresIn: config.JWT_EXPIRES_IN as jwt.SignOptions['expiresIn'] },
   )
 
-  const { password: _password, ...userResponse } = user.toObject()
+  const {
+    password: _password,
+    failedLoginAttempts: _failedLoginAttempts,
+    lastFailedLoginAt: _lastFailedLoginAt,
+    ...userResponse
+  } = user.toObject()
 
   return {
     user: userResponse,

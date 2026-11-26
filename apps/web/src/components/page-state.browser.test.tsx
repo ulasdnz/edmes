@@ -24,6 +24,17 @@ describe('page states', () => {
     )
   })
 
+  it('names the missing permission of a page in every language', () => {
+    const english = createI18n({ language: 'en', resources: { en, tr } })
+    const turkish = createI18n({ language: 'tr', resources: { en, tr } })
+    expect(english.t('access.noPage', { permission: english.t('privileges.readUsers') })).toBe(
+      'This page needs the Read Users permission. An administrator can add it to one of your roles.',
+    )
+    expect(turkish.t('access.noPage', { permission: turkish.t('privileges.readUsers') })).toBe(
+      'Bu sayfa için Kullanıcıları görüntüle izni gerekiyor. Bir yönetici bu izni rollerinizden birine ekleyebilir.',
+    )
+  })
+
   it('shows the reference of a failed load and retries', async () => {
     const onRetry = vi.fn()
     const screen = await renderWithI18n(

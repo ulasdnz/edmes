@@ -10,6 +10,14 @@ function memoryStorage(): Pick<Storage, 'getItem' | 'setItem'> {
 }
 
 describe('prefs', () => {
+  // scenario: writePrefs(storage, 'u1', { sidebar: 'rail' }) then readPrefs → same, stored under edmes.web.prefs.u1
+  it('stores a written choice under the key of the user and reads it back', () => {
+    const storage = memoryStorage()
+    writePrefs(storage, 'u1', { sidebar: 'rail' })
+    expect(readPrefs(storage, 'u1')).toEqual({ sidebar: 'rail' })
+    expect(storage.getItem('edmes.web.prefs.u1')).toBe('{"sidebar":"rail"}')
+  })
+
   it('keeps one record per user', () => {
     const storage = memoryStorage()
     writePrefs(storage, 'u1', { sidebar: 'rail' })

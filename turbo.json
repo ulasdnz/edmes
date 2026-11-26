@@ -12,7 +12,8 @@
         "tsconfig.json",
         "package.json"
       ],
-      "outputs": ["dist/**"]
+      "outputs": ["dist/**"],
+      "env": ["EDMES_VERSION"]
     },
     "typecheck": {
       "dependsOn": ["^build"],

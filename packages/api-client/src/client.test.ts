@@ -291,6 +291,99 @@ describe('createApiClient', () => {
   })
 })
 
+describe('ApiClient.request scenarios', () => {
+  const settle = (call: Promise<unknown>) =>
+    call.then(
+      () => undefined,
+      (e: unknown) => e,
+    )
+
+  // scenario: 400 with the validation envelope → rejects with ApiError { kind, status, code, message, details }
+  it('rejects a 400 validation envelope with an ApiError carrying all of its fields', async () => {
+    const { baseUrl } = await serve({
+      status: 400,
+      body: JSON.stringify({
+        error: {
+          code: 'error.validation_failed',
+          message: 'Validation failed',
+          details: [{ field: 'email', message: 'Invalid email' }],
+        },
+      }),
+    })
+    const error = await settle(setup(baseUrl).fetchClient.GET('/users/languages'))
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error).toMatchObject({
+      kind: 'http',
+      status: 400,
+      code: 'error.validation_failed',
+      message: 'Validation failed',
+      details: [{ field: 'email', message: 'Invalid email' }],
+    })
+  })
+
+  // scenario: toApiError(new DOMException('aborted', 'AbortError')) → ApiError { kind: 'aborted', status: 0, code: 'client.aborted' }, no throw
+  it('toApiError maps a DOMException AbortError to an aborted ApiError without throwing', () => {
+    let error: unknown
+    expect(() => {
+      error = toApiError(new DOMException('aborted', 'AbortError'))
+    }).not.toThrow()
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error).toMatchObject({ kind: 'aborted', status: 0, code: 'client.aborted' })
+  })
+
+  // scenario: [CRITICAL] 401 auth.unauthenticated, on any path → onUnauthorized exactly once, rejects with status 401
+  it.each([
+    [
+      'GET /users/languages',
+      (c: ReturnType<typeof setup>['fetchClient']) => c.GET('/users/languages'),
+    ],
+    ['GET /users/me', (c: ReturnType<typeof setup>['fetchClient']) => c.GET('/users/me')],
+    [
+      'POST /auth/login',
+      (c: ReturnType<typeof setup>['fetchClient']) =>
+        c.POST('/auth/login', { body: { email: 'a@b.co', password: 'x' } }),
+    ],
+  ])('calls onUnauthorized exactly once for a 401 auth.unauthenticated on %s', async (_name, call) => {
+    const { baseUrl } = await serve({ status: 401, body: envelope('auth.unauthenticated') })
+    const { fetchClient, onUnauthorized } = setup(baseUrl)
+    const error = await settle(call(fetchClient))
+    expect(error).toMatchObject({ status: 401 })
+    expect(onUnauthorized).toHaveBeenCalledTimes(1)
+  })
+
+  // scenario: [CRITICAL] 401 with another code from /auth/login → onUnauthorized not called; rejects with that request's ApiError
+  it('does not call onUnauthorized for a wrong password at /auth/login and rejects with its ApiError', async () => {
+    const { baseUrl } = await serve({
+      status: 401,
+      body: JSON.stringify({
+        error: { code: 'auth.invalid_credentials', message: 'Invalid email or password' },
+      }),
+    })
+    const { fetchClient, onUnauthorized } = setup(baseUrl)
+    const error = await settle(
+      fetchClient.POST('/auth/login', { body: { email: 'a@b.co', password: 'wrong' } }),
+    )
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error).toMatchObject({
+      kind: 'http',
+      status: 401,
+      code: 'auth.invalid_credentials',
+      message: 'Invalid email or password',
+    })
+    expect(onUnauthorized).not.toHaveBeenCalled()
+  })
+
+  // scenario: [CRITICAL] 401 with another code on any other path → onUnauthorized not called; only the error of that request
+  it('does not call onUnauthorized for a 401 with another code on another path', async () => {
+    const { baseUrl } = await serve({ status: 401, body: envelope('auth.token_revoked') })
+    const { fetchClient, onUnauthorized } = setup(baseUrl)
+    const error = await settle(fetchClient.GET('/users/me'))
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error).toMatchObject({ kind: 'http', status: 401, code: 'auth.token_revoked' })
+    expect(onUnauthorized).not.toHaveBeenCalled()
+  })
+})
+
 describe('toApiError', () => {
   it('maps an abort error to kind aborted without throwing', () => {
     const error = toApiError(new DOMException('aborted', 'AbortError'))

@@ -16,6 +16,8 @@ const findRole = async (key: string) => {
   return role
 }
 
+const readCodes = PRIVILEGES.map(p => p.code).filter(code => code.startsWith('read'))
+
 describe('ensureDefaultRoles', () => {
   beforeEach(async () => {
     vi.mocked(emitRoleCreated).mockClear()
@@ -125,5 +127,184 @@ describe('ensureDefaultRoles', () => {
     await Role.updateOne({ key: 'viewer' }, { $pull: { permissions: 'readOee' } })
     await ensureDefaultRoles({ firstInstall: false })
     expect((await findRole('viewer')).permissions).not.toContain('readOee')
+  })
+
+  // scenario: DefaultRoles.firstInstall / happy path / the five names
+  it('names the five roles', async () => {
+    const roles = await Role.find({ key: { $exists: true } }).lean()
+    expect(Object.fromEntries(roles.map(r => [r.key, r.name]))).toEqual({
+      planner: 'Planner',
+      shiftSupervisor: 'Shift Supervisor',
+      quality: 'Quality',
+      operator: 'Operator',
+      viewer: 'Viewer',
+    })
+  })
+
+  // scenario: DefaultRoles.firstInstall / happy path / defaultPermissions equals permissions
+  it('stores defaultPermissions equal to permissions on each created role', async () => {
+    const roles = await Role.find({ key: { $exists: true } }).lean()
+    expect(roles).toHaveLength(5)
+    for (const role of roles) {
+      expect([...(role.defaultPermissions ?? [])].sort()).toEqual([...role.permissions].sort())
+    }
+  })
+
+  // scenario: DefaultRoles.firstInstall / happy path / planner permissions
+  it('gives the planner its exact permissions', async () => {
+    expect([...(await findRole('planner')).permissions].sort()).toEqual(
+      [
+        'accessWebApp',
+        ...readCodes,
+        'writeProductionPlans',
+        'deleteProductionPlans',
+        'writeJobOrders',
+        'deleteJobOrders',
+        'writeSchedules',
+        'writeProductStandards',
+        'deleteProductStandards',
+      ].sort(),
+    )
+  })
+
+  // scenario: DefaultRoles.firstInstall / happy path / shiftSupervisor permissions
+  it('gives the shift supervisor its exact permissions', async () => {
+    expect([...(await findRole('shiftSupervisor')).permissions].sort()).toEqual(
+      [
+        'accessWebApp',
+        'accessOperatorPanel',
+        ...readCodes,
+        'executeJobOrders',
+        'writeOperators',
+        'writeProductionAdjustments',
+        'createUnplannedStops',
+        'writeUnplannedStops',
+        'executeUnplannedStops',
+        'createPlannedStops',
+        'writePlannedStops',
+        'executePlannedStops',
+        'executePlannedStopTemplates',
+      ].sort(),
+    )
+  })
+
+  // scenario: DefaultRoles.firstInstall / happy path / quality permissions
+  it('gives the quality role its exact permissions', async () => {
+    expect([...(await findRole('quality')).permissions].sort()).toEqual(
+      [
+        'accessWebApp',
+        ...readCodes,
+        'writeProductionAdjustments',
+        'deleteProductionAdjustments',
+        'createReasons',
+        'writeReasons',
+      ].sort(),
+    )
+  })
+
+  // scenario: DefaultRoles.firstInstall / happy path / operator permissions
+  it('gives the operator its exact permissions', async () => {
+    expect([...(await findRole('operator')).permissions].sort()).toEqual(
+      [
+        'accessOperatorPanel',
+        'readWorkCenters',
+        'readSchedules',
+        'readOperators',
+        'writeOperators',
+        'readCatalog',
+        'readProductStandards',
+        'readJobOrders',
+        'executeJobOrders',
+        'readProductionAdjustments',
+        'writeProductionAdjustments',
+        'readReasons',
+        'readPlannedStops',
+        'executePlannedStops',
+        'readPlannedStopTemplates',
+        'executePlannedStopTemplates',
+        'readUnplannedStops',
+        'createUnplannedStops',
+        'writeUnplannedStops',
+        'executeUnplannedStops',
+        'readTags',
+        'readHistorian',
+        'readOee',
+      ].sort(),
+    )
+  })
+
+  // scenario: DefaultRoles.firstInstall / constraints / READ computed from PRIVILEGES
+  it('gives every read privilege to planner, shiftSupervisor, quality and viewer', async () => {
+    expect(readCodes.length).toBeGreaterThan(0)
+    for (const key of ['planner', 'shiftSupervisor', 'quality', 'viewer']) {
+      expect((await findRole(key)).permissions).toEqual(expect.arrayContaining(readCodes))
+    }
+  })
+
+  // scenario: DefaultRoles.firstInstall / constraints / duplicate key rejected
+  it('rejects a second role with an existing key', async () => {
+    await Role.init()
+    await expect(
+      Role.create({ key: 'planner', name: 'Another planner', permissions: [] }),
+    ).rejects.toThrow(/duplicate key|E11000/)
+  })
+
+  // scenario: DefaultRoles.firstInstall / constraints / several roles without key allowed
+  it('allows several roles without a key', async () => {
+    await Role.init()
+    await Role.create({ name: 'customer-a', permissions: [] })
+    await Role.create({ name: 'customer-b', permissions: [] })
+    await Role.create({ name: 'customer-c', permissions: [] })
+    expect(await Role.countDocuments({ key: { $exists: false } })).toBe(3)
+  })
+
+  // scenario: DefaultRoles.firstInstall / authorization / only shiftSupervisor holds both access codes
+  it('gives both application access codes to the shift supervisor only', async () => {
+    const roles = await Role.find({ key: { $exists: true } }).lean()
+    const both = roles
+      .filter(
+        r =>
+          r.permissions.includes('accessWebApp') && r.permissions.includes('accessOperatorPanel'),
+      )
+      .map(r => r.key)
+    expect(both).toEqual(['shiftSupervisor'])
+    for (const key of ['planner', 'quality', 'viewer']) {
+      expect((await findRole(key)).permissions).not.toContain('accessOperatorPanel')
+    }
+  })
+
+  // scenario: DefaultRoles.laterRuns / happy path / defaultPermissions equals the current definition
+  it('sets defaultPermissions to the current definition after a later run', async () => {
+    await Role.updateOne(
+      { key: 'viewer' },
+      { $pull: { permissions: 'readOee', defaultPermissions: 'readOee' } },
+    )
+    await ensureDefaultRoles({ firstInstall: false })
+    const definition = DEFAULT_ROLES.find(r => r.key === 'viewer')
+    expect([...((await findRole('viewer')).defaultPermissions ?? [])].sort()).toEqual(
+      [...(definition?.permissions ?? [])].sort(),
+    )
+  })
+
+  // scenario: DefaultRoles.laterRuns / constraints / found by key, renamed role gets new code
+  it('gives a renamed role a code that is new in its definition', async () => {
+    await Role.updateOne(
+      { key: 'viewer' },
+      {
+        $set: { name: 'Goruntuleyici' },
+        $pull: { permissions: 'readOee', defaultPermissions: 'readOee' },
+      },
+    )
+    await ensureDefaultRoles({ firstInstall: false })
+    const viewer = await findRole('viewer')
+    expect(viewer.name).toBe('Goruntuleyici')
+    expect(viewer.permissions).toContain('readOee')
+  })
+
+  // scenario: DefaultRoles.laterRuns / edge cases / extra customer code stays
+  it('keeps a code the customer added to a ready-made role', async () => {
+    await Role.updateOne({ key: 'viewer' }, { $addToSet: { permissions: 'writeUsers' } })
+    await ensureDefaultRoles({ firstInstall: false })
+    expect((await findRole('viewer')).permissions).toContain('writeUsers')
   })
 })

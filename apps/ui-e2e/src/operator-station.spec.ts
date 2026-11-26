@@ -135,4 +135,80 @@ test.describe('a new version on the server', () => {
     }).toPass({ timeout: 30_000 })
     expect(await page.evaluate(() => 'e2eBeforeReload' in window)).toBe(false)
   })
+
+  // scenario: Operator.shell / edge cases / /version.json reports another version → the panel
+  // reloads only when queryClient.isMutating() is 0 and no [role="dialog"] is in the document
+  test('reloads the panel only once no mutation runs and no dialog is open', async ({
+    page,
+    seed,
+  }) => {
+    await page.clock.install()
+    await page.route('**/version.json', route => route.fulfill({ json: { version: 'next' } }))
+    await signInToPanel(page, seed.operator)
+    await expect(page.getByText(seed.workCenter.name)).toBeVisible()
+
+    // The panel has no screen that writes yet, so the test starts a mutation on the panel's own
+    // QueryClient, found through React's root fiber, and finishes it when it wants.
+    await page.evaluate(() => {
+      const root = document.getElementById('root') as unknown as Record<string, unknown> | null
+      const containerKey = Object.keys(root ?? {}).find(key => key.startsWith('__reactContainer$'))
+      type Fiber = { memoizedProps?: { client?: unknown }; child?: Fiber; sibling?: Fiber }
+      const pending: Fiber[] = containerKey ? [root?.[containerKey] as Fiber] : []
+      let client: unknown
+      while (pending.length > 0 && !client) {
+        const fiber = pending.pop()
+        const candidate = fiber?.memoizedProps?.client as { isMutating?: unknown } | undefined
+        if (typeof candidate?.isMutating === 'function') client = candidate
+        if (fiber?.child) pending.push(fiber.child)
+        if (fiber?.sibling) pending.push(fiber.sibling)
+      }
+      if (!client) throw new Error('the QueryClient of the panel was not found')
+      const queryClient = client as {
+        getMutationCache(): {
+          build(
+            client: unknown,
+            options: { mutationFn: () => Promise<void> },
+          ): { execute(variables: undefined): Promise<unknown> }
+        }
+      }
+      const finish = new Promise<void>(resolve => {
+        Object.assign(window, { e2eFinishMutation: resolve })
+      })
+      void queryClient
+        .getMutationCache()
+        .build(queryClient, { mutationFn: () => finish })
+        .execute(undefined)
+
+      const dialog = document.createElement('div')
+      dialog.setAttribute('role', 'dialog')
+      dialog.id = 'e2e-open-dialog'
+      document.body.append(dialog)
+      Object.assign(window, { e2eBeforeReload: true })
+    })
+    const versionAnswered = page.waitForResponse(response =>
+      response.url().endsWith('/version.json'),
+    )
+    await page.clock.fastForward('05:01')
+    await versionAnswered
+    for (let step = 0; step < 4; step++) await page.clock.fastForward('00:06')
+    expect(await page.evaluate(() => 'e2eBeforeReload' in window)).toBe(true)
+
+    // The dialog closes, the mutation still runs: no reload
+    await page.evaluate(() => document.getElementById('e2e-open-dialog')?.remove())
+    for (let step = 0; step < 4; step++) await page.clock.fastForward('00:06')
+    expect(await page.evaluate(() => 'e2eBeforeReload' in window)).toBe(true)
+
+    let reloaded = false
+    page.once('load', () => {
+      reloaded = true
+    })
+    await page.evaluate(() =>
+      (window as unknown as { e2eFinishMutation: () => void }).e2eFinishMutation(),
+    )
+    await expect(async () => {
+      if (!reloaded) await page.clock.fastForward('00:06')
+      expect(reloaded).toBe(true)
+    }).toPass({ timeout: 30_000 })
+    expect(await page.evaluate(() => 'e2eBeforeReload' in window)).toBe(false)
+  })
 })

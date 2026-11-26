@@ -247,4 +247,43 @@ describe('system admin bootstrap', () => {
       expect(await mustChange()).toBe(false)
     })
   })
+
+  describe('ready-made roles and the loader order', () => {
+    const { SYSTEM_ADMIN_BOOTSTRAP_ENABLED } = config
+
+    afterEach(() => {
+      config.SYSTEM_ADMIN_BOOTSTRAP_ENABLED = SYSTEM_ADMIN_BOOTSTRAP_ENABLED
+    })
+
+    // scenario: DefaultRoles.loaderOrder / happy path / empty database
+    it('creates the five ready-made roles and the system admin role on an empty database', async () => {
+      config.SYSTEM_ADMIN_BOOTSTRAP_ENABLED = true
+
+      await initLoaders()
+
+      const keys = (await Role.find({ key: { $exists: true } }).lean()).map(r => r.key).sort()
+      expect(keys).toEqual(['operator', 'planner', 'quality', 'shiftSupervisor', 'viewer'])
+      expect(await Role.exists({ name: systemRoleName })).toBeTruthy()
+    })
+
+    // scenario: DefaultRoles.loaderOrder / constraints / system admin role exists, no ready-made role
+    it('creates no ready-made role when the system admin role already exists', async () => {
+      config.SYSTEM_ADMIN_BOOTSTRAP_ENABLED = true
+      await Role.create({ name: systemRoleName, permissions: ['readUsers'] })
+
+      await initLoaders()
+
+      expect(await Role.countDocuments({ key: { $exists: true } })).toBe(0)
+    })
+
+    // scenario: DefaultRoles.loaderOrder / constraints / bootstrap disabled
+    it('creates neither ready-made roles nor the system admin role when bootstrap is disabled', async () => {
+      config.SYSTEM_ADMIN_BOOTSTRAP_ENABLED = false
+
+      await initLoaders()
+
+      expect(await Role.countDocuments({ key: { $exists: true } })).toBe(0)
+      expect(await Role.exists({ name: systemRoleName })).toBeNull()
+    })
+  })
 })

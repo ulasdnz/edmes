@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { createApiClient } from '@mes/api-client'
+import { ApiError, createApiClient } from '@mes/api-client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createSessionStore, type SessionStore, type TokenStorageKey } from './session-store'
 
@@ -448,5 +448,152 @@ describe('session store', () => {
     await store.refresh()
     expect(requests).toEqual([])
     expect(store.getState().status).toBe('anonymous')
+  })
+
+  describe('scenarios', () => {
+    // scenario: a new store before bootstrap() → status unknown
+    it('is unknown before bootstrap', async () => {
+      const { handler, requests } = scripted([ok()])
+      const { store } = build(await listen(handler), { token: 'tkn' })
+      expect(store.getState().status).toBe('unknown')
+      expect(requests).toEqual([])
+    })
+
+    // scenario: stored token, /users/me answers 401 with another code → unreachable, token kept
+    it('is unreachable and keeps the token when /users/me answers 401 with another code', async () => {
+      const { handler } = scripted([res => json(res, 401, errorBody('auth.token_revoked'))])
+      const { store, storage } = build(await listen(handler), { token: 'tkn' })
+      await store.bootstrap()
+      expect(store.getState().status).toBe('unreachable')
+      expect(storage.getItem('edmes.web.token')).toBe('tkn')
+    })
+
+    // scenario: valid e-mail and password → token stored under storageKey, status authenticated
+    it('stores the token of the login response under its storage key and is authenticated', async () => {
+      const { handler } = scripted([
+        res => json(res, 200, { data: { user, token: 'web-tkn' } }),
+        ok(),
+      ])
+      const { store, storage } = build(await listen(handler))
+      await store.bootstrap()
+      await store.login({ email: 'ada@example.com', password: 'pw' })
+      expect(storage.getItem('edmes.web.token')).toBe('web-tkn')
+      expect(store.getState().status).toBe('authenticated')
+    })
+
+    // scenario: the stored value is replaced directly in storage → the next getToken() returns it
+    it('reads the token from storage on every getToken', async () => {
+      const { handler } = scripted([ok()])
+      const { store, storage } = build(await listen(handler), { token: 'tkn' })
+      await store.bootstrap()
+      expect(store.getToken()).toBe('tkn')
+      storage.setItem('edmes.web.token', 'replaced')
+      expect(store.getToken()).toBe('replaced')
+    })
+
+    // scenario: locked account (429) → login rejects with ApiError code auth.account_temporarily_locked
+    it('rejects a locked account with an ApiError carrying the lockout code', async () => {
+      const { handler } = scripted([
+        res => json(res, 429, errorBody('auth.account_temporarily_locked')),
+      ])
+      const { store } = build(await listen(handler))
+      const error = await store.login({ email: 'a@b.co', password: 'bad' }).then(
+        () => undefined,
+        (e: unknown) => e,
+      )
+      expect(error).toBeInstanceOf(ApiError)
+      expect(error).toMatchObject({ code: 'auth.account_temporarily_locked' })
+    })
+
+    // scenario: authenticated, /users/me now returns other permissions, refresh() → state holds them
+    it('holds the new permissions in the state after a refresh', async () => {
+      const { handler } = scripted([ok(['readUsers']), ok(['readUsers', 'writeUsers'])])
+      const { store } = build(await listen(handler), { token: 'tkn' })
+      await store.bootstrap()
+      expect(store.getState().permissions).toEqual(['readUsers'])
+      await store.refresh()
+      expect(store.getState().permissions).toEqual(['readUsers', 'writeUsers'])
+    })
+
+    // scenario: logout() → status anonymous; user, permissions and token dropped
+    it('drops the user, the permissions and the token on logout', async () => {
+      const { handler } = scripted([ok()])
+      const { store, storage } = build(await listen(handler), { token: 'tkn' })
+      await store.bootstrap()
+      expect(store.getState().status).toBe('authenticated')
+      store.logout()
+      expect(store.getState()).toMatchObject({ status: 'anonymous', user: null, permissions: [] })
+      expect(storage.getItem('edmes.web.token')).toBeNull()
+      expect(store.getToken()).toBeNull()
+    })
+
+    // scenario: unreachable after a failed refresh, the next refresh() answers 200 → authenticated
+    it('becomes authenticated again when a refresh after a failed one answers 200', async () => {
+      const { handler } = scripted([ok(), unavailable, ok()])
+      const { store } = build(await listen(handler), { token: 'tkn' })
+      await store.bootstrap()
+      await store.refresh()
+      expect(store.getState().status).toBe('unreachable')
+      await store.refresh()
+      expect(store.getState().status).toBe('authenticated')
+    })
+
+    // scenario: [CRITICAL] authenticated, a later request answers 401 with another code → stays authenticated
+    it('stays authenticated when a later request answers 401 with another code', async () => {
+      const { handler } = scripted([ok(), res => json(res, 401, errorBody('auth.token_revoked'))])
+      const { store, storage, baseUrl } = build(await listen(handler), { token: 'tkn' })
+      await store.bootstrap()
+      await clientFor(baseUrl, store)
+        .fetchClient.GET('/users/me')
+        .catch(() => undefined)
+      expect(store.getState()).toMatchObject({
+        status: 'authenticated',
+        permissions: ['readUsers'],
+      })
+      expect(store.getState().user?.email).toBe('ada@example.com')
+      expect(storage.getItem('edmes.web.token')).toBe('tkn')
+    })
+
+    // scenario: [CRITICAL] permissions ['readUsers'] → can('readUsers') is true
+    it('can a held permission', async () => {
+      const { store } = build(await listen(scripted([ok(['readUsers'])]).handler), {
+        token: 'tkn',
+      })
+      await store.bootstrap()
+      expect(store.can('readUsers')).toBe(true)
+    })
+
+    // scenario: [CRITICAL] permissions ['readUsers'] → can('writeUsers') is false
+    it('cannot a permission it does not hold', async () => {
+      const { store } = build(await listen(scripted([ok(['readUsers'])]).handler), {
+        token: 'tkn',
+      })
+      await store.bootstrap()
+      expect(store.can('writeUsers')).toBe(false)
+    })
+
+    // scenario: [CRITICAL] permissions ['*'] → can is true for any code
+    it('can any code with the wildcard', async () => {
+      const { store } = build(await listen(scripted([ok(['*'])]).handler), { token: 'tkn' })
+      await store.bootstrap()
+      for (const code of [
+        'readUsers',
+        'writeUsers',
+        'accessOperatorPanel',
+        'deleteRoles',
+      ] as const) {
+        expect(store.can(code)).toBe(true)
+      }
+    })
+
+    // scenario: store.can('accessUserScreen') (a misspelled code) → does not compile (@ts-expect-error)
+    it('does not compile a misspelled privilege code', async () => {
+      const { store } = build(await listen(scripted([ok(['readUsers'])]).handler), {
+        token: 'tkn',
+      })
+      await store.bootstrap()
+      // @ts-expect-error 'accessUserScreen' is not a PrivilegeCode
+      expect(store.can('accessUserScreen')).toBe(false)
+    })
   })
 })

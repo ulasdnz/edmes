@@ -40,6 +40,13 @@ describe('station store', () => {
     expect(store.reconcile([])).toBe('none')
   })
 
+  // scenario: select('wc1') → a new store over the same storage returns 'wc1' (kept under edmes.operator.station)
+  it('hands the selected station to a new store over the same storage', () => {
+    store.select('wc1')
+    expect(storage.getItem('edmes.operator.station')).toBe('wc1')
+    expect(createStationStore(storage).getWorkCenterId()).toBe('wc1')
+  })
+
   it('survives a sign-out', () => {
     store.select('wc1')
     storage.removeItem('edmes.operator.token')

@@ -67,7 +67,7 @@ function useUnreachableSince(status: SessionStatus): Date | null {
 }
 
 export function useConnection(): Connection {
-  const { status } = useSession()
+  const { status, serverClock } = useSession()
   const realtime = useRealtimeStatus()
   const unreachableSince = useUnreachableSince(status)
   return connectionFor({
@@ -75,5 +75,6 @@ export function useConnection(): Connection {
     unreachableSince,
     realtime: realtime.status,
     realtimeSince: realtime.since,
+    clock: serverClock,
   })
 }

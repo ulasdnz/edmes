@@ -247,15 +247,6 @@
                             },
                             "updatedAt": {
                               "type": "string"
-                            },
-                            "failedLoginAttempts": {
-                              "type": "number"
-                            },
-                            "lastFailedLoginAt": {
-                              "type": [
-                                "string",
-                                "null"
-                              ]
                             }
                           },
                           "required": [
@@ -273,8 +264,7 @@
                             "isActiveDirectoryUser",
                             "mustChangePassword",
                             "createdAt",
-                            "updatedAt",
-                            "failedLoginAttempts"
+                            "updatedAt"
                           ],
                           "additionalProperties": false
                         },

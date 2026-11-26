@@ -58,6 +58,21 @@ test.describe('signing in to the web app', () => {
     await expect(usersTable(page)).toHaveCount(0)
   })
 
+  // scenario: E2E.webAuth / authorization / seed.limited: no Users entry, the no-permission state
+  // at /users names the missing permission
+  test('the no-permission state at /users names the missing permission', async ({ page, seed }) => {
+    await signInToWeb(page, seed.limited)
+    await expect(navigation(page)).toBeVisible()
+    await expect(navigation(page).getByRole('link', { name: 'Users' })).toHaveCount(0)
+
+    await page.goto('/users')
+    const state = page.getByRole('main')
+    await expect(state.getByRole('heading', { level: 2 })).toBeVisible()
+    await expect(usersTable(page)).toHaveCount(0)
+    // readUsers is the permission /users needs; its text in @mes/privileges is "Read Users"
+    await expect(state).toContainText('This page needs the Read Users permission.')
+  })
+
   test('the ready-made Viewer sees Users and no button that changes anything', async ({
     page,
     seed,
@@ -115,6 +130,32 @@ test.describe('the shell of the web app', () => {
     await page.getByRole('button', { name: 'Collapse menu' }).click()
     await expect(page.getByRole('button', { name: 'Expand menu' })).toBeVisible()
     expect((await navigation(page).boundingBox())?.width).toBe(64)
+
+    await page.reload()
+    await expect(page.getByRole('button', { name: 'Expand menu' })).toBeVisible()
+    expect((await navigation(page).boundingBox())?.width).toBe(64)
+  })
+
+  // scenario: Web.shell / happy path / the sidebar is collapsed → a 64 px rail; the choice is
+  // written with writePrefs and is still there after a reload
+  test('the collapsed sidebar is written with writePrefs under the user and kept after a reload', async ({
+    page,
+    request,
+    seed,
+  }) => {
+    const me = await request.get('/api/v1/users/me', {
+      headers: { authorization: `Bearer ${seed.admin.token}` },
+    })
+    const adminId = ((await me.json()) as { data: { _id: string } }).data._id
+    await signInToWeb(page, seed.admin)
+    await page.getByRole('button', { name: 'Collapse menu' }).click()
+    await expect(page.getByRole('button', { name: 'Expand menu' })).toBeVisible()
+    expect((await navigation(page).boundingBox())?.width).toBe(64)
+    const stored = await page.evaluate(
+      key => localStorage.getItem(key),
+      `edmes.web.prefs.${adminId}`,
+    )
+    expect(JSON.parse(stored ?? 'null')).toEqual({ sidebar: 'rail' })
 
     await page.reload()
     await expect(page.getByRole('button', { name: 'Expand menu' })).toBeVisible()
@@ -267,6 +308,118 @@ test.describe('the shell of the web app', () => {
 
     blocked = false
     await expect(connectionIndicator(page)).toHaveText('Live', { timeout: 15_000 })
+  })
+
+  // scenario: Web.shell / constraints / realtime connecting or reconnecting → reconnecting; session
+  // unreachable or realtime unavailable → offline with Offline since HH:mm from the time that
+  // state began, in server time (a device clock that is off does not shift it); otherwise live
+  test.describe('on a device whose clock is two hours behind', () => {
+    test('the indicator says reconnecting, offline since the moment in server time, and live', async ({
+      page,
+      request,
+      seed,
+    }) => {
+      test.setTimeout(180_000)
+      const me = await request.get('/api/v1/users/me', {
+        headers: { authorization: `Bearer ${seed.admin.token}` },
+      })
+      const { plantTimezone } = ((await me.json()) as { meta: { plantTimezone: string } }).meta
+      const deviceOffsetMs = -2 * 3_600_000
+      await page.clock.install({ time: Date.now() + deviceOffsetMs })
+
+      let closeNewSockets = false
+      // The gateway's answer when it cannot check a token: CONNECT_ERROR auth.unavailable
+      let refuseConnect = false
+      let current: WebSocketRoute | undefined
+      await page.routeWebSocket(/\/socket\.io\//, ws => {
+        if (closeNewSockets) {
+          void ws.close()
+          return
+        }
+        current = ws
+        const server = ws.connectToServer()
+        ws.onMessage(message => {
+          if (refuseConnect && typeof message === 'string' && message.startsWith('40')) {
+            ws.send('44{"message":"auth.unavailable"}')
+            return
+          }
+          server.send(message)
+        })
+      })
+
+      // The shown time must be the plant's real time around the outage, never the device's
+      const expectOfflineSince = async (startedAt: number) => {
+        await expect(connectionIndicator(page)).toHaveAttribute('data-status', 'offline', {
+          timeout: 45_000,
+        })
+        const text = await connectionIndicator(page).innerText()
+        expect(text).toMatch(/^Offline since \d{2}:\d{2}$/)
+        const shown = text.match(/(\d{2}:\d{2})/)?.[1]
+        const candidates = new Set<string>()
+        for (let t = startedAt - 60_000; t <= Date.now() + 60_000; t += 30_000) {
+          candidates.add(hhmm(new Date(t), plantTimezone))
+        }
+        expect([...candidates]).toContain(shown)
+        expect(shown).not.toBe(hhmm(new Date(Date.now() + deviceOffsetMs), plantTimezone))
+      }
+
+      await signInToWeb(page, seed.admin)
+      await expect(usersTable(page)).toBeVisible()
+      await expect(connectionIndicator(page)).toHaveText('Live')
+      await expect(connectionIndicator(page)).toHaveAttribute('data-status', 'live')
+
+      // realtime reconnecting
+      closeNewSockets = true
+      await current?.close()
+      await expect(connectionIndicator(page)).toHaveText('Reconnecting…')
+      await expect(connectionIndicator(page)).toHaveAttribute('data-status', 'reconnecting')
+      closeNewSockets = false
+      await expect(connectionIndicator(page)).toHaveText('Live', { timeout: 15_000 })
+
+      // realtime unavailable
+      refuseConnect = true
+      const refusedAt = Date.now()
+      await current?.close()
+      await expectOfflineSince(refusedAt)
+      refuseConnect = false
+      await expect(connectionIndicator(page)).toHaveText('Live', { timeout: 15_000 })
+
+      // session unreachable: user-service's paths answer what the gateway answers for a stopped one
+      const unreachableAt = Date.now()
+      await page.route('**/api/v1/users/me', route =>
+        route.fulfill({
+          status: 503,
+          contentType: 'application/json',
+          headers: { 'cache-control': 'no-store' },
+          body: '{"error":{"code":"gateway.unavailable","message":"Service unavailable"}}',
+        }),
+      )
+      await expectOfflineSince(unreachableAt)
+      await page.unroute('**/api/v1/users/me')
+      await expect(connectionIndicator(page)).toHaveText('Live', { timeout: 45_000 })
+      await expect(connectionIndicator(page)).toHaveAttribute('data-status', 'live')
+    })
+  })
+
+  // scenario: Web.shell / constraints / the session status is unknown (bootstrap pending) → the
+  // app renders at once with a loading state, never a blank page
+  test('while the session is still unknown the app shows a loading state', async ({
+    page,
+    seed,
+  }) => {
+    await signInToWeb(page, seed.admin)
+    await expect(usersTable(page)).toBeVisible()
+
+    let released = false
+    await page.route('**/api/v1/users/me', async route => {
+      await new Promise(resolve => setTimeout(resolve, 3000))
+      released = true
+      await route.continue()
+    })
+    await page.reload()
+    await expect(page.getByText('Loading…', { exact: true })).toBeVisible()
+    expect(released).toBe(false)
+    await expect(usersTable(page)).toBeVisible()
   })
 
   test('a list that fails to load shows the error with its trace id', async ({ page, seed }) => {

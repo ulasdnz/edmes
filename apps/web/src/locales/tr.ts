@@ -39,7 +39,10 @@ export const tr: typeof en = {
       'Hesabınızın web uygulamasına erişimi yok. Bir yönetici bu izni rollerinizden birine ekleyebilir.',
     noPageTitle: '{{page}} sayfasına erişiminiz yok',
     noPage:
-      'Rolleriniz bu sayfayı açma iznini içermiyor. Bir yönetici bu izni rollerinizden birine ekleyebilir.',
+      'Bu sayfa için {{permission}} izni gerekiyor. Bir yönetici bu izni rollerinizden birine ekleyebilir.',
+  },
+  privileges: {
+    readUsers: 'Kullanıcıları görüntüle',
   },
   home: {
     emptyTitle: 'Henüz gösterilecek bir şey yok',

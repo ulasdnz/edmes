@@ -32,6 +32,34 @@ describe('users list', () => {
     expect(usersListSearchSchema.parse({ sort: 5 })).toEqual({ page: 1, size: 20 })
   })
 
+  // scenario: page: 0 or a non-numeric page → page: 1
+  it('falls back to page 1 for page 0 or a non-numeric page', () => {
+    expect(usersListSearchSchema.parse({ page: 0 })).toEqual({ page: 1, size: 20 })
+    expect(usersListSearchSchema.parse({ page: 'abc' })).toEqual({ page: 1, size: 20 })
+  })
+
+  // scenario: size of 20, 50 or 100 → kept; any other value → 20
+  it('keeps a size of 20, 50 or 100 and falls back to 20 for any other', () => {
+    for (const size of [20, 50, 100]) {
+      expect(usersListSearchSchema.parse({ size })).toEqual({ page: 1, size })
+    }
+    for (const size of [7, 0, 25, 200, -50, 'big']) {
+      expect(usersListSearchSchema.parse({ size })).toEqual({ page: 1, size: 20 })
+    }
+  })
+
+  // scenario: search of 100 characters → accepted; 101 characters → dropped, parse does not throw
+  it('accepts a 100-character search and drops a 101-character one without throwing', () => {
+    const hundred = 'a'.repeat(100)
+    expect(usersListSearchSchema.parse({ search: hundred })).toEqual({
+      page: 1,
+      size: 20,
+      search: hundred,
+    })
+    expect(() => usersListSearchSchema.parse({ search: 'a'.repeat(101) })).not.toThrow()
+    expect(usersListSearchSchema.parse({ search: 'a'.repeat(101) })).toEqual({ page: 1, size: 20 })
+  })
+
   it('keeps the rows of the previous request while the next one loads', () => {
     const api = createApiClient({
       getToken: () => null,

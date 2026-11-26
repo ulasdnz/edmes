@@ -38,7 +38,11 @@ export const en = {
       'Your account has no access to the web app. An administrator can add it to one of your roles.',
     noPageTitle: 'You don’t have access to {{page}}',
     noPage:
-      'Your roles do not include the permission to open this page. An administrator can add it to one of your roles.',
+      'This page needs the {{permission}} permission. An administrator can add it to one of your roles.',
+  },
+  // The names of the permissions a page asks for, as @mes/privileges names them
+  privileges: {
+    readUsers: 'Read Users',
   },
   home: {
     emptyTitle: 'Nothing to show yet',

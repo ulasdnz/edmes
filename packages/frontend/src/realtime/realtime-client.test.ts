@@ -180,6 +180,17 @@ describe('invalidation rules', () => {
       queryWorkCenterIds(['get', '/job-orders', { params: { query: { workCenterIds: 'c, d' } } }]),
     ).toEqual(['c', 'd'])
   })
+
+  // scenario: RealtimeClient.invalidation / happy path / invalidationMap rows
+  it('maps each entity to the API paths its events change', () => {
+    expect(invalidationMap).toEqual({
+      user: ['/users'],
+      role: ['/roles', '/users'],
+      speciality: ['/specialities', '/users'],
+      work_center: ['/work-centers'],
+      job_order: ['/job-orders'],
+    })
+  })
 })
 
 describe('realtime client', () => {
@@ -559,5 +570,257 @@ describe('realtime client', () => {
     server.last().conn.close()
     await vi.waitFor(() => expect(log).toHaveLength(4), { timeout: 5000 })
     expect(log).toEqual(['fetch', 'ack', 'ack', 'fetch'])
+  })
+})
+
+describe('realtime client scenarios', () => {
+  // scenario: RealtimeClient.rooms / happy path / the only subscriber of a room unsubscribes
+  it('leaves a room in the next join once its only subscriber unsubscribes', async () => {
+    const server = await startServer()
+    const { client } = setup(server)
+    await live(client)
+    client.subscribe(['wc:a'])
+    const leaveB = client.subscribe(['wc:b'])
+    await vi.waitFor(() => expect(server.joins.at(-1)?.slice().sort()).toEqual(['wc:a', 'wc:b']))
+    const joinsBefore = server.joins.length
+    leaveB()
+    await vi.waitFor(() => expect(server.joins).toHaveLength(joinsBefore + 1))
+    expect(server.joins.at(-1)).toEqual(['wc:a'])
+  })
+
+  // scenario: RealtimeClient.rooms / constraints / several subscribe and unsubscribe calls in one microtask
+  it('sends one join with the full union for the changes made in one microtask', async () => {
+    const server = await startServer()
+    const { client } = setup(server)
+    await live(client)
+    await vi.waitFor(() => expect(server.joins).toHaveLength(1))
+    const leaveA = client.subscribe(['wc:a'])
+    client.subscribe(['wc:b'])
+    leaveA()
+    client.subscribe(['wc:c', 'wc:b'])
+    await vi.waitFor(() => expect(server.joins).toHaveLength(2))
+    await sleep(100)
+    expect(server.joins).toHaveLength(2)
+    expect(server.joins[1]?.slice().sort()).toEqual(['wc:b', 'wc:c'])
+  })
+
+  // scenario: RealtimeClient.rooms / constraints / the socket connects with transports ['websocket']
+  it('connects to a gateway that allows WebSocket only', async () => {
+    const server = await startServer()
+    const { client } = setup(server)
+    await live(client)
+    expect(server.last().conn.transport.name).toBe('websocket')
+  })
+
+  // scenario: RealtimeClient.invalidation / happy path / on(eventType, handler)
+  it('hands an event payload to its handler until the handler is removed', async () => {
+    const server = await startServer()
+    const { client } = setup(server)
+    const removed: Array<Record<string, unknown>> = []
+    const kept: Array<Record<string, unknown>> = []
+    const off = client.on('audit.created', payload => removed.push(payload))
+    client.on('audit.created', payload => kept.push(payload))
+    await live(client)
+    server.io.emit('audit.created', { auditId: 'a1' })
+    await vi.waitFor(() => expect(kept).toHaveLength(1))
+    expect(removed).toEqual([{ auditId: 'a1' }])
+    off()
+    server.io.emit('audit.created', { auditId: 'a2' })
+    await vi.waitFor(() => expect(kept).toHaveLength(2))
+    expect(removed).toEqual([{ auditId: 'a1' }])
+  })
+
+  // scenario: RealtimeClient.invalidation / constraints / an event whose entity has no row in the map
+  it('invalidates no query for an event whose entity has no row in the map', async () => {
+    const server = await startServer()
+    const { client, queryClient } = setup(server)
+    const keys = [
+      ['get', '/users', {}],
+      ['get', '/roles', {}],
+      ['get', '/specialities', {}],
+      ['get', '/work-centers', {}],
+      ['get', '/job-orders', {}],
+    ]
+    const counters = keys.map(key => observe(queryClient, key))
+    await loaded(...counters)
+    const received: Array<Record<string, unknown>> = []
+    client.on('audit.created', payload => received.push(payload))
+    await live(client)
+    server.io.emit('audit.created', { userId: 'u1', workCenterId: 'wc1' })
+    await vi.waitFor(() => expect(received).toHaveLength(1))
+    await sleep(150)
+    expect(counters.map(counter => counter.calls)).toEqual([1, 1, 1, 1, 1])
+    for (const key of keys) expect(queryClient.getQueryState(key)?.isInvalidated).toBe(false)
+  })
+
+  // scenario: RealtimeClient.invalidation / constraints / a query whose queryKey[0] is not 'get'
+  it('does not match a query whose key does not start with get', async () => {
+    const server = await startServer()
+    const { client, queryClient } = setup(server)
+    const postKey = ['post', '/job-orders', {}]
+    const getKey = ['get', '/job-orders', {}]
+    const post = observe(queryClient, postKey)
+    const get = observe(queryClient, getKey)
+    await loaded(post, get)
+    await live(client)
+    server.io.emit('job_order.started', { jobOrderId: 'j1' })
+    await vi.waitFor(() => expect(get.calls).toBe(2))
+    await sleep(100)
+    expect(post.calls).toBe(1)
+    expect(queryClient.getQueryState(postKey)?.isInvalidated).toBe(false)
+  })
+
+  // scenario: RealtimeClient.invalidation / constraints / queryKey[1] neither equals a mapped path nor starts with <path>/
+  it('does not match a path that only resembles a mapped path', async () => {
+    const server = await startServer()
+    const { client, queryClient } = setup(server)
+    const lookalikes = [
+      ['get', '/job-orders-archive', {}],
+      ['get', '/job-order', {}],
+      ['get', '/v2/job-orders', {}],
+    ]
+    const counters = lookalikes.map(key => observe(queryClient, key))
+    const jobOrders = observe(queryClient, ['get', '/job-orders', {}])
+    await loaded(...counters, jobOrders)
+    await live(client)
+    server.io.emit('job_order.started', { jobOrderId: 'j1' })
+    await vi.waitFor(() => expect(jobOrders.calls).toBe(2))
+    await sleep(100)
+    expect(counters.map(counter => counter.calls)).toEqual([1, 1, 1])
+    for (const key of lookalikes) expect(queryClient.getQueryState(key)?.isInvalidated).toBe(false)
+  })
+
+  // scenario: RealtimeClient.invalidation / constraints / an event that names no work center
+  it('refetches every matched query, whatever its work-center scope, for an event naming none', async () => {
+    const server = await startServer()
+    const { client, queryClient } = setup(server)
+    const keyWc1 = observe(queryClient, [
+      'get',
+      '/job-orders',
+      { params: { query: { workCenterIds: 'wc1' } } },
+    ])
+    const keyWc23 = observe(queryClient, [
+      'get',
+      '/job-orders',
+      { params: { query: { workCenterIds: 'wc2,wc3' } } },
+    ])
+    const keyAll = observe(queryClient, ['get', '/job-orders', { params: { query: { page: 1 } } }])
+    await loaded(keyWc1, keyWc23, keyAll)
+    await live(client)
+    server.io.emit('job_order.started', { jobOrderId: 'j1' })
+    await vi.waitFor(() =>
+      expect({ keyWc1: keyWc1.calls, keyWc23: keyWc23.calls, keyAll: keyAll.calls }).toEqual({
+        keyWc1: 2,
+        keyWc23: 2,
+        keyAll: 2,
+      }),
+    )
+  })
+
+  // scenario: RealtimeClient.invalidation / boundaries / two different matched queries, one event
+  it('gives each matched query its own leading refetch', async () => {
+    const server = await startServer()
+    const { client, queryClient } = setup(server, { throttleMs: 60000 })
+    const first = observe(queryClient, ['get', '/users', {}])
+    const second = observe(queryClient, ['get', '/users', { params: { query: { page: 2 } } }])
+    await loaded(first, second)
+    await live(client)
+    server.io.emit('user.updated', { userId: 'u1' })
+    // the throttle window is a minute long, so these refetches can only be the leading ones
+    await vi.waitFor(() => {
+      expect(first.calls).toBe(2)
+      expect(second.calls).toBe(2)
+    })
+  })
+
+  // scenario: RealtimeClient.connection / state transitions / start() against a reachable gateway
+  it('goes idle, connecting, live when started against a reachable gateway', async () => {
+    const server = await startServer()
+    const { client, statuses } = setup(server)
+    expect(client.getStatus()).toBe('idle')
+    await live(client)
+    expect(statuses).toEqual(['connecting', 'live'])
+  })
+
+  // scenario: RealtimeClient.connection / state transitions / live, the connection drops
+  it('reports reconnecting from the moment the connection dropped', async () => {
+    const server = await startServer()
+    const { client } = setup(server)
+    await live(client)
+    const liveSince = client.getStatusSince().getTime()
+    let seen: { since: number; at: number } | undefined
+    client.onStatus(status => {
+      if (status === 'reconnecting' && !seen) {
+        seen = { since: client.getStatusSince().getTime(), at: Date.now() }
+      }
+    })
+    await sleep(5)
+    const droppedAt = Date.now()
+    server.last().conn.close()
+    await vi.waitFor(() => expect(seen).toBeDefined())
+    expect(seen?.since).toBeGreaterThan(liveSince)
+    expect(seen?.since).toBeGreaterThanOrEqual(droppedAt)
+    expect(seen?.since).toBeLessThanOrEqual(seen?.at ?? 0)
+    await vi.waitFor(() => expect(client.getStatus()).toBe('live'), { timeout: 5000 })
+  })
+
+  // scenario: RealtimeClient.connection / boundaries / a connect that succeeds on the very first attempt
+  it('invalidates no query on a clean first connect', async () => {
+    const server = await startServer()
+    const { client, queryClient } = setup(server)
+    const usersKey = ['get', '/users', {}]
+    const cachedKey = ['get', '/roles', {}]
+    const users = observe(queryClient, usersKey)
+    await queryClient.fetchQuery({ queryKey: cachedKey, queryFn: async () => 1 })
+    await loaded(users)
+    await live(client)
+    await vi.waitFor(() => expect(server.joins).toHaveLength(1))
+    await sleep(150)
+    expect(users.calls).toBe(1)
+    expect(queryClient.getQueryState(usersKey)?.isInvalidated).toBe(false)
+    expect(queryClient.getQueryState(cachedKey)?.isInvalidated).toBe(false)
+  })
+
+  // scenario: RealtimeClient.connection / edge cases / a connect that is not the first
+  it('refetches every observed query once on a reconnect, past the event throttle', async () => {
+    const server = await startServer()
+    const { client, queryClient } = setup(server, { throttleMs: 60000 })
+    const users = observe(queryClient, ['get', '/users', {}])
+    const optedOut = observe(queryClient, ['get', '/work-centers', {}], { realtime: false })
+    const other = observe(queryClient, ['get', '/reports', {}])
+    await loaded(users, optedOut, other)
+    await live(client)
+    // a refetch for this event opens a throttle window of a minute on the users query
+    server.io.emit('user.updated', { userId: 'u1' })
+    await vi.waitFor(() => expect(users.calls).toBe(2))
+
+    server.last().conn.close()
+    await vi.waitFor(() => expect(server.sockets).toHaveLength(2), { timeout: 5000 })
+    await vi.waitFor(() => {
+      expect(users.calls).toBe(3)
+      expect(optedOut.calls).toBe(2)
+      expect(other.calls).toBe(2)
+    })
+    await sleep(150)
+    expect([users.calls, optedOut.calls, other.calls]).toEqual([3, 2, 2])
+  })
+
+  // scenario: RealtimeClient.connection / edge cases / connect_error auth.unavailable
+  it('tries again after retryDelayMs when the gateway answers auth.unavailable', async () => {
+    const attempts: number[] = []
+    const server = await startServer({
+      reject: attempt => {
+        attempts.push(Date.now())
+        return attempt === 1 ? 'auth.unavailable' : undefined
+      },
+    })
+    const { client } = setup(server, { retryDelayMs: 300 })
+    client.start()
+    await vi.waitFor(() => expect(client.getStatus()).toBe('unavailable'))
+    await sleep(150)
+    expect(server.handshakes).toHaveLength(1)
+    await vi.waitFor(() => expect(client.getStatus()).toBe('live'), { timeout: 3000 })
+    expect(server.handshakes).toHaveLength(2)
+    expect((attempts[1] ?? 0) - (attempts[0] ?? 0)).toBeGreaterThanOrEqual(300)
   })
 })

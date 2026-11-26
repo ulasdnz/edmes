@@ -1,6 +1,9 @@
 import type { IUser } from './user.model.js'
 
-export type UserResponse = Omit<IUser, 'password' | 'restore'>
+export type UserResponse = Omit<
+  IUser,
+  'password' | 'restore' | 'failedLoginAttempts' | 'lastFailedLoginAt'
+>
 
 export interface AuthResponse {
   user: UserResponse
