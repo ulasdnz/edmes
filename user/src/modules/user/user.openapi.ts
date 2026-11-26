@@ -1,3 +1,4 @@
+import { paginationMetaSchema } from '@mes/core/pagination'
 import { z } from 'zod'
 import type { ZodOpenApiPathsObject } from 'zod-openapi'
 import { securityRequirement } from '../../lib/openapi/setup.js'
@@ -11,6 +12,42 @@ import {
   userIdParamSchema,
   userListSchema,
 } from './user.validators.js'
+
+const userResponseSchema = z.object({
+  _id: z.string(),
+  username: z.string(),
+  email: z.string(),
+  name: z.string(),
+  surname: z.string(),
+  roles: z.array(z.string()),
+  gender: z.enum(['male', 'female', 'other']).optional(),
+  countryCode: z.string().optional(),
+  birthDate: z.string().optional(),
+  photoUrl: z.string().nullable().optional(),
+  language: z.enum(['en', 'tr']),
+  personalNumber: z.string().nullable().optional(),
+  departmentId: z.string().nullable().optional(),
+  workCenterIds: z.array(z.string()),
+  specialities: z.array(z.string()),
+  defaultDashboardId: z.string().nullable().optional(),
+  props: z.record(z.string(), z.string()),
+  isActivated: z.boolean(),
+  isActiveDirectoryUser: z.boolean(),
+  passwordChangedAt: z.string().optional(),
+  mustChangePassword: z.boolean(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+})
+
+const populatedRoleSchema = z.object({
+  _id: z.string(),
+  name: z.string(),
+  description: z.string().nullable().optional(),
+})
+
+const userWithRolesSchema = userResponseSchema.extend({
+  roles: z.array(z.union([z.string(), populatedRoleSchema])),
+})
 
 export const userPaths: ZodOpenApiPathsObject = {
   // ── Auth (public, no auth) ──────────────────────────────────────────────────
@@ -38,7 +75,22 @@ export const userPaths: ZodOpenApiPathsObject = {
         content: { 'application/json': { schema: loginSchema } },
       },
       responses: {
-        '200': { description: 'Login successful, returns JWT token' },
+        '200': {
+          description: 'Login successful, returns JWT token',
+          content: {
+            'application/json': {
+              schema: z.object({
+                data: z.object({
+                  user: userResponseSchema.extend({
+                    failedLoginAttempts: z.number(),
+                    lastFailedLoginAt: z.string().nullable().optional(),
+                  }),
+                  token: z.string(),
+                }),
+              }),
+            },
+          },
+        },
         '401': { description: 'Invalid credentials' },
       },
     },
@@ -51,7 +103,21 @@ export const userPaths: ZodOpenApiPathsObject = {
       security: securityRequirement,
       summary: 'Get current authenticated user profile',
       responses: {
-        '200': { description: 'User profile data with runtime plant context metadata' },
+        '200': {
+          description: 'User profile data with runtime plant context metadata and permissions',
+          content: {
+            'application/json': {
+              schema: z.object({
+                data: userResponseSchema,
+                meta: z.object({
+                  plantTimezone: z.string(),
+                  serverTime: z.string(),
+                  permissions: z.array(z.string()),
+                }),
+              }),
+            },
+          },
+        },
         '401': { description: 'Unauthorized' },
       },
     },
@@ -84,7 +150,18 @@ export const userPaths: ZodOpenApiPathsObject = {
       summary: 'List users with pagination, search, and filtering',
       requestParams: { query: userListSchema },
       responses: {
-        '200': { description: 'Paginated list of users' },
+        '200': {
+          description:
+            'Paginated list of users; roles hold ids, or { _id, name, description } with ?populate=roles',
+          content: {
+            'application/json': {
+              schema: z.object({
+                data: z.array(userWithRolesSchema),
+                pagination: paginationMetaSchema,
+              }),
+            },
+          },
+        },
         '400': { description: 'Invalid query parameters' },
         '403': { description: 'Forbidden — missing readUsers permission' },
       },
@@ -111,7 +188,10 @@ export const userPaths: ZodOpenApiPathsObject = {
       summary: 'Get user by ID (requires readUsers permission)',
       requestParams: { path: userIdParamSchema },
       responses: {
-        '200': { description: 'User data' },
+        '200': {
+          description: 'User data',
+          content: { 'application/json': { schema: z.object({ data: userResponseSchema }) } },
+        },
         '403': { description: 'Forbidden' },
         '404': { description: 'User not found' },
       },
@@ -216,7 +296,16 @@ export const userPaths: ZodOpenApiPathsObject = {
       summary: 'Get user by ID with populated roles (requires readUsers permission)',
       requestParams: { path: userIdParamSchema },
       responses: {
-        '200': { description: 'User data with populated roles' },
+        '200': {
+          description: 'User data with populated roles',
+          content: {
+            'application/json': {
+              schema: z.object({
+                data: userResponseSchema.extend({ roles: z.array(populatedRoleSchema) }),
+              }),
+            },
+          },
+        },
         '403': { description: 'Forbidden' },
         '404': { description: 'User not found' },
       },

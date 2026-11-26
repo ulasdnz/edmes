@@ -10,7 +10,7 @@ import { config } from '../../config/index.js'
 import { SYSTEM_IDENTITY } from '../../constants/identity.js'
 import { sharedCacheWrapDedup } from '../../lib/cache.js'
 import { httpLoggerMiddleware, logger, morganMiddleware } from '../../lib/logger.js'
-import { generateOpenApiDocument } from '../../lib/openapi/setup.js'
+import { openApiDocument } from '../../lib/openapi/document.js'
 import { redisClient } from '../../lib/redis.js'
 import runModeMonitorsRoutes from '../../modules/internal/run-mode-monitors.routes.js'
 import operatorRoutes from '../../modules/operators/operators.routes.js'
@@ -58,21 +58,16 @@ export const initExpress = async () => {
   app.disable('etag')
 
   // ─── API Documentation ──────────────────────────────────────────────────────
-  const combinedPaths = {
-    // OpenAPI paths will be added here as modules are implemented
-  }
-  const openApiSpec = generateOpenApiDocument(combinedPaths)
-
   // Always expose the raw JSON schema for AI Agents (MCP) / FastMCP integrations
   app.get('/docs.json', (_req: Request, res: Response) => {
-    res.json(openApiSpec)
+    res.json(openApiDocument)
   })
 
   // Only expose the human-readable Swagger HTML UI in non-production environments
   if (config.NODE_ENV !== 'production') {
     try {
       const { default: swaggerUi } = await import('swagger-ui-express')
-      app.use('/docs', swaggerUi.serve, swaggerUi.setup(openApiSpec))
+      app.use('/docs', swaggerUi.serve, swaggerUi.setup(openApiDocument))
     } catch (_error) {
       logger.debug('Swagger UI not available — swagger-ui-express is not installed', {
         event: 'server.swagger.unavailable',

@@ -10,15 +10,12 @@ import { config } from '../../config/index.js'
 import { SYSTEM_IDENTITY } from '../../constants/identity.js'
 import { sharedCacheWrapDedup } from '../../lib/cache.js'
 import { httpLoggerMiddleware, logger, morganMiddleware } from '../../lib/logger.js'
-import { generateOpenApiDocument } from '../../lib/openapi/setup.js'
+import { openApiDocument } from '../../lib/openapi/document.js'
 import { redisClient } from '../../lib/redis.js'
-import { rolePaths } from '../../modules/role/role.openapi.js'
 import roleRoutes from '../../modules/role/role.routes.js'
-import { specialityPaths } from '../../modules/speciality/speciality.openapi.js'
 import specialityRoutes from '../../modules/speciality/speciality.routes.js'
 import authRoutes from '../../modules/user/auth.routes.js'
 import userInternalRoutes from '../../modules/user/user.internal.routes.js'
-import { userPaths } from '../../modules/user/user.openapi.js'
 import userRoutes from '../../modules/user/user.routes.js'
 import { errorHandler } from '../middleware/error-handler.js'
 import { contextMiddleware, setUserId } from '../middleware/request-context.js'
@@ -62,23 +59,16 @@ export const initExpress = async () => {
   app.disable('etag')
 
   // ─── API Documentation ──────────────────────────────────────────────────────
-  const combinedPaths = {
-    ...userPaths,
-    ...rolePaths,
-    ...specialityPaths,
-  }
-  const openApiSpec = generateOpenApiDocument(combinedPaths)
-
   // Always expose the raw JSON schema for AI Agents (MCP) / FastMCP integrations
   app.get('/docs.json', (_req: Request, res: Response) => {
-    res.json(openApiSpec)
+    res.json(openApiDocument)
   })
 
   // Only expose the human-readable Swagger HTML UI in non-production environments
   if (config.NODE_ENV !== 'production') {
     try {
       const { default: swaggerUi } = await import('swagger-ui-express')
-      app.use('/docs', swaggerUi.serve, swaggerUi.setup(openApiSpec))
+      app.use('/docs', swaggerUi.serve, swaggerUi.setup(openApiDocument))
     } catch (error) {
       logger.debug('Swagger UI not available — swagger-ui-express is not installed', {
         event: 'server.swagger.unavailable',

@@ -75,6 +75,7 @@ export async function getUser(
     meta: {
       plantTimezone: config.PLANT_TIMEZONE,
       serverTime: new Date().toISOString(),
+      permissions: req.user!.permissions,
     },
   })
 }

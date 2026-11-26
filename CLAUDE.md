@@ -31,7 +31,13 @@ pnpm format                        # format only
 pnpm test                          # all tests via turbo
 pnpm --filter user-service test    # user service unit tests
 pnpm test:contract                 # contract tests (user, work-center, production, performance, telemetry)
+pnpm openapi:emit                  # regenerate packages/api-client/openapi/*.json from the services
+pnpm --filter @mes/api-client generate  # regenerate the TypeScript types from those documents
 pnpm test:e2e                      # builds, then runs the services against real MongoDB, Redis and MQTT
+pnpm test:ui-e2e                   # starts the Compose stack, then both frontends in Chromium (Playwright)
+pnpm --filter ui-e2e exec playwright test <file>  # one UI end-to-end spec against the running stack
+pnpm --filter web-app dev          # web app on :5173 (proxies /api, /uploads, /socket.io to localhost)
+pnpm --filter operator-panel dev   # operator panel (same proxy)
 cd user && pnpm test:watch         # watch mode
 docker compose up -d --build       # full stack
 docker compose up -d --build user  # rebuild user service only
@@ -63,11 +69,17 @@ testing → source-only (no build, vitest transpiles directly)
 | `@mes/openapi` | Zod-OpenAPI document generation |
 | `@mes/privileges` | Central RBAC privilege registry shared by all services and system-admin bootstrap |
 | `@mes/testing` | Shared test utilities (source-only, exports `src/index.ts` directly) |
+| `@mes/api-client` | Frontend, source-only: types generated from the services' OpenAPI documents, `ApiError` and `createApiClient` (openapi-fetch + openapi-react-query). Extends `tsconfig.web.json`; not a project reference |
 
 ### Service Apps
 
 - `user/` — User, Role, Speciality CRUD + auth. Express 5, Mongoose 9, Zod 4.
 - New services go in root directory (workspace configured). Follow `user/` structure exactly.
+
+### Frontend Apps
+
+- `apps/web/` (base `/`) and `apps/operator/` (base `/operator/`) — React + Vite; `apps/vite.shared.ts` holds their shared config. They use `@mes/api-client`, `@mes/frontend`, `@mes/ui`.
+- One image (`apps/Dockerfile`, `edmes-frontend`) serves both through nginx on 8080. Traefik routes every path no service router names to it (priority 1); `/api`, `/internal`, `/socket.io`, `/docs` and `/uploads` answer 503 with a JSON error there (a stopped service's router is gone, so the catch-all answers; clients treat it like any 5xx), never the SPA's HTML.
 
 ### Infrastructure
 
@@ -133,7 +145,7 @@ Standard REST: POST (create), PUT (full replace), PATCH (partial update), DELETE
 
 ### TypeScript / Imports
 
-- All packages: `"type": "module"` + NodeNext — **imports MUST use `.js` extensions** (even for `.ts` source).
+- All Node packages and services: `"type": "module"` + NodeNext — **imports MUST use `.js` extensions** (even for `.ts` source). Browser workspaces (`packages/api-client` and the frontend apps) extend `tsconfig.web.json` (Bundler resolution) and use extensionless imports.
 - Shared packages: `composite: true` for project references.
 - Service apps: extend `tsconfig.app.json` (`composite: false`, `verbatimModuleSyntax`).
 
@@ -141,7 +153,7 @@ Standard REST: POST (create), PUT (full replace), PATCH (partial update), DELETE
 
 - `PRIVILEGES` in `@mes/privileges` is the **single source of truth** for all assignable permission codes. Every permission used in `requirePermission()` calls must exist there.
 - When adding a new module or feature, add its permission codes to `@mes/privileges` **first**. The system admin role auto-syncs to include all `PRIVILEGES` on startup.
-- Naming convention: camelCase verb+entity — `readEntity`, `writeEntity`, `createEntity`, `deleteEntity`, `accessEntityScreen`.
+- Naming convention: camelCase verb+entity — `readEntity`, `writeEntity`, `createEntity`, `deleteEntity`. Application access is two codes, `accessWebApp` and `accessOperatorPanel`; there are no per-screen codes.
 - `requirePermission('code')` from `@mes/auth` enforces permissions at route level; it checks string inclusion against the user's resolved permission array.
 - `SYSTEM_IDENTITY` (`'ffffffffffffffffffffffff'`) gets wildcard `['*']` for internal service-to-service calls. Real users (including the bootstrapped system admin) receive explicit permission codes.
 - The system admin role and user are protected from deletion and renaming via API guards.
@@ -210,6 +222,7 @@ Types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`
 
 - **Unit tests**: Vitest + `testcontainers` (real MongoDB in Docker via `@testcontainers/mongodb`). Files: `src/**/*.{test,spec}.ts`. One MongoDB per package run: the Vitest config's `globalSetup: ['@mes/testing/mongo-server']` starts it, and `setupMongoDatabase()` from `@mes/testing` (in each service's `src/test/setup.ts`, or in the test file) gives every test file a database of its own on it. A test that stops or restarts MongoDB starts its own container instead.
 - **Contract tests**: Vitest + `testcontainers`. Config: `vitest.contract.config.ts`.
+- **UI end-to-end tests** (`apps/ui-e2e`, `pnpm test:ui-e2e`): Playwright drives the web app and the operator panel in Chromium against the whole stack that `docker compose up -d --build --wait` starts at `E2E_BASE_URL` (default `http://localhost`). `src/seed.ts` signs in as the system admin from the root `.env` and creates, through the public API, uniquely named users, a role and a work center, so a run works on a stack that holds earlier data and changes nothing it did not create. The outage spec stops and starts the `user` service. Traces are always on; the teardown writes every service's log to `apps/ui-e2e/logs/`. The package's script is `test:ui-e2e`, not `test`, so `pnpm test` never needs the stack.
 - **Why testcontainers (not `mongodb-memory-server`)**: MongoDB has no official Alpine binaries, so `mongodb-memory-server` cannot pull a binary in our Alpine-based Docker images without manual `MONGOMS_SYSTEM_BINARY` workarounds. Testcontainers runs the MongoDB image `docker-compose.yml` pins, read through `MONGO_IMAGE` in `@mes/testing`, for unit, contract and e2e tests, which keeps test infrastructure identical to production and CI.
 - `@mes/testing` provides shared utilities (source-only, no build needed).
 
@@ -229,7 +242,7 @@ Types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`
 ## Docker
 
 - Two-phase build: `tsc -b` for packages, then service-level `tsc`.
-- Releases: a `vX.Y.Z` tag runs `.github/workflows/release.yml`, which pushes the six images to GHCR and attaches the install package. `install.sh` installs and upgrades a server; see `docs/operations/installation.md`.
+- Releases: a `vX.Y.Z` tag runs `.github/workflows/release.yml`, which pushes the seven images to GHCR and attaches the install package. `install.sh` installs and upgrades a server; see `docs/operations/installation.md`.
 - `.tsbuildinfo` excluded via `.dockerignore`.
 - `node-linker=hoisted` in Docker `.npmrc` for flat module resolution.
 - Named volumes persist all stateful data: MongoDB, Redis, user uploads, Loki, Grafana, Alloy positions.

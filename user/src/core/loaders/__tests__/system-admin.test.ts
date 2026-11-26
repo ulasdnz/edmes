@@ -4,6 +4,7 @@ import { config } from '../../../config/index.js'
 import { SYSTEM_ADMIN_ROLE_NAME, SYSTEM_ADMIN_USERNAME } from '../../../constants/system-admin.js'
 import Role from '../../../modules/role/role.model.js'
 import User from '../../../modules/user/user.model.js'
+import { ensureDefaultRoles } from '../default-roles.js'
 import { initLoaders } from '../index.js'
 
 vi.mock('../mongoose.js', () => ({
@@ -187,6 +188,26 @@ describe('system admin bootstrap', () => {
 
     const userAfter = await User.findOne({ username: systemUsername }).select('+password').lean()
     expect(userAfter!.password).toBe(passwordBefore)
+  })
+
+  it('creates the ready-made roles on the first startup and not again once deleted', async () => {
+    await initLoaders()
+    expect(await Role.countDocuments({ key: { $exists: true } })).toBe(5)
+
+    await Role.deleteOne({ key: 'quality' })
+    await initLoaders()
+    expect(await Role.exists({ key: 'quality' })).toBeNull()
+  })
+
+  it('finishes the ready-made roles when the first startup was interrupted before the admin role', async () => {
+    await ensureDefaultRoles({ firstInstall: true })
+    await Role.deleteMany({ key: { $in: ['quality', 'operator', 'viewer'] } })
+    expect(await Role.exists({ name: systemRoleName })).toBeNull()
+
+    await initLoaders()
+
+    expect(await Role.countDocuments({ key: { $exists: true } })).toBe(5)
+    expect(await Role.exists({ name: systemRoleName })).toBeTruthy()
   })
 
   describe('password change at the first sign-in', () => {

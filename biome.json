@@ -13,6 +13,7 @@
     "indentWidth": 2,
     "lineWidth": 100
   },
+  "css": { "parser": { "tailwindDirectives": true } },
   "javascript": {
     "formatter": {
       "quoteStyle": "single",
@@ -34,7 +35,13 @@
       "!**/dist",
       "!**/node_modules",
       "!**/coverage",
-      "!**/.husky"
+      "!**/.husky",
+      "!packages/api-client/openapi",
+      "!packages/api-client/src/generated",
+      "!**/routeTree.gen.ts",
+      "!apps/ui-e2e/playwright-report",
+      "!apps/ui-e2e/test-results",
+      "!apps/ui-e2e/logs"
     ]
   }
 }

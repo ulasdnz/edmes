@@ -1,5 +1,7 @@
 packages:
   - packages/*
+  # `apps` itself is a package so that apps/vite.shared.ts resolves vite and its plugins
+  - apps
   - apps/*
   - user
   - work-center
@@ -27,3 +29,34 @@ injectWorkspacePackages: true
 # A version becomes installable a week after its release (minutes), time for a compromised one to
 # be caught; the same wait Dependabot applies. An urgent fix goes in minimumReleaseAgeExclude.
 minimumReleaseAge: 10080
+
+# Versions the frontend workspaces share; each one lists `catalog:` instead of a range.
+catalog:
+  react: ^19.3.0
+  react-dom: ^19.3.0
+  '@types/react': ^19.3.0
+  '@types/react-dom': ^19.3.0
+  '@tanstack/react-query': ^5.108.0
+  '@tanstack/react-router': ^1.170.0
+  '@tanstack/react-table': ^9.3.0
+  '@tanstack/react-form': ^1.33.0
+  zod: ^4.6.7
+  zustand: ^5.1.0
+  vite: ^8.3.0
+  vitest: ^5.1.0
+  '@vitest/browser-playwright': ^5.1.0
+  # The version @vitest/browser-playwright resolves, so the UI end-to-end tests and the browser
+  # tests share one Playwright and one set of browsers
+  '@playwright/test': 1.65.1
+  vitest-browser-react: ^2.3.0
+  tailwindcss: ^4.3.0
+  '@tailwindcss/vite': ^4.3.0
+  '@vitejs/plugin-react': ^6.0.0
+  '@rolldown/plugin-babel': ^0.3.0
+  '@babel/core': ^7.29.0
+  babel-plugin-react-compiler: ^1.0.0
+  '@tanstack/router-plugin': ^1.169.0
+  i18next: ^26.7.2
+  react-i18next: 16.6.5
+  lucide-react: ^1.75.0
+  sonner: ^2.0.8

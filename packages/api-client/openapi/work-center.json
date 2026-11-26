@@ -1,0 +1,766 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Work Center Service API",
+    "version": "1.0.0",
+    "description": "Work Center microservice — Work center management, schedules, operator check-in, action state."
+  },
+  "servers": [
+    {
+      "url": "/api/v1",
+      "description": "Public / Protected API"
+    },
+    {
+      "url": "/internal/v1",
+      "description": "Internal (inter-service)"
+    }
+  ],
+  "security": [
+    {
+      "BearerAuth": []
+    }
+  ],
+  "paths": {
+    "/work-centers": {
+      "get": {
+        "tags": [
+          "Work Centers"
+        ],
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "List work centers with pagination and filtering (requires readWorkCenters)",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "default": 1,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 20,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "schema": {
+              "type": "string",
+              "maxLength": 100
+            }
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "physical",
+                "virtual"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "active",
+                "archived"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "parentWorkCenterId",
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of work centers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "_id": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "physical",
+                              "virtual"
+                            ]
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "active",
+                              "archived"
+                            ]
+                          },
+                          "parentWorkCenterId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "props": {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string"
+                            },
+                            "additionalProperties": {
+                              "type": "string"
+                            }
+                          },
+                          "shiftIds": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "productivityMode": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "count_based",
+                                  "speed_based"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "tagBindings": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "productionCounterTagId": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "runModeTagId": {
+                                    "type": "string"
+                                  },
+                                  "speedTagId": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "productionCounterTagId",
+                                  "runModeTagId",
+                                  "speedTagId"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "metricComposition": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "availability": {
+                                    "type": "object",
+                                    "properties": {
+                                      "rule": {
+                                        "type": "string",
+                                        "enum": [
+                                          "primary_work_center",
+                                          "average",
+                                          "weighted"
+                                        ]
+                                      },
+                                      "contributors": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "workCenterId": {
+                                              "type": "string"
+                                            },
+                                            "weight": {
+                                              "type": [
+                                                "number",
+                                                "null"
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "workCenterId",
+                                            "weight"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      }
+                                    },
+                                    "required": [
+                                      "rule",
+                                      "contributors"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "productivity": {
+                                    "type": "object",
+                                    "properties": {
+                                      "rule": {
+                                        "type": "string",
+                                        "enum": [
+                                          "primary_work_center",
+                                          "average",
+                                          "weighted"
+                                        ]
+                                      },
+                                      "contributors": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "workCenterId": {
+                                              "type": "string"
+                                            },
+                                            "weight": {
+                                              "type": [
+                                                "number",
+                                                "null"
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "workCenterId",
+                                            "weight"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      }
+                                    },
+                                    "required": [
+                                      "rule",
+                                      "contributors"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "quality": {
+                                    "type": "object",
+                                    "properties": {
+                                      "rule": {
+                                        "type": "string",
+                                        "enum": [
+                                          "primary_work_center",
+                                          "average",
+                                          "weighted"
+                                        ]
+                                      },
+                                      "contributors": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "workCenterId": {
+                                              "type": "string"
+                                            },
+                                            "weight": {
+                                              "type": [
+                                                "number",
+                                                "null"
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "workCenterId",
+                                            "weight"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      }
+                                    },
+                                    "required": [
+                                      "rule",
+                                      "contributors"
+                                    ],
+                                    "additionalProperties": false
+                                  }
+                                },
+                                "required": [
+                                  "availability",
+                                  "productivity",
+                                  "quality"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "createdBy": {
+                            "type": "string"
+                          },
+                          "updatedBy": {
+                            "type": "string"
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          },
+                          "updatedAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "_id",
+                          "code",
+                          "name",
+                          "description",
+                          "type",
+                          "status",
+                          "parentWorkCenterId",
+                          "props",
+                          "shiftIds",
+                          "productivityMode",
+                          "tagBindings",
+                          "metricComposition",
+                          "createdBy",
+                          "updatedBy",
+                          "createdAt",
+                          "updatedAt"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "pagination": {
+                      "type": "object",
+                      "properties": {
+                        "page": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "limit": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "total": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "totalPages": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "page",
+                        "limit",
+                        "total",
+                        "totalPages"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "pagination"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameters"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      }
+    },
+    "/work-centers/{id}": {
+      "get": {
+        "tags": [
+          "Work Centers"
+        ],
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Get work center by ID (requires readWorkCenters)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Work center data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "_id": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "description": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "physical",
+                            "virtual"
+                          ]
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "active",
+                            "archived"
+                          ]
+                        },
+                        "parentWorkCenterId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "props": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {
+                            "type": "string"
+                          }
+                        },
+                        "shiftIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "productivityMode": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "count_based",
+                                "speed_based"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "tagBindings": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "productionCounterTagId": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                },
+                                "runModeTagId": {
+                                  "type": "string"
+                                },
+                                "speedTagId": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "productionCounterTagId",
+                                "runModeTagId",
+                                "speedTagId"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "metricComposition": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "availability": {
+                                  "type": "object",
+                                  "properties": {
+                                    "rule": {
+                                      "type": "string",
+                                      "enum": [
+                                        "primary_work_center",
+                                        "average",
+                                        "weighted"
+                                      ]
+                                    },
+                                    "contributors": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "workCenterId": {
+                                            "type": "string"
+                                          },
+                                          "weight": {
+                                            "type": [
+                                              "number",
+                                              "null"
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "workCenterId",
+                                          "weight"
+                                        ],
+                                        "additionalProperties": false
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "rule",
+                                    "contributors"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                "productivity": {
+                                  "type": "object",
+                                  "properties": {
+                                    "rule": {
+                                      "type": "string",
+                                      "enum": [
+                                        "primary_work_center",
+                                        "average",
+                                        "weighted"
+                                      ]
+                                    },
+                                    "contributors": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "workCenterId": {
+                                            "type": "string"
+                                          },
+                                          "weight": {
+                                            "type": [
+                                              "number",
+                                              "null"
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "workCenterId",
+                                          "weight"
+                                        ],
+                                        "additionalProperties": false
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "rule",
+                                    "contributors"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                "quality": {
+                                  "type": "object",
+                                  "properties": {
+                                    "rule": {
+                                      "type": "string",
+                                      "enum": [
+                                        "primary_work_center",
+                                        "average",
+                                        "weighted"
+                                      ]
+                                    },
+                                    "contributors": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "workCenterId": {
+                                            "type": "string"
+                                          },
+                                          "weight": {
+                                            "type": [
+                                              "number",
+                                              "null"
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "workCenterId",
+                                          "weight"
+                                        ],
+                                        "additionalProperties": false
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "rule",
+                                    "contributors"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              },
+                              "required": [
+                                "availability",
+                                "productivity",
+                                "quality"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "createdBy": {
+                          "type": "string"
+                        },
+                        "updatedBy": {
+                          "type": "string"
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "_id",
+                        "code",
+                        "name",
+                        "description",
+                        "type",
+                        "status",
+                        "parentWorkCenterId",
+                        "props",
+                        "shiftIds",
+                        "productivityMode",
+                        "tagBindings",
+                        "metricComposition",
+                        "createdBy",
+                        "updatedBy",
+                        "createdAt",
+                        "updatedAt"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Work center not found"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "JWT authentication token"
+      }
+    }
+  }
+}

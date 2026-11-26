@@ -123,6 +123,7 @@ host=${host:-this-server}
 echo
 echo "EDMES $version is running"
 echo "  Web and API:  http://$host/"
+echo "  Operator:     http://$host/operator/"
 echo "  Grafana:      http://$host:3001/"
 echo "  MQTT broker:  $host:1883"
 echo "  Settings:     $(pwd)/.env (keep it: an upgrade reuses its secrets)"

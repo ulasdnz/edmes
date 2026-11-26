@@ -40,6 +40,9 @@ uploads/
 
 # Testing
 coverage/
+apps/ui-e2e/logs
+playwright-report
+test-results
 
 # IDEs
 .vscode/
