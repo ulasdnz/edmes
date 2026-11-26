@@ -559,10 +559,10 @@ There is no check like "can this admin modify this specific user?" — if you ha
                       │     ├── destination: 'uploads/'
                       │     └── filename: UUID + original extension
                       │
-                      ├── Filter: image/* MIME only
-                      │     └── non-image → Error('upload.only_images')
+                      ├── Content check: PNG or JPG by first bytes
+                      │     └── anything else → 400 'upload.only_images'
                       │
-                      └── Limits: 5 MB max
+                      └── Limits: 2 MB max → 400 'upload.file_too_large'
 ```
 
 ### Old File Cleanup

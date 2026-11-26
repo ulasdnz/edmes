@@ -253,15 +253,16 @@ Upload profile photo. Multipart form data.
 | **Status** | `200 OK` |
 
 - Field name: `photo`
-- Accepts: `image/*` MIME types only
-- Max size: 5 MB
-- Storage: `uploads/` directory, UUID filename, original extension preserved
+- Accepts: PNG or JPG, known by the file's first bytes (not the name or MIME type the client sends)
+- Max size: 2 MB
+- Storage: `uploads/` directory, UUID filename, extension of the detected format
 - Previous avatar file deleted from disk on update (best-effort)
 
 | Status | Key | When |
 |--------|-----|------|
 | 400 | `user.avatar_required` | No file in request |
-| 500 | `upload.only_images` | Non-image file type |
+| 400 | `upload.only_images` | Not a PNG or JPG image |
+| 400 | `upload.file_too_large` | Over 2 MB |
 
 ### DELETE /api/v1/users/me/avatar
 

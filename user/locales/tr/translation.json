@@ -50,8 +50,8 @@
     "password_required": "Şifre gereklidir"
   },
   "upload": {
-    "only_images": "Yalnızca JPEG, PNG veya WebP resim yükleyebilirsiniz",
-    "file_too_large": "Dosya en fazla 5 MB olabilir",
+    "only_images": "Yalnızca PNG veya JPG resim yükleyebilirsiniz",
+    "file_too_large": "Dosya en fazla 2 MB olabilir",
     "invalid_file": "Dosya istekten okunamadı"
   },
   "success": {

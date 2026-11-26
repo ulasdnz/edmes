@@ -295,7 +295,7 @@ export const userPaths: ZodOpenApiPathsObject = {
             },
           },
         },
-        '400': { description: 'No file, not a JPEG, PNG or WebP image, or over 5 MB' },
+        '400': { description: 'No file, not a PNG or JPG image, or over 2 MB' },
       },
     },
     delete: {
