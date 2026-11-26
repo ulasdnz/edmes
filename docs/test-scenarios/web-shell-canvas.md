@@ -78,7 +78,7 @@ Scope: the web app's shell brought in line with the canvas: the logo, the sign-i
 > target: apps/web/src/features/users/users-table.browser.test.tsx
 
 ### happy path
-- an active user's Active cell shows a status pill "Active" with a check mark; an inactive user's shows "Inactive" with a cross (Turkish "Aktif" / "Pasif")
+- an active user's Active cell shows a status pill "Active" with a check mark; an inactive user's shows "Inactive" with a cross (Turkish "Etkin" / "Etkin değil", the words the app already uses)
 
 ### constraints
 - the two pills differ by mark and by colour, not colour alone (the mark is an icon inside the pill)
@@ -89,7 +89,7 @@ Scope: the web app's shell brought in line with the canvas: the logo, the sign-i
 > target: apps/web/src/features/users/users-page.browser.test.tsx
 
 ### happy path
-- counts 23 total, 21 active, 1 without a work center → the subtitle reads "23 users · 21 active · 1 without any work center"; in Turkish "23 kullanıcı · 21 aktif · 1 iş merkezi olmayan"
+- counts 23 total, 21 active, 1 without a work center → the subtitle reads "23 users · 21 active · 1 without any work center"; in Turkish "23 kullanıcı · 21 etkin · 1 iş merkezi olmayan"
 
 ### boundaries
 - 0 without a work center → that part is left out: "23 users · 21 active"
