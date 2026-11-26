@@ -1,4 +1,6 @@
 import { useCan } from '@mes/frontend/core'
+import markUrl from '@mes/ui/brand/mark.png'
+import wordmarkUrl from '@mes/ui/brand/wordmark.png'
 import { cn } from '@mes/ui/lib/utils'
 import { Link, useRouterState } from '@tanstack/react-router'
 import { ChevronDownIcon, PanelLeftCloseIcon, PanelLeftOpenIcon } from 'lucide-react'
@@ -62,16 +64,17 @@ export function AppSidebar(props: { userId: string }): ReactNode {
         rail ? 'w-16 items-center gap-1.5 pb-4' : 'w-58 gap-px px-2.5 pb-5',
       )}
     >
-      <div className={cn('flex items-center gap-1.5', rail ? 'flex-col py-2.5' : 'h-14')}>
+      <div className={cn('flex items-center gap-1.5', rail && 'flex-col')}>
         <Link
           to='/'
-          aria-label={t('nav.home')}
+          aria-label={rail ? 'EDMES' : undefined}
           className={cn(
-            'font-display font-bold tracking-[0.06em] text-white',
-            rail ? 'text-[15px]' : 'flex-1 px-2 text-[23px]',
+            'flex h-14 items-center rounded-md outline-none focus-visible:ring-2 focus-visible:ring-accent',
+            !rail && 'min-w-0 flex-1 gap-2.5 px-2',
           )}
         >
-          {rail ? 'ED' : 'EDMES'}
+          <img src={markUrl} alt='' className='block size-9.5 flex-none' />
+          {!rail && <img src={wordmarkUrl} alt='EDMES' className='block h-5 w-auto flex-none' />}
         </Link>
         <button
           type='button'
