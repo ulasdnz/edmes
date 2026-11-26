@@ -20,7 +20,6 @@ export function createI18n(options: {
     },
     initAsync: false,
     interpolation: { escapeValue: false },
-    showSupportNotice: false,
   })
   return instance
 }

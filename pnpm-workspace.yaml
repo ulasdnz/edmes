@@ -56,7 +56,7 @@ catalog:
   '@babel/core': ^7.29.0
   babel-plugin-react-compiler: ^1.0.0
   '@tanstack/router-plugin': ^1.169.0
-  i18next: ^25.8.14
+  i18next: ^26.7.2
   react-i18next: 16.6.5
   lucide-react: ^1.75.0
   sonner: ^2.0.8

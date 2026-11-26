@@ -33,7 +33,7 @@
   },
   "peerDependencies": {
     "express": "^5.0.0",
-    "i18next": "^25.0.0",
+    "i18next": "^26.3.4",
     "mongoose": "^9.0.0",
     "winston": "^3.0.0",
     "zod": "^4.0.0"
@@ -48,7 +48,7 @@
     "@types/express": "^5.0.0",
     "@types/node": "^26.6.5",
     "express": "^5.3.0",
-    "i18next": "^25.0.0",
+    "i18next": "^26.3.4",
     "mongoose": "^9.11.4",
     "typescript": "^5.5.0",
     "vitest": "^4.1.12",
