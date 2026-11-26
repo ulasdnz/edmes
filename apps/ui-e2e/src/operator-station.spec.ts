@@ -114,14 +114,25 @@ test.describe('a new version on the server', () => {
       document.body.append(dialog)
       Object.assign(window, { e2eBeforeReload: true })
     })
+    // The check fires on the fake clock, but its answer arrives in real time: wait for it, then
+    // step the clock, so the idle poll is running before the dialog closes.
+    const versionAnswered = page.waitForResponse(response =>
+      response.url().endsWith('/version.json'),
+    )
     await page.clock.fastForward('05:01')
-    await page.clock.fastForward('00:20')
+    await versionAnswered
+    for (let step = 0; step < 4; step++) await page.clock.fastForward('00:06')
     expect(await page.evaluate(() => 'e2eBeforeReload' in window)).toBe(true)
 
-    const reloaded = page.waitForEvent('load')
+    let reloaded = false
+    page.once('load', () => {
+      reloaded = true
+    })
     await page.evaluate(() => document.getElementById('e2e-open-dialog')?.remove())
-    await page.clock.fastForward('00:06')
-    await reloaded
+    await expect(async () => {
+      if (!reloaded) await page.clock.fastForward('00:06')
+      expect(reloaded).toBe(true)
+    }).toPass({ timeout: 30_000 })
     expect(await page.evaluate(() => 'e2eBeforeReload' in window)).toBe(false)
   })
 })
