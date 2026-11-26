@@ -1,4 +1,5 @@
 import { useAppCore, useConnection, useSession } from '@mes/frontend/core'
+import { myProfileOptions } from '@mes/frontend/data/user/me'
 import { formatInstant } from '@mes/frontend/time'
 import { ConnectionIndicator } from '@mes/ui/components/connection-indicator'
 import {
@@ -8,13 +9,21 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@mes/ui/components/dropdown-menu'
-import { ChevronDownIcon, LogOutIcon } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
+import { ChevronDownIcon, LogOutIcon, UserIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { PlantClock } from './plant-clock'
+import { UserAvatar } from './user-avatar'
 
-function initials(name: string, surname: string): string {
-  return `${name.charAt(0)}${surname.charAt(0)}`.toLocaleUpperCase()
+// The names of the user's roles, once they are read; nothing while they load or fail
+function RoleLine(): ReactNode {
+  const { api } = useAppCore()
+  const profile = useQuery(myProfileOptions(api))
+  const names = profile.data?.roles.map(role => role.name) ?? []
+  if (names.length === 0) return null
+  return <div className='text-[12.5px] text-text-3'>{names.join(', ')}</div>
 }
 
 export function Topbar(): ReactNode {
@@ -52,12 +61,12 @@ export function Topbar(): ReactNode {
             aria-label={t('topbar.userMenu')}
             className='inline-flex h-9 items-center gap-2 rounded-[18px] pr-2 pl-1 text-[13.5px] font-medium text-text outline-none hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent'
           >
-            <span
-              aria-hidden='true'
-              className='inline-flex size-6.5 items-center justify-center rounded-full bg-accent-bg text-[11px] font-semibold text-accent-hover'
-            >
-              {initials(user.name, user.surname)}
-            </span>
+            <UserAvatar
+              name={user.name}
+              surname={user.surname}
+              photoUrl={user.photoUrl}
+              className='size-6.5 text-[11px]'
+            />
             <span>
               {user.name} {user.surname}
             </span>
@@ -68,9 +77,13 @@ export function Topbar(): ReactNode {
               <div className='font-semibold'>
                 {user.name} {user.surname}
               </div>
-              <div className='text-[13px] text-text-3'>{user.email}</div>
+              <RoleLine />
             </div>
             <DropdownMenuSeparator />
+            <DropdownMenuItem render={<Link to='/profile' />}>
+              <UserIcon aria-hidden='true' />
+              {t('topbar.profile')}
+            </DropdownMenuItem>
             <DropdownMenuItem onClick={session.logout}>
               <LogOutIcon aria-hidden='true' />
               {t('topbar.logOut')}
