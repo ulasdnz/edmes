@@ -425,9 +425,10 @@ test.describe('the shell of the web app', () => {
   test('a list that fails to load shows the error with its trace id', async ({ page, seed }) => {
     await signInToWeb(page, seed.admin)
     await expect(usersTable(page)).toBeVisible()
-    // The next list request asks user-service for more rows than it serves, a real 400
+    // The next list request asks user-service for more rows than it serves, a real 400. The
+    // subtitle's counts (limit=1) are not the list and pass untouched.
     await page.route(
-      /\/api\/v1\/users\?/,
+      url => url.pathname === '/api/v1/users' && url.searchParams.get('limit') !== '1',
       route =>
         route.continue({
           url: route
@@ -480,5 +481,79 @@ test.describe('the shell of the web app', () => {
     await page.reload()
     await expect(usersTable(page)).toBeVisible()
     expect(elsewhere).toEqual([])
+  })
+})
+
+test.describe('the canvas pass of the web shell', () => {
+  // scenario: E2E.webShellCanvas / happy path / sign-in page shows the plant time of the server
+  test('the sign-in page shows the plant time in the stack’s plant time zone', async ({
+    page,
+    request,
+    seed,
+  }) => {
+    const me = await request.get('/api/v1/users/me', {
+      headers: { authorization: `Bearer ${seed.admin.token}` },
+    })
+    const { plantTimezone } = ((await me.json()) as { meta: { plantTimezone: string } }).meta
+    await page.goto('/login')
+
+    const line = page.getByText(/^Plant time \d{2}:\d{2} · /)
+    await expect(line).toHaveText(new RegExp(`^Plant time \\d{2}:\\d{2} · ${plantTimezone}$`))
+    const shown = (await line.innerText()).match(/(\d{2}:\d{2})/)?.[1]
+    const now = Date.now()
+    const plausible = [now - 60_000, now, now + 60_000].map(t => hhmm(new Date(t), plantTimezone))
+    expect(plausible).toContain(shown)
+  })
+
+  // scenario: E2E.webShellCanvas / constraints / [HIGH] before sign-in only GET
+  // /api/v1/auth/plant-time, without a token
+  test('the sign-in page asks only for the plant time, without a token, before sign-in', async ({
+    page,
+  }) => {
+    const asked: { method: string; path: string; authorization: string | undefined }[] = []
+    page.on('request', request => {
+      const url = new URL(request.url())
+      if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/socket.io')) {
+        asked.push({
+          method: request.method(),
+          path: url.pathname,
+          authorization: request.headers().authorization,
+        })
+      }
+    })
+    await page.goto('/login')
+    await expect(page.getByText(/^Plant time \d{2}:\d{2} · /)).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeVisible()
+
+    expect(asked).toEqual([
+      { method: 'GET', path: '/api/v1/auth/plant-time', authorization: undefined },
+    ])
+  })
+
+  // scenario: E2E.webShellCanvas / happy path / users page subtitle equals the API's three counts
+  test('the users page subtitle equals the counts the API answers', async ({
+    page,
+    request,
+    seed,
+  }) => {
+    const total = async (query: string) => {
+      const response = await request.get(`/api/v1/users?${query}`, {
+        headers: { authorization: `Bearer ${seed.admin.token}` },
+      })
+      expect(response.ok()).toBe(true)
+      return ((await response.json()) as { pagination: { total: number } }).pagination.total
+    }
+    const all = await total('limit=1')
+    const active = await total('limit=1&isActivated=true')
+    const withoutWorkCenter = await total('limit=1&withoutWorkCenter=true')
+    const expected = [
+      `${all} ${all === 1 ? 'user' : 'users'}`,
+      `${active} active`,
+      ...(withoutWorkCenter > 0 ? [`${withoutWorkCenter} without any work center`] : []),
+    ].join(' · ')
+
+    await signInToWeb(page, seed.admin, '/users')
+    await expect(usersTable(page)).toBeVisible()
+    await expect(page.getByText(expected, { exact: true })).toBeVisible()
   })
 })
