@@ -150,8 +150,6 @@ export interface paths {
                                     mustChangePassword: boolean;
                                     createdAt: string;
                                     updatedAt: string;
-                                    failedLoginAttempts: number;
-                                    lastFailedLoginAt?: string | null;
                                 };
                                 token: string;
                             };

@@ -81,10 +81,7 @@ export const userPaths: ZodOpenApiPathsObject = {
             'application/json': {
               schema: z.object({
                 data: z.object({
-                  user: userResponseSchema.extend({
-                    failedLoginAttempts: z.number(),
-                    lastFailedLoginAt: z.string().nullable().optional(),
-                  }),
+                  user: userResponseSchema,
                   token: z.string(),
                 }),
               }),

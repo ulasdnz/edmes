@@ -190,6 +190,38 @@ describe('User Routes Integration', () => {
       expect(res.status).toBe(200)
       expect(res.body.meta.permissions).toEqual([])
     })
+
+    it('POST /api/v1/auth/login and GET /users/me never return the lockout counters', async () => {
+      routeAuthContextToApp()
+      const userData = {
+        username: 'lockoutuser',
+        email: 'lockout@example.com',
+        password: 'Password123!',
+        name: 'Lockout',
+        surname: 'User',
+      }
+      await request(app).post('/api/v1/auth/register').send(userData)
+      // A failed attempt first, so the counters hold values worth hiding
+      await request(app)
+        .post('/api/v1/auth/login')
+        .send({ email: userData.email, password: 'Wrong-password-1' })
+
+      const login = await request(app)
+        .post('/api/v1/auth/login')
+        .send({ email: userData.email, password: userData.password })
+
+      expect(login.status).toBe(200)
+      expect(login.body.data.user).not.toHaveProperty('password')
+      expect(login.body.data.user).not.toHaveProperty('failedLoginAttempts')
+      expect(login.body.data.user).not.toHaveProperty('lastFailedLoginAt')
+
+      const me = await request(app)
+        .get('/api/v1/users/me')
+        .set('Authorization', `Bearer ${login.body.data.token}`)
+      expect(me.status).toBe(200)
+      expect(me.body.data).not.toHaveProperty('failedLoginAttempts')
+      expect(me.body.data).not.toHaveProperty('lastFailedLoginAt')
+    })
   })
 
   it('has the two application privileges and no screen privileges', () => {
