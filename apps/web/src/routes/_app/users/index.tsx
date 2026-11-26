@@ -20,7 +20,7 @@ function Users() {
     return (
       <NoPermission
         title={t('access.noPageTitle', { page: t('nav.users') })}
-        message={t('access.noPage')}
+        message={t('access.noPage', { permission: t('privileges.readUsers') })}
       />
     )
   }

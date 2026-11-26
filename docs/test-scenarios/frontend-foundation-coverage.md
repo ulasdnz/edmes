@@ -1,7 +1,7 @@
 # Coverage Map — frontend-foundation
 Generated: 2026-11-26
 
-Contract: docs/test-scenarios/frontend-foundation.md (301 bullets). An existing test stands for a bullet only where it asserts all of it; otherwise the bullet got a new test. Paths are relative to the area's package unless written in full.
+Contract: docs/test-scenarios/frontend-foundation.md (301 bullets). The owner decided on 2026-11-26 that the no-permission screen names the missing permission. An existing test stands for a bullet only where it asserts all of it; otherwise the bullet got a new test. Paths are relative to the area's package unless written in full.
 
 ## Backend (user service, OpenAPI documents, CI static job)
 
@@ -295,7 +295,7 @@ Contract: docs/test-scenarios/frontend-foundation.md (301 bullets). An existing 
 | E2E.webAuth / constraints / wrong password → stays on login with a message | web-auth.spec.ts:19 | ✅ |
 | E2E.webAuth / edge cases / token replaced with `garbage` → `/login?redirect=`, back to `/users?page=2&size=50` | web-auth.spec.ts:107 | ✅ |
 | E2E.webAuth / edge cases / `garbage` before load → `/login` | web-auth.spec.ts:121 | ✅ |
-| E2E.webAuth / authorization / `seed.limited` → no Users entry, no-permission state naming the missing permission | web-auth.spec.ts:63 (new; :46 asserts less) | ⚠️ SPEC? |
+| E2E.webAuth / authorization / `seed.limited` → no Users entry, no-permission state naming the missing permission | web-auth.spec.ts:63 (new; :46 asserts less) | ✅ |
 | E2E.webAuth / authorization / `seed.viewer` → Users, no button that changes anything | web-auth.spec.ts:80 | ✅ |
 | E2E.webAuth / authorization / `seed.operator` → `has no access to the web app`, Sign out → `/login` | web-auth.spec.ts:96 | ✅ |
 | Web.shell / happy path / collapsed sidebar → 64 px rail, written with `writePrefs`, kept after reload | web-auth.spec.ts:145 (new; :129 asserts less) | ✅ |
@@ -331,8 +331,8 @@ Contract: docs/test-scenarios/frontend-foundation.md (301 bullets). An existing 
 
 ## Summary
 - Total scenarios: 301
-- Covered: 300
+- Covered: 301
 - Missing (CRITICAL): 0
 - Missing: 0
 - Bugs found: 0
-- Spec mismatches (need owner confirmation): 1
+- Spec mismatches (need owner confirmation): 0

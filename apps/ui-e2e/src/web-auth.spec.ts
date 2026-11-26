@@ -61,10 +61,6 @@ test.describe('signing in to the web app', () => {
   // scenario: E2E.webAuth / authorization / seed.limited: no Users entry, the no-permission state
   // at /users names the missing permission
   test('the no-permission state at /users names the missing permission', async ({ page, seed }) => {
-    // ⚠️ SPEC?: the state names the page ("You don’t have access to Users") and says "the
-    // permission to open this page", never the permission itself (readUsers / Read Users); spec
-    // §7 (2026-11-25-dual-frontend-architecture-design.md:201) says it names the missing permission.
-    // confirm with user — spec may be outdated or implementation may be wrong
     await signInToWeb(page, seed.limited)
     await expect(navigation(page)).toBeVisible()
     await expect(navigation(page).getByRole('link', { name: 'Users' })).toHaveCount(0)
@@ -74,7 +70,7 @@ test.describe('signing in to the web app', () => {
     await expect(state.getByRole('heading', { level: 2 })).toBeVisible()
     await expect(usersTable(page)).toHaveCount(0)
     // readUsers is the permission /users needs; its text in @mes/privileges is "Read Users"
-    await expect(state).toContainText(/readUsers|Read Users/)
+    await expect(state).toContainText('This page needs the Read Users permission.')
   })
 
   test('the ready-made Viewer sees Users and no button that changes anything', async ({
