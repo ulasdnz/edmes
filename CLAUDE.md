@@ -79,7 +79,7 @@ testing → source-only (no build, vitest transpiles directly)
 ### Frontend Apps
 
 - `apps/web/` (base `/`) and `apps/operator/` (base `/operator/`) — React + Vite; `apps/vite.shared.ts` holds their shared config. They use `@mes/api-client`, `@mes/frontend`, `@mes/ui`.
-- One image (`apps/Dockerfile`, `edmes-frontend`) serves both through nginx on 8080. Traefik routes every path no service router names to it (priority 1); `/api`, `/internal`, `/socket.io`, `/docs` and `/uploads` answer 404 there, never the SPA's HTML.
+- One image (`apps/Dockerfile`, `edmes-frontend`) serves both through nginx on 8080. Traefik routes every path no service router names to it (priority 1); `/api`, `/internal`, `/socket.io`, `/docs` and `/uploads` answer 503 with a JSON error there (a stopped service's router is gone, so the catch-all answers; clients treat it like any 5xx), never the SPA's HTML.
 
 ### Infrastructure
 

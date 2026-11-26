@@ -170,6 +170,23 @@ describe('createApiClient', () => {
     })
   })
 
+  it("reads the frontend nginx's answer for a stopped service as a 503 gateway.unavailable", async () => {
+    const { baseUrl } = await serve({
+      status: 503,
+      body: '{"error":{"code":"gateway.unavailable","message":"Service unavailable"}}',
+      headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
+    })
+    const { fetchClient, onUnauthorized } = setup(baseUrl)
+    await expect(fetchClient.GET('/users/me')).rejects.toMatchObject({
+      name: 'ApiError',
+      kind: 'http',
+      status: 503,
+      code: 'gateway.unavailable',
+      message: 'Service unavailable',
+    })
+    expect(onUnauthorized).not.toHaveBeenCalled()
+  })
+
   it('calls onUnauthorized for a 401 auth.unauthenticated on any path, not for another code', async () => {
     const unauthenticated = await serve({ status: 401, body: envelope('auth.unauthenticated') })
     const first = setup(unauthenticated.baseUrl)

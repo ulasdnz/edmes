@@ -61,6 +61,25 @@ describe('LoginForm', () => {
       .toMatchTextContent(/The server could not be reached/)
   })
 
+  it('says the service is unavailable when the gateway finds user-service stopped', async () => {
+    const onSubmit = vi.fn(() =>
+      Promise.reject(
+        new ApiError({
+          kind: 'http',
+          status: 503,
+          code: 'gateway.unavailable',
+          message: 'Service unavailable',
+        }),
+      ),
+    )
+    const screen = await renderWithI18n(<LoginForm onSubmit={onSubmit} />)
+    await fillIn(screen)
+    await screen.getByRole('button', { name: 'Sign in' }).click()
+    await expect
+      .element(screen.getByRole('alert'))
+      .toHaveTextContent('The service is unavailable. Try again in a moment.')
+  })
+
   it('submits once while the request is pending', async () => {
     let finish: () => void = () => {}
     const onSubmit = vi.fn(

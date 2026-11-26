@@ -15,6 +15,13 @@ export const errorReply =
   res =>
     json(res, status, { error: { code, message: code } })
 
+// What the frontend's nginx answers under /api while the service behind the path is stopped: the
+// gateway has dropped its router, so the catch-all reaches nginx (apps/nginx.conf).
+export const gatewayUnavailable: Reply = res => {
+  res.writeHead(503, { 'content-type': 'application/json', 'cache-control': 'no-store' })
+  res.end('{"error":{"code":"gateway.unavailable","message":"Service unavailable"}}')
+}
+
 export const USER_ID = '0123456789abcdef01234567'
 
 export const me: Reply = res =>

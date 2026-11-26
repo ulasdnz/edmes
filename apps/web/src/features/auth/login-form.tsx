@@ -13,6 +13,8 @@ const LOCKED = 'auth.account_temporarily_locked'
 function failureMessage(error: ApiError, t: TFunction): string {
   if (error.kind === 'network') return t('auth.unreachable')
   if (error.kind === 'timeout') return t('auth.timeout')
+  // nginx answers it and cannot translate
+  if (error.code === 'gateway.unavailable') return t('common.serviceUnavailable')
   if (error.kind === 'http' && error.message !== error.code) return error.message
   return t('auth.failed')
 }

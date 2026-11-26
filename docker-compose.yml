@@ -175,8 +175,9 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=mes_network"
-      # Every service names its own public resources, so a path no router names gets the gateway's
-      # 404 instead of reaching a service that does not own it. /internal/v1 is never routed.
+      # Every service names its own public resources, so a path no router names never reaches a
+      # service that does not own it: the frontend's catch-all answers it with a JSON 503
+      # (apps/nginx.conf). /internal/v1 is never routed.
       - "traefik.http.routers.user.rule=PathPrefix(`/api/v1/users`) || PathPrefix(`/api/v1/roles`) || PathPrefix(`/api/v1/specialities`) || PathPrefix(`/docs`) || PathPrefix(`/uploads`)"
       - "traefik.http.routers.user.entrypoints=web"
       - "traefik.http.routers.user.middlewares=global-compress@docker,secure-headers@docker,rate-limit@docker,body-limit@docker"

@@ -12,11 +12,24 @@ function cspHeaders(response: APIResponse): string[] {
     .map(header => header.value)
 }
 
-// Asks nginx inside the frontend container directly, past the gateway's routing
+const GATEWAY_UNAVAILABLE =
+  '{"error":{"code":"gateway.unavailable","message":"Service unavailable"}}'
+
+// What clients read as a stopped service: a 5xx with the error envelope, like a service's own 503
+function expectGatewayUnavailable(status: number, headers: Record<string, string>, body: string) {
+  expect(status).toBe(503)
+  expect(headers['content-type']).toMatch(/^application\/json/)
+  expect(headers['cache-control']).toBe('no-store')
+  expect(headers['content-security-policy']).toBe(CSP)
+  expect(body).toBe(GATEWAY_UNAVAILABLE)
+}
+
+// Asks nginx inside the frontend container directly, past the gateway's routing. curl, not
+// BusyBox wget: wget prints neither the headers nor the body of an error answer.
 function askNginx(path: string): string {
   const result = spawnSync(
     'docker',
-    ['compose', 'exec', '-T', 'frontend', 'wget', '-S', '-O', '-', `http://127.0.0.1:8080${path}`],
+    ['compose', 'exec', '-T', 'frontend', 'curl', '-s', '-i', `http://127.0.0.1:8080${path}`],
     { cwd: repositoryRoot, encoding: 'utf8' },
   )
   return `${result.stdout}\n${result.stderr}`
@@ -73,16 +86,16 @@ test.describe('the gateway routes', () => {
     expect(await response.json()).toMatchObject({ error: { code: 'auth.unauthenticated' } })
   })
 
-  test('an API path no service serves is a 404, never the app', async ({ request }) => {
+  // A path no service router names, like the paths of a stopped service, reaches the frontend
+  test('an API path no service serves answers the JSON 503, never the app', async ({ request }) => {
     const response = await request.get('/api/v1/no-such-thing')
-    expect(response.status()).toBe(404)
-    expect(await response.text()).not.toContain('id="root"')
+    expectGatewayUnavailable(response.status(), response.headers(), await response.text())
   })
 
   test('/internal is not reachable through the gateway', async ({ request }) => {
     const response = await request.get('/internal/v1/users')
-    expect(response.status()).toBe(404)
-    expect(await response.text()).not.toContain('id="root"')
+    expectGatewayUnavailable(response.status(), response.headers(), await response.text())
+    expect(response.headers()['x-trace-id']).toBeUndefined()
   })
 
   test('/uploads is answered by user-service', async ({ request }) => {
@@ -93,10 +106,13 @@ test.describe('the gateway routes', () => {
     expect(await response.text()).toContain('Cannot GET /uploads/no-such-file.png')
   })
 
-  test('nginx itself answers 404 under the API prefixes, never index.html', () => {
+  test('nginx itself answers the JSON 503 under the API prefixes, never index.html', () => {
     for (const path of ['/api/x', '/internal/x', '/socket.io/x', '/docs', '/uploads/x.png']) {
       const output = askNginx(path)
-      expect(output, path).toContain('HTTP/1.1 404')
+      expect(output, path).toContain('HTTP/1.1 503')
+      expect(output, path).toMatch(/Content-Type: application\/json/i)
+      expect(output, path).toMatch(/Cache-Control: no-store/i)
+      expect(output, path).toContain(GATEWAY_UNAVAILABLE)
       expect(output, path).not.toContain('id="root"')
     }
   })

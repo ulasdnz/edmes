@@ -31,6 +31,8 @@ export function PageLoading(): ReactNode {
 export function apiErrorMessage(error: ApiError, t: TFunction): string {
   if (error.kind === 'network') return t('errors.network')
   if (error.kind === 'timeout') return t('errors.timeout')
+  // nginx answers it and cannot translate
+  if (error.code === 'gateway.unavailable') return t('common.serviceUnavailable')
   if (error.kind === 'http' && error.message !== error.code) return error.message
   return t('errors.unexpected')
 }

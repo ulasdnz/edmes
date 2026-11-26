@@ -80,7 +80,9 @@ events, health probes, logging, OpenAPI, the permission registry and test utilit
 ### Gateway and security
 
 - [Traefik](docker-compose.yml) routes each public resource to the service that owns it. A path no
-  router names gets the gateway's 404, and `/internal/v1` is never routed: service-to-service calls
+  router names reaches the frontend's catch-all, which answers every API prefix with a JSON 503
+  (`gateway.unavailable`, what a stopped service's paths answer too), never the app's HTML.
+  `/internal/v1` is never routed: service-to-service calls
   use the internal network and a shared token of at least 32 characters.
 - Per-IP rate limits: 200 requests/s in general, 30/s on sign-in. Request bodies are capped at
   25 MiB and responses are compressed.

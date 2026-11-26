@@ -1,8 +1,29 @@
+import { ApiError } from '@mes/api-client'
+import { createI18n } from '@mes/frontend/i18n'
 import { describe, expect, it, vi } from 'vitest'
+import { en } from '../locales/en'
+import { tr } from '../locales/tr'
 import { renderWithI18n } from '../test/render'
-import { NoPermission, PageError } from './page-state'
+import { apiErrorMessage, NoPermission, PageError } from './page-state'
 
 describe('page states', () => {
+  it('translates the gateway answer for a stopped service in every language', () => {
+    const stopped = new ApiError({
+      kind: 'http',
+      status: 503,
+      code: 'gateway.unavailable',
+      message: 'Service unavailable',
+    })
+    const english = createI18n({ language: 'en', resources: { en, tr } })
+    const turkish = createI18n({ language: 'tr', resources: { en, tr } })
+    expect(apiErrorMessage(stopped, english.t)).toBe(
+      'The service is unavailable. Try again in a moment.',
+    )
+    expect(apiErrorMessage(stopped, turkish.t)).toBe(
+      'Hizmet şu anda kullanılamıyor. Birazdan tekrar deneyin.',
+    )
+  })
+
   it('shows the reference of a failed load and retries', async () => {
     const onRetry = vi.fn()
     const screen = await renderWithI18n(

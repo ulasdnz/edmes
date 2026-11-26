@@ -4,6 +4,7 @@ import { queryProblem } from '../recovery'
 import {
   buildCore,
   errorReply,
+  gatewayUnavailable,
   memoryStorage,
   noJobOrder,
   type Reply,
@@ -76,6 +77,31 @@ describe('station queries', () => {
     )
     await vi.waitFor(() => expect(observer.getCurrentResult().status).toBe('success'))
     expect(observer.getCurrentResult().data).toBeNull()
+    expect(backend.count(route)).toBe(3)
+    expect(seen).toEqual(['loading', 'unavailable', null])
+  })
+
+  // A stopped service has no router at the gateway, so its paths reach the frontend's nginx
+  it.each([
+    [
+      'GET /work-centers',
+      workCenters('wc1'),
+      (core: ReturnType<typeof buildCore>) =>
+        new QueryObserver(core.queryClient, visibleWorkCentersQuery(core.api, RECOVERY_MS)),
+    ],
+    [
+      'GET /job-orders',
+      noJobOrder,
+      (core: ReturnType<typeof buildCore>) =>
+        new QueryObserver(core.queryClient, stationJobOrderQuery(core.api, 'wc1', RECOVERY_MS)),
+    ],
+  ])('recover %s by themselves while the gateway says the service is stopped', async (route, answer, create) => {
+    const { backend, observer, seen } = await observe(
+      route,
+      [gatewayUnavailable, gatewayUnavailable, answer],
+      create,
+    )
+    await vi.waitFor(() => expect(observer.getCurrentResult().status).toBe('success'))
     expect(backend.count(route)).toBe(3)
     expect(seen).toEqual(['loading', 'unavailable', null])
   })
