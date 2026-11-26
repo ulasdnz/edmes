@@ -15,6 +15,19 @@ describe('WorkCenterPicker', () => {
     expect(onSelect).not.toHaveBeenCalled()
   })
 
+  // scenario: workCenters: [] → the text is visible (no spinner) and "Sign out" calls onSignOut once
+  it('shows the empty message without a spinner and signs out once', async () => {
+    const onSignOut = vi.fn()
+    const screen = await renderWithI18n(
+      <WorkCenterPicker workCenters={[]} onSelect={vi.fn()} onSignOut={onSignOut} />,
+    )
+    await expect.element(screen.getByText('No work center is assigned to you')).toBeVisible()
+    expect(screen.getByRole('progressbar').elements()).toHaveLength(0)
+    expect(screen.getByRole('status').elements()).toHaveLength(0)
+    await screen.getByRole('button', { name: 'Sign out' }).click()
+    expect(onSignOut).toHaveBeenCalledOnce()
+  })
+
   it('offers each work center as a target of at least 48 px', async () => {
     const onSelect = vi.fn()
     const onSignOut = vi.fn()
