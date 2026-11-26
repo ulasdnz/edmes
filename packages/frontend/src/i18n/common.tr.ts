@@ -4,7 +4,7 @@ export const commonTr: typeof commonEn = {
   common: {
     live: 'Canlı',
     reconnecting: 'Yeniden bağlanıyor…',
-    offlineSince: '{{time}} itibarıyla çevrimdışı',
+    offlineSince: '{{time}}’{{time, ablative}} beri çevrimdışı',
     unreachable: 'Sunucuya ulaşılamıyor, yeniden deneniyor',
     serviceUnavailable: 'Hizmet şu anda kullanılamıyor. Birazdan tekrar deneyin.',
     tryAgain: 'Tekrar dene',
