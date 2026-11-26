@@ -1,5 +1,6 @@
 import type { RealtimeStatus } from '../realtime'
 import type { SessionStatus } from '../session'
+import type { ServerClock } from '../time/server-clock'
 
 export type ConnectionStatus = 'live' | 'reconnecting' | 'offline'
 
@@ -14,6 +15,8 @@ export function connectionFor(input: {
   unreachableSince: Date | null
   realtime: RealtimeStatus
   realtimeSince: Date
+  // The moments above are taken from the device clock; shown, they must be server time
+  clock?: ServerClock | null
 }): Connection {
   if (input.session === 'unreachable' || input.realtime === 'unavailable') {
     const candidates = [
@@ -25,7 +28,7 @@ export function connectionFor(input: {
         (earliest, value) => (value && (!earliest || value < earliest) ? value : earliest),
         null,
       ) ?? new Date()
-    return { status: 'offline', since }
+    return { status: 'offline', since: input.clock ? input.clock.fromDevice(since) : since }
   }
   if (input.realtime === 'connecting' || input.realtime === 'reconnecting') {
     return { status: 'reconnecting', since: null }

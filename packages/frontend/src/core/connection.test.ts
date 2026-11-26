@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { createServerClock } from '../time/server-clock'
 import { connectionFor } from './connection'
 
 const at = (time: string) => new Date(`2026-11-25T${time}:00.000Z`)
@@ -71,5 +72,24 @@ describe('connectionFor', () => {
     })
     expect(status).toBe('offline')
     expect(since?.getTime()).toBeGreaterThanOrEqual(before)
+  })
+  it('shows the offline moment in server time when the tablet clock is off', () => {
+    vi.useFakeTimers()
+    // The tablet is two minutes behind the server
+    vi.setSystemTime(at('08:00'))
+    const clock = createServerClock(at('08:02').toISOString())
+    try {
+      expect(
+        connectionFor({
+          session: 'unreachable',
+          unreachableSince: at('08:10'),
+          realtime: 'live',
+          realtimeSince: at('08:00'),
+          clock,
+        }),
+      ).toEqual({ status: 'offline', since: at('08:12') })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

@@ -16,3 +16,11 @@ it('follows the server when the tablet clock is behind', () => {
   expect(clock.toIso()).toBe('2026-04-04T12:00:01.000Z')
   expect(clock.now().toISOString()).toBe('2026-04-04T12:00:01.000Z')
 })
+
+it('turns a moment the tablet recorded into server time', () => {
+  vi.setSystemTime(new Date('2026-04-04T11:58:00.000Z'))
+  const clock = createServerClock('2026-04-04T12:00:00.000Z')
+  expect(clock.fromDevice(new Date('2026-04-04T11:59:30.000Z')).toISOString()).toBe(
+    '2026-04-04T12:01:30.000Z',
+  )
+})
