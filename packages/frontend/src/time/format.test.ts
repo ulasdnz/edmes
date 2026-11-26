@@ -11,6 +11,11 @@ describe('isUtcInstant', () => {
     expect(isUtcInstant('2026-02-30T12:30:00.000Z')).toBe(false)
     expect(isUtcInstant('2026-04-04T25:30:00.000Z')).toBe(false)
   })
+
+  // scenario: isUtcInstant('2026-04-04T12:30:00') → false (no offset)
+  it('rejects a local date-time without an offset', () => {
+    expect(isUtcInstant('2026-04-04T12:30:00')).toBe(false)
+  })
 })
 
 describe('formatInstant', () => {

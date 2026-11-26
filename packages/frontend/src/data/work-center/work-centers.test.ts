@@ -86,12 +86,16 @@ describe('work centers list', () => {
       expect(asked.every(query => query.get('limit') === '100')).toBe(true)
     })
 
-    it('asks once when everything fits on one page, and once when there is nothing', async () => {
-      const client = await serve(0)
+    // scenario: everything fits on one page, or there is no work center → one request
+    it.each([
+      ['everything fits on one page', 37],
+      ['there is no work center', 0],
+    ])('asks once when %s', async (_name, total) => {
+      const client = await serve(total)
 
       const result = await new QueryClient().fetchQuery(workCentersListOptions(client, {}))
 
-      expect(result.data).toEqual([])
+      expect(result.data).toHaveLength(total)
       expect(asked).toHaveLength(1)
     })
 

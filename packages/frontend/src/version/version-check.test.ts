@@ -135,6 +135,52 @@ describe('startVersionCheck', () => {
     expect(requests).toBe(1)
   })
 
+  // scenario: /version.json answers 1.1.0, currentVersion 1.0.0, one check → onMismatch('1.1.0')
+  it('reports a newer server version after one check', async () => {
+    const onMismatch = vi.fn()
+    serveVersion('1.1.0')
+    await start(onMismatch).checkNow()
+    expect(onMismatch).toHaveBeenCalledTimes(1)
+    expect(onMismatch).toHaveBeenCalledWith('1.1.0')
+  })
+
+  // scenario: a later check sees 1.2.0 → onMismatch is called once more, with '1.2.0'
+  it('reports once more when a later check sees another version', async () => {
+    const onMismatch = vi.fn()
+    serveVersion('1.1.0')
+    const check = start(onMismatch)
+    await check.checkNow()
+    expect(onMismatch).toHaveBeenCalledTimes(1)
+    serveVersion('1.2.0')
+    await check.checkNow()
+    expect(onMismatch).toHaveBeenCalledTimes(2)
+    expect(onMismatch).toHaveBeenLastCalledWith('1.2.0')
+  })
+
+  // scenario: no intervalMs given → url is polled every 300000 ms
+  it('polls every 300000 ms when no interval is given', async () => {
+    let requests = 0
+    respond = res => {
+      requests++
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ version: '1.0.0' }))
+    }
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    try {
+      const check = startVersionCheck({ currentVersion: '1.0.0', url, onMismatch: vi.fn() })
+      stops.push(check.stop)
+      vi.advanceTimersByTime(299_999)
+      await new Promise(resolve => setTimeout(resolve, 100))
+      expect(requests).toBe(0)
+      vi.advanceTimersByTime(1)
+      await vi.waitFor(() => expect(requests).toBe(1))
+      vi.advanceTimersByTime(300_000)
+      await vi.waitFor(() => expect(requests).toBe(2))
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('does not start a second request while one is in flight', async () => {
     let held: ServerResponse | undefined
     let requests = 0

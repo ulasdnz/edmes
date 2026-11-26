@@ -19,4 +19,9 @@ describe('jobOrderRuntimeState', () => {
       }),
     ).toBe('finished')
   })
+
+  // scenario: { startTime: null, endTime: null } → 'pending'
+  it('is pending when both times are null', () => {
+    expect(jobOrderRuntimeState({ startTime: null, endTime: null })).toBe('pending')
+  })
 })
