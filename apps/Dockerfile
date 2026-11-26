@@ -2,7 +2,7 @@
 # Stage 1: Build both frontends
 # ---------------------------------------
 # The same Node image as the services, by digest; Dependabot moves both
-FROM node:26.13.0-alpine@sha256:c6ad9e9c1d80f6eb607c26b4b0a132ff7a2344fad1c78ea3baa2a7d4c8de6d94 AS builder
+FROM node:26.13.1-alpine@sha256:6bd9ab43c0ec0190ca7b2d193906cb8b7edf6e7f4afa43ddeccd6452710bffb5 AS builder
 
 # Must match packageManager in package.json; Node 25+ ships no Corepack
 RUN npm install -g pnpm@10.34.8
@@ -35,7 +35,7 @@ RUN pnpm --filter web-app build && pnpm --filter operator-panel build
 # ---------------------------------------
 # Stage 2: Runner
 # ---------------------------------------
-FROM nginxinc/nginx-unprivileged:1.30-alpine@sha256:f5116ed4606f3eb015dd4a8e28cb9b351476dc0ad4bc6e9f93b19cec130cdf03 AS runner
+FROM nginxinc/nginx-unprivileged:1.31-alpine@sha256:b5047b9b76845eac124358373c6852377c52e4b05834a47647e955dd91cb8f1e AS runner
 
 COPY apps/nginx.conf /etc/nginx/conf.d/default.conf
 COPY apps/security-headers.conf /etc/nginx/edmes/security-headers.conf

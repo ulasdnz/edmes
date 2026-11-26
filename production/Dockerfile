@@ -2,7 +2,7 @@
 # Stage 1: Build & Deploy
 # ---------------------------------------
 # The exact image by digest, so every build starts from the same one; Dependabot moves both
-FROM node:26.13.0-alpine@sha256:c6ad9e9c1d80f6eb607c26b4b0a132ff7a2344fad1c78ea3baa2a7d4c8de6d94 AS builder
+FROM node:26.13.1-alpine@sha256:6bd9ab43c0ec0190ca7b2d193906cb8b7edf6e7f4afa43ddeccd6452710bffb5 AS builder
 RUN apk add --no-cache libc6-compat git openssh-client && \
     git config --global url."https://github.com/".insteadOf "git@github.com:" && \
     git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
@@ -50,7 +50,7 @@ RUN cp -r production/locales /prod/production/locales
 # ---------------------------------------
 # Stage 2: Runner (Production Image)
 # ---------------------------------------
-FROM node:26.13.0-alpine@sha256:c6ad9e9c1d80f6eb607c26b4b0a132ff7a2344fad1c78ea3baa2a7d4c8de6d94 AS runner
+FROM node:26.13.1-alpine@sha256:6bd9ab43c0ec0190ca7b2d193906cb8b7edf6e7f4afa43ddeccd6452710bffb5 AS runner
 # The service runs with node alone; npm stays out of the runtime image
 RUN apk add --no-cache dumb-init && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 
