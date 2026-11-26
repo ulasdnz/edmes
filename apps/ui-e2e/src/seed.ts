@@ -23,7 +23,8 @@ export interface Seed {
 
 type Created = { _id: string }
 
-// Enough users for /users?page=2&size=50 to have a second page
+// Enough users for /users?page=2&size=50&search=e2e to have a second page. Counted under that
+// search: the system admin does not match it, so a fresh stack's total is one too many.
 const MIN_USERS = 51
 
 export function uniqueSuffix(): string {
@@ -164,7 +165,7 @@ export async function createWorkCenter(request: APIRequestContext, token: string
 
 async function ensureUsers(request: APIRequestContext, token: string, roleId: string) {
   const { pagination } = await request
-    .get('/api/v1/users?limit=1', { headers: { authorization: `Bearer ${token}` } })
+    .get('/api/v1/users?limit=1&search=e2e', { headers: { authorization: `Bearer ${token}` } })
     .then(response => response.json() as Promise<{ pagination: { total: number } }>)
   for (let count = pagination.total; count < MIN_USERS; count++) {
     await createUser(request, token, { label: 'filler', roleIds: [roleId] })
