@@ -6,3 +6,4 @@ export {
   type SessionUser,
   type TokenStorageKey,
 } from './session-store'
+export { tokenIssuedAt } from './token'
