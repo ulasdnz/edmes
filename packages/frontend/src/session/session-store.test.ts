@@ -357,6 +357,90 @@ describe('session store', () => {
     expect(store.getState().status).toBe('authenticated')
   })
 
+  describe('another tab', () => {
+    const grace = { ...user, _id: 'fedcba9876543210fedcba98', email: 'grace@example.com' }
+    // The answer to /users/me depends on the token it carries, as user-service's does
+    const byToken: Handler = (req, res) => {
+      const token = req.headers.authorization?.replace('Bearer ', '')
+      if (token === 'tkn') json(res, 200, me(['readUsers'], '2026-11-25T10:00:00.000Z'))
+      else if (token === 'tkn2') {
+        json(res, 200, { ...me(['writeUsers'], '2026-11-25T10:00:00.000Z'), data: grace })
+      } else unauthenticated(res)
+    }
+
+    it('signed out: the next bootstrap ends the session', async () => {
+      const { store, storage } = build(await listen(byToken), { token: 'tkn' })
+      await store.bootstrap()
+      storage.removeItem('edmes.web.token')
+      await store.bootstrap()
+      expect(store.getState()).toMatchObject({ status: 'anonymous', user: null, permissions: [] })
+    })
+
+    it('signed out: a heartbeat refresh ends the session without asking the server', async () => {
+      const { handler, requests } = scripted([ok()])
+      const { store, storage } = build(await listen(handler), { token: 'tkn' })
+      await store.bootstrap()
+      storage.removeItem('edmes.web.token')
+      await store.refresh()
+      expect(store.getState()).toMatchObject({ status: 'anonymous', user: null, permissions: [] })
+      expect(requests).toHaveLength(1)
+    })
+
+    it("signed in as another user: the next bootstrap drops the first user, then takes the new one's identity", async () => {
+      const { store, storage } = build(await listen(byToken), { token: 'tkn' })
+      await store.bootstrap()
+      const seen: Array<[string, string | undefined]> = []
+      store.subscribe(state => seen.push([state.status, state.user?.email]))
+      storage.setItem('edmes.web.token', 'tkn2')
+      await store.bootstrap()
+      expect(store.getState()).toMatchObject({
+        status: 'authenticated',
+        permissions: ['writeUsers'],
+      })
+      expect(store.getState().user?.email).toBe('grace@example.com')
+      expect(seen).toEqual([
+        ['unknown', undefined],
+        ['authenticated', 'grace@example.com'],
+      ])
+    })
+
+    it('signed in as another user: a refresh never keeps the first identity, even unanswered', async () => {
+      const { handler } = scripted([ok(), unavailable])
+      const { store, storage } = build(await listen(handler), { token: 'tkn' })
+      await store.bootstrap()
+      storage.setItem('edmes.web.token', 'tkn2')
+      await store.refresh()
+      expect(store.getState()).toMatchObject({ status: 'unreachable', user: null, permissions: [] })
+      // the next heartbeat keeps waiting for the new identity, it does not drop it again
+      const statuses: string[] = []
+      store.subscribe(state => statuses.push(state.status))
+      await store.refresh()
+      expect(statuses).not.toContain('unknown')
+      expect(store.getState().status).toBe('unreachable')
+    })
+
+    it.each([
+      ['replaced', 'tkn2', { status: 'authenticated', email: 'grace@example.com' }],
+      ['removed', null, { status: 'anonymous', email: undefined }],
+    ] as const)('settles when the token is %s while the bootstrap waits for its answer', async (_name, next, expected) => {
+      const held: ServerResponse[] = []
+      const baseUrl = await listen((req, res) => {
+        if (req.headers.authorization === 'Bearer tkn') held.push(res)
+        else byToken(req, res)
+      })
+      const { store, storage } = build(baseUrl, { token: 'tkn' })
+      const started = store.bootstrap()
+      await vi.waitFor(() => expect(held).toHaveLength(1))
+      if (next === null) storage.removeItem('edmes.web.token')
+      else storage.setItem('edmes.web.token', next)
+      // the first token's answer arrives after the change and is discarded
+      json(held[0] as ServerResponse, 200, me(['readUsers'], '2026-11-25T10:00:00.000Z'))
+      await started
+      expect(store.getState().status).toBe(expected.status)
+      expect(store.getState().user?.email).toBe(expected.email)
+    })
+  })
+
   it('makes no request on refresh without a token', async () => {
     const { handler, requests } = scripted([unavailable])
     const { store } = build(await listen(handler))

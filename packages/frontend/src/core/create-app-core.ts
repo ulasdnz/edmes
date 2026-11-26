@@ -18,6 +18,8 @@ export interface AppCoreOptions {
   apiBaseUrl?: string
   heartbeatMs?: number
   onRoomsDenied?: (denied: string[]) => void
+  // Where another tab's changes to `storage` arrive as `storage` events; `window` by default
+  storageEvents?: Pick<EventTarget, 'addEventListener'>
 }
 
 const RETRIED_KINDS = new Set(['network', 'timeout'])
@@ -32,13 +34,11 @@ export function createAppCore(options: AppCoreOptions): AppCore {
     apiBaseUrl,
     heartbeatMs = 30000,
     onRoomsDenied,
+    storageEvents = typeof window === 'undefined' ? undefined : window,
   } = options
 
-  const session = createSessionStore({
-    storageKey: app === 'web' ? 'edmes.web.token' : 'edmes.operator.token',
-    storage,
-    api: () => api,
-  })
+  const storageKey = app === 'web' ? 'edmes.web.token' : 'edmes.operator.token'
+  const session = createSessionStore({ storageKey, storage, api: () => api })
 
   const api = createApiClient({
     baseUrl: apiBaseUrl,
@@ -103,7 +103,8 @@ export function createAppCore(options: AppCoreOptions): AppCore {
     if (status === previous) return
     previous = status
     if (status === 'authenticated') realtime.start()
-    if (status === 'anonymous') {
+    // `unknown` again: another tab put another user's token in place, and this tab signs in anew
+    if (status === 'anonymous' || status === 'unknown') {
       realtime.stop()
       queryClient.clear()
     }
@@ -113,6 +114,14 @@ export function createAppCore(options: AppCoreOptions): AppCore {
       clearInterval(heartbeat)
       heartbeat = undefined
     }
+  })
+
+  // Another tab signed out (the key removed, or the storage cleared) or signed in: this tab reads
+  // the session again from the stored token. A tab gets no event for its own changes.
+  storageEvents?.addEventListener('storage', event => {
+    const { key, storageArea } = event as StorageEvent
+    if (storageArea !== storage || (key !== null && key !== storageKey)) return
+    void session.bootstrap()
   })
 
   return { api, session, queryClient, realtime }

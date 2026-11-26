@@ -48,6 +48,8 @@ export function createSessionStore(options: SessionStoreOptions): SessionStore {
   const store = createStore<SessionState>()(() => ({ ...ANONYMOUS, status: 'unknown' }))
 
   let sequence = 0
+  // The token the state belongs to: another tab may sign out or in under the same key
+  let owner: string | null = null
 
   const getToken = () => {
     try {
@@ -59,6 +61,7 @@ export function createSessionStore(options: SessionStoreOptions): SessionStore {
 
   function logout() {
     sequence++
+    owner = null
     try {
       storage.removeItem(storageKey)
     } catch {
@@ -87,15 +90,25 @@ export function createSessionStore(options: SessionStoreOptions): SessionStore {
 
   async function load(): Promise<ApiError | undefined> {
     const token = getToken()
-    if (token === null) return undefined
+    if (token === null) {
+      if (store.getState().status !== 'anonymous') logout()
+      return undefined
+    }
+    // Another user's token: the previous identity and permissions go before the answer comes
+    if (owner !== null && owner !== token) store.setState({ ...ANONYMOUS, status: 'unknown' })
+    owner = token
     const mine = ++sequence
     const isStale = () => mine !== sequence || getToken() !== token
+    // A newer load or a logout settles the state; a token changed under this one is read again
+    const settleStale = () => (mine === sequence ? load() : undefined)
     try {
       const me = await fetchMe()
-      if (!isStale()) apply(me)
+      if (isStale()) return settleStale()
+      apply(me)
     } catch (error) {
       const failure = toApiError(error)
-      if (failure.kind === 'aborted' || isStale()) return undefined
+      if (failure.kind === 'aborted') return undefined
+      if (isStale()) return settleStale()
       if (failure.status === 401 && failure.code === 'auth.unauthenticated') {
         logout()
         return failure
@@ -106,10 +119,6 @@ export function createSessionStore(options: SessionStoreOptions): SessionStore {
   }
 
   async function bootstrap() {
-    if (getToken() === null) {
-      logout()
-      return
-    }
     await load()
   }
 

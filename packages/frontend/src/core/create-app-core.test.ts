@@ -4,9 +4,9 @@ import { MutationObserver } from '@tanstack/react-query'
 import { Server } from 'socket.io'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { SessionStatus } from '../session'
-import { type AppCore, createAppCore } from '.'
+import { type AppCore, type AppCoreOptions, createAppCore } from '.'
 
-type Reply = (res: ServerResponse) => void
+type Reply = (res: ServerResponse, req: IncomingMessage) => void
 
 const cleanups: Array<() => unknown> = []
 
@@ -76,10 +76,13 @@ async function startBackend(routes: Record<string, Reply[]>) {
     }
     const index = counts.get(route) ?? 0
     counts.set(route, index + 1)
-    replies[Math.min(index, replies.length - 1)]?.(res)
+    replies[Math.min(index, replies.length - 1)]?.(res, req)
   })
   const io = new Server(http, { transports: ['websocket'] })
+  // the token of every socket connection, in order
+  const socketTokens: unknown[] = []
   io.on('connection', socket => {
+    socketTokens.push(socket.handshake.auth.token)
     socket.on('join', (data: { rooms?: unknown[] }, ack?: (res: { rooms: string[] }) => void) => {
       const rooms = data?.rooms
       if (!Array.isArray(rooms)) return
@@ -99,7 +102,7 @@ async function startBackend(routes: Record<string, Reply[]>) {
   const emit = (type: string, payload: Record<string, unknown>) =>
     io.to(type.split('.')[0] ?? '').emit(type, payload)
   const members = (room: string) => io.sockets.adapter.rooms.get(room)?.size ?? 0
-  return { url, emit, members, requests, count, concurrency }
+  return { url, emit, members, requests, count, concurrency, socketTokens }
 }
 
 function memoryStorage(token?: string) {
@@ -117,7 +120,10 @@ function memoryStorage(token?: string) {
   } satisfies Storage
 }
 
-function build(url: string, options: { heartbeatMs?: number } = {}): AppCore {
+function build(
+  url: string,
+  options: Partial<Pick<AppCoreOptions, 'heartbeatMs' | 'storage' | 'storageEvents'>> = {},
+): AppCore {
   const core = createAppCore({
     app: 'web',
     storage: memoryStorage('tkn'),
@@ -215,8 +221,8 @@ describe('app core', () => {
   })
 
   it('sends one heartbeat at a time when /users/me is slow', async () => {
-    const slow: Reply = res => {
-      const timer = setTimeout(() => ok()(res), 150)
+    const slow: Reply = (res, req) => {
+      const timer = setTimeout(() => ok()(res, req), 150)
       res.on('close', () => clearTimeout(timer))
     }
     const backend = await startBackend({ 'GET /users/me': [ok(), slow] })
@@ -263,5 +269,101 @@ describe('app core', () => {
       }),
     ).rejects.toMatchObject({ kind: 'http', status: 503 })
     expect(backend.count('GET /roles')).toBe(1)
+  })
+
+  describe('another tab', () => {
+    const grace = { ...user(['r9']), _id: 'fedcba9876543210fedcba98', email: 'grace@example.com' }
+    // The answer to /users/me depends on the token it carries, as user-service's does
+    const byToken: Reply = (res, req) => {
+      const token = req.headers.authorization?.replace('Bearer ', '')
+      if (token === 'tkn') ok()(res, req)
+      else if (token === 'tkn2') {
+        json(res, 200, {
+          data: grace,
+          meta: {
+            plantTimezone: 'Europe/Istanbul',
+            serverTime: '2026-11-25T10:00:00.000Z',
+            permissions: ['writeUsers'],
+          },
+        })
+      } else unauthenticated(res, req)
+    }
+
+    // What the browser dispatches in this tab when another tab changes the shared storage
+    const storageEvent = (storageArea: Storage, key: string | null, newValue: string | null) =>
+      Object.assign(new Event('storage'), { key, newValue, storageArea })
+
+    async function signedIn(options: { heartbeatMs?: number } = {}) {
+      const backend = await startBackend({ 'GET /users/me': [byToken] })
+      const storage = memoryStorage('tkn')
+      const storageEvents = new EventTarget()
+      const core = build(backend.url, { storage, storageEvents, ...options })
+      await core.session.bootstrap()
+      await vi.waitFor(() => {
+        expect(core.realtime.getStatus()).toBe('live')
+        expect(backend.members('role')).toBe(1)
+      })
+      core.queryClient.setQueryData(['get', '/users', {}], { data: ['previous user data'] })
+      return { backend, storage, storageEvents, core }
+    }
+
+    it('signs this tab out when another tab signs out', async () => {
+      const { backend, storage, storageEvents, core } = await signedIn()
+      storage.removeItem('edmes.web.token')
+      storageEvents.dispatchEvent(storageEvent(storage, 'edmes.web.token', null))
+      await vi.waitFor(() => expect(core.session.getState().status).toBe('anonymous'))
+      expect(core.session.getState()).toMatchObject({ user: null, permissions: [] })
+      expect(core.queryClient.getQueryCache().getAll()).toEqual([])
+      expect(core.realtime.getStatus()).toBe('idle')
+      expect(backend.count('GET /users/me')).toBe(1)
+    })
+
+    it('signs this tab out when another tab clears the storage', async () => {
+      const { storage, storageEvents, core } = await signedIn()
+      storage.clear()
+      storageEvents.dispatchEvent(storageEvent(storage, null, null))
+      await vi.waitFor(() => expect(core.session.getState().status).toBe('anonymous'))
+      expect(core.realtime.getStatus()).toBe('idle')
+    })
+
+    it('takes the user another tab signed in, with fresh data and rooms joined as that user', async () => {
+      const { backend, storage, storageEvents, core } = await signedIn()
+      storage.setItem('edmes.web.token', 'tkn2')
+      storageEvents.dispatchEvent(storageEvent(storage, 'edmes.web.token', 'tkn2'))
+      await vi.waitFor(() => expect(core.session.getState().user?.email).toBe('grace@example.com'))
+      expect(core.session.getState()).toMatchObject({
+        status: 'authenticated',
+        permissions: ['writeUsers'],
+      })
+      // nothing read with the first user's token stays on screen
+      expect(core.queryClient.getQueryData(['get', '/users', {}])).toBeUndefined()
+      await vi.waitFor(() => {
+        expect(backend.socketTokens).toEqual(['tkn', 'tkn2'])
+        expect(core.realtime.getStatus()).toBe('live')
+        expect(backend.members('role')).toBe(1)
+        expect(backend.members('user')).toBe(1)
+      })
+    })
+
+    it('ignores a storage event for another key or another storage', async () => {
+      const { backend, storage, storageEvents, core } = await signedIn()
+      storageEvents.dispatchEvent(storageEvent(storage, 'edmes.operator.token', null))
+      storageEvents.dispatchEvent(storageEvent(memoryStorage(), 'edmes.web.token', null))
+      await sleep(100)
+      expect(backend.count('GET /users/me')).toBe(1)
+      expect(core.session.getState().status).toBe('authenticated')
+    })
+
+    it('ends the session at the next heartbeat when the token went without an event', async () => {
+      const { backend, storage, core } = await signedIn({ heartbeatMs: 50 })
+      storage.removeItem('edmes.web.token')
+      await vi.waitFor(() => expect(core.session.getState().status).toBe('anonymous'))
+      expect(core.realtime.getStatus()).toBe('idle')
+      expect(core.queryClient.getQueryCache().getAll()).toEqual([])
+      // a heartbeat without a token asks nothing, and the heartbeat stops
+      const asked = backend.count('GET /users/me')
+      await sleep(150)
+      expect(backend.count('GET /users/me')).toBe(asked)
+    })
   })
 })
