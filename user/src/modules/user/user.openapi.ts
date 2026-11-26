@@ -7,6 +7,7 @@ import {
   adminResetPasswordSchema,
   adminUpdateUserSchema,
   loginSchema,
+  meQuerySchema,
   registerSchema,
   updateMeSchema,
   userIdParamSchema,
@@ -20,7 +21,7 @@ const userResponseSchema = z.object({
   name: z.string(),
   surname: z.string(),
   roles: z.array(z.string()),
-  gender: z.enum(['male', 'female', 'other']).optional(),
+  gender: z.enum(['male', 'female']).optional(),
   countryCode: z.string().optional(),
   birthDate: z.string().optional(),
   photoUrl: z.string().nullable().optional(),
@@ -122,13 +123,15 @@ export const userPaths: ZodOpenApiPathsObject = {
       tags: ['Users'],
       security: securityRequirement,
       summary: 'Get current authenticated user profile',
+      requestParams: { query: meQuerySchema },
       responses: {
         '200': {
-          description: 'User profile data with runtime plant context metadata and permissions',
+          description:
+            'User profile data with runtime plant context metadata and permissions; roles hold ids, or { _id, name, description } with ?populate=roles (no readRoles needed)',
           content: {
             'application/json': {
               schema: z.object({
-                data: userResponseSchema,
+                data: userWithRolesSchema,
                 meta: z.object({
                   plantTimezone: z.string(),
                   serverTime: z.string(),
@@ -144,13 +147,21 @@ export const userPaths: ZodOpenApiPathsObject = {
     patch: {
       tags: ['Users'],
       security: securityRequirement,
-      summary: 'Update current user profile',
+      summary: 'Update current user profile (the username is changed by an administrator only)',
       requestBody: {
         content: { 'application/json': { schema: updateMeSchema } },
       },
       responses: {
-        '200': { description: 'User updated successfully' },
-        '400': { description: 'Validation error' },
+        '200': {
+          description: 'User updated successfully',
+          content: {
+            'application/json': {
+              schema: z.object({ data: userResponseSchema, message: z.string() }),
+            },
+          },
+        },
+        '400': { description: 'Validation error, also for a username or any other unknown field' },
+        '409': { description: 'Email already in use' },
       },
     },
     delete: {
@@ -276,8 +287,31 @@ export const userPaths: ZodOpenApiPathsObject = {
         },
       },
       responses: {
-        '200': { description: 'Avatar updated' },
+        '200': {
+          description: 'Avatar updated',
+          content: {
+            'application/json': {
+              schema: z.object({ data: userResponseSchema, message: z.string() }),
+            },
+          },
+        },
         '400': { description: 'No file, not a JPEG, PNG or WebP image, or over 5 MB' },
+      },
+    },
+    delete: {
+      tags: ['Users'],
+      security: securityRequirement,
+      summary: 'Remove the current user avatar; with none, nothing changes',
+      responses: {
+        '200': {
+          description: 'Avatar removed: photoUrl is null and the file is gone',
+          content: {
+            'application/json': {
+              schema: z.object({ data: userResponseSchema, message: z.string() }),
+            },
+          },
+        },
+        '401': { description: 'Unauthorized' },
       },
     },
   },

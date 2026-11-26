@@ -12,6 +12,7 @@ import {
   adminCreateUserSchema,
   adminResetPasswordSchema,
   adminUpdateUserSchema,
+  meQuerySchema,
   updateMeSchema,
   userIdParamSchema,
   userListSchema,
@@ -20,9 +21,10 @@ import {
 const router = Router()
 
 // "me" endpoints — any authenticated user
-router.get('/users/me', userController.getUser)
+router.get('/users/me', validateQuery(meQuerySchema), userController.getUser)
 router.patch('/users/me', validateBody(updateMeSchema), userController.updateUser)
 router.patch('/users/me/avatar', uploadImage('photo'), userController.updateAvatar)
+router.delete('/users/me/avatar', userController.removeAvatar)
 router.delete('/users/me', userController.deleteUser)
 
 // Admin endpoints — require specific permissions

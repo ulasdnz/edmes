@@ -196,8 +196,8 @@ Failed login counter updates use `findByIdAndUpdate` with `$set`. `findByIdAndUp
 
 | Via | Allowed Fields | Auth | Permission |
 |-----|---------------|------|------------|
-| Self (PATCH /me) | name, surname, email, username, gender, countryCode, birthDate, language, defaultDashboardId | JWT | none |
-| Admin (PATCH /:id) | all self fields + personalNumber, isActivated, isActiveDirectoryUser, departmentId, workCenterIds, specialities, roles, props | JWT | `writeUsers` |
+| Self (PATCH /me) | name, surname, email, gender, countryCode, birthDate, language, defaultDashboardId | JWT | none |
+| Admin (PATCH /:id) | all self fields + username, personalNumber, isActivated, isActiveDirectoryUser, departmentId, workCenterIds, specialities, roles, props | JWT | `writeUsers` |
 
 **Side effects on update:**
 1. Email uniqueness check (409 on conflict)
@@ -515,7 +515,7 @@ There is no check like "can this admin modify this specific user?" — if you ha
 | surname | trim, min 1 |
 | email | valid email, uniqueness checked |
 | username | trim, lowercase, 3-30, alphanumeric + `._-` |
-| gender | enum: male, female, other |
+| gender | enum: male, female |
 | countryCode | free-form string |
 | birthDate | coerced to Date |
 | language | enum: en, tr |
@@ -568,6 +568,7 @@ There is no check like "can this admin modify this specific user?" — if you ha
 ### Old File Cleanup
 
 - On avatar update: previous file deleted from disk (best-effort)
+- On avatar removal (`DELETE /users/me/avatar`): the file is deleted the same way and `photoUrl` becomes `null`; with no avatar the call changes nothing
 - Exception: default Node.js logo path is never deleted
 - On user delete: avatar file is **NOT** deleted
 - On failed upload: no cleanup needed (multer doesn't write on filter rejection)

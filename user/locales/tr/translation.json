@@ -62,6 +62,7 @@
     "update": "Kullanıcı başarıyla güncellendi",
     "create": "Kullanıcı başarıyla oluşturuldu",
     "avatar_update": "Avatar başarıyla güncellendi",
+    "avatar_remove": "Avatar kaldırıldı",
     "password_reset": "Şifre başarıyla sıfırlandı",
     "verify": "Doğrulama başarılı",
     "get": "Kullanıcı başarıyla alındı",

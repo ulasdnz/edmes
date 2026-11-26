@@ -56,6 +56,8 @@ const birthDateSchema = z
   )
   .meta({ example: '1990-05-15', description: 'Birth date (YYYY-MM-DD, date-only)' })
 
+const genderSchema = z.enum(['male', 'female'])
+
 export const registerSchema = z
   .object({
     username: usernameSchema,
@@ -78,8 +80,7 @@ export const updateMeSchema = z
     name: nameSchema.optional(),
     surname: surnameSchema.optional(),
     email: emailSchema.optional(),
-    username: usernameSchema.optional(),
-    gender: z.enum(['male', 'female', 'other']).optional(),
+    gender: genderSchema.optional(),
     countryCode: z.string().optional(),
     birthDate: birthDateSchema.optional(),
     language: z.enum(['en', 'tr']).optional(),
@@ -87,8 +88,10 @@ export const updateMeSchema = z
   })
   .strict()
 
+// Only an administrator changes a username: PATCH /users/me refuses it
 export const adminUpdateUserSchema = updateMeSchema
   .extend({
+    username: usernameSchema.optional(),
     personalNumber: z.string().nullable().optional(),
     isActiveDirectoryUser: z.boolean().optional(),
     isActivated: z.boolean().optional(),
@@ -122,6 +125,10 @@ export const userListSchema = paginationSchema.extend({
   populate: z.string().optional(),
 })
 
+export const meQuerySchema = z.object({
+  populate: z.enum(['roles']).optional(),
+})
+
 export const userIdParamSchema = z.object({
   id: objectIdSchema,
 })
@@ -135,3 +142,4 @@ export type AdminCreateUserInput = z.infer<typeof adminCreateUserSchema>
 export type AdminUpdateUserInput = z.infer<typeof adminUpdateUserSchema>
 export type AdminResetPasswordInput = z.infer<typeof adminResetPasswordSchema>
 export type UserListInput = z.infer<typeof userListSchema>
+export type MeQueryInput = z.infer<typeof meQuerySchema>

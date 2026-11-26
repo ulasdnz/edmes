@@ -130,7 +130,7 @@ export interface paths {
                                     surname: string;
                                     roles: string[];
                                     /** @enum {string} */
-                                    gender?: "male" | "female" | "other";
+                                    gender?: "male" | "female";
                                     countryCode?: string;
                                     birthDate?: string;
                                     photoUrl?: string | null;
@@ -222,14 +222,16 @@ export interface paths {
         /** Get current authenticated user profile */
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    populate?: "roles";
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;
             };
             requestBody?: never;
             responses: {
-                /** @description User profile data with runtime plant context metadata and permissions */
+                /** @description User profile data with runtime plant context metadata and permissions; roles hold ids, or { _id, name, description } with ?populate=roles (no readRoles needed) */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -242,9 +244,13 @@ export interface paths {
                                 email: string;
                                 name: string;
                                 surname: string;
-                                roles: string[];
+                                roles: (string | {
+                                    _id: string;
+                                    name: string;
+                                    description?: string | null;
+                                })[];
                                 /** @enum {string} */
-                                gender?: "male" | "female" | "other";
+                                gender?: "male" | "female";
                                 countryCode?: string;
                                 birthDate?: string;
                                 photoUrl?: string | null;
@@ -312,7 +318,7 @@ export interface paths {
         };
         options?: never;
         head?: never;
-        /** Update current user profile */
+        /** Update current user profile (the username is changed by an administrator only) */
         patch: {
             parameters: {
                 query?: never;
@@ -339,13 +345,8 @@ export interface paths {
                          * @example john.doe@example.com
                          */
                         email?: string;
-                        /**
-                         * @description Unique username
-                         * @example johndoe
-                         */
-                        username?: string;
                         /** @enum {string} */
-                        gender?: "male" | "female" | "other";
+                        gender?: "male" | "female";
                         countryCode?: string;
                         /**
                          * @description Birth date (YYYY-MM-DD, date-only)
@@ -364,10 +365,50 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
+                    content: {
+                        "application/json": {
+                            data: {
+                                _id: string;
+                                username: string;
+                                email: string;
+                                name: string;
+                                surname: string;
+                                roles: string[];
+                                /** @enum {string} */
+                                gender?: "male" | "female";
+                                countryCode?: string;
+                                birthDate?: string;
+                                photoUrl?: string | null;
+                                /** @enum {string} */
+                                language: "en" | "tr";
+                                personalNumber?: string | null;
+                                departmentId?: string | null;
+                                workCenterIds: string[];
+                                specialities: string[];
+                                defaultDashboardId?: string | null;
+                                props: {
+                                    [key: string]: string;
+                                };
+                                isActivated: boolean;
+                                isActiveDirectoryUser: boolean;
+                                passwordChangedAt?: string;
+                                mustChangePassword: boolean;
+                                createdAt: string;
+                                updatedAt: string;
+                            };
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Validation error, also for a username or any other unknown field */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
                     content?: never;
                 };
-                /** @description Validation error */
-                400: {
+                /** @description Email already in use */
+                409: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -423,7 +464,7 @@ export interface paths {
                                     description?: string | null;
                                 })[];
                                 /** @enum {string} */
-                                gender?: "male" | "female" | "other";
+                                gender?: "male" | "female";
                                 countryCode?: string;
                                 birthDate?: string;
                                 photoUrl?: string | null;
@@ -508,7 +549,7 @@ export interface paths {
                          */
                         password: string;
                         /** @enum {string} */
-                        gender?: "male" | "female" | "other";
+                        gender?: "male" | "female";
                         countryCode?: string;
                         /**
                          * @description Birth date (YYYY-MM-DD, date-only)
@@ -604,7 +645,7 @@ export interface paths {
                                 surname: string;
                                 roles: string[];
                                 /** @enum {string} */
-                                gender?: "male" | "female" | "other";
+                                gender?: "male" | "female";
                                 countryCode?: string;
                                 birthDate?: string;
                                 photoUrl?: string | null;
@@ -712,13 +753,8 @@ export interface paths {
                          * @example john.doe@example.com
                          */
                         email?: string;
-                        /**
-                         * @description Unique username
-                         * @example johndoe
-                         */
-                        username?: string;
                         /** @enum {string} */
-                        gender?: "male" | "female" | "other";
+                        gender?: "male" | "female";
                         countryCode?: string;
                         /**
                          * @description Birth date (YYYY-MM-DD, date-only)
@@ -728,6 +764,11 @@ export interface paths {
                         /** @enum {string} */
                         language?: "en" | "tr";
                         defaultDashboardId?: string | null;
+                        /**
+                         * @description Unique username
+                         * @example johndoe
+                         */
+                        username?: string;
                         personalNumber?: string | null;
                         isActiveDirectoryUser?: boolean;
                         isActivated?: boolean;
@@ -853,7 +894,65 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        delete?: never;
+        /** Remove the current user avatar; with none, nothing changes */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Avatar removed: photoUrl is null and the file is gone */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                _id: string;
+                                username: string;
+                                email: string;
+                                name: string;
+                                surname: string;
+                                roles: string[];
+                                /** @enum {string} */
+                                gender?: "male" | "female";
+                                countryCode?: string;
+                                birthDate?: string;
+                                photoUrl?: string | null;
+                                /** @enum {string} */
+                                language: "en" | "tr";
+                                personalNumber?: string | null;
+                                departmentId?: string | null;
+                                workCenterIds: string[];
+                                specialities: string[];
+                                defaultDashboardId?: string | null;
+                                props: {
+                                    [key: string]: string;
+                                };
+                                isActivated: boolean;
+                                isActiveDirectoryUser: boolean;
+                                passwordChangedAt?: string;
+                                mustChangePassword: boolean;
+                                createdAt: string;
+                                updatedAt: string;
+                            };
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Unauthorized */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
         options?: never;
         head?: never;
         /** Upload/update user avatar */
@@ -878,7 +977,40 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": {
+                            data: {
+                                _id: string;
+                                username: string;
+                                email: string;
+                                name: string;
+                                surname: string;
+                                roles: string[];
+                                /** @enum {string} */
+                                gender?: "male" | "female";
+                                countryCode?: string;
+                                birthDate?: string;
+                                photoUrl?: string | null;
+                                /** @enum {string} */
+                                language: "en" | "tr";
+                                personalNumber?: string | null;
+                                departmentId?: string | null;
+                                workCenterIds: string[];
+                                specialities: string[];
+                                defaultDashboardId?: string | null;
+                                props: {
+                                    [key: string]: string;
+                                };
+                                isActivated: boolean;
+                                isActiveDirectoryUser: boolean;
+                                passwordChangedAt?: string;
+                                mustChangePassword: boolean;
+                                createdAt: string;
+                                updatedAt: string;
+                            };
+                            message: string;
+                        };
+                    };
                 };
                 /** @description No file, not a JPEG, PNG or WebP image, or over 5 MB */
                 400: {
@@ -1029,7 +1161,7 @@ export interface paths {
                                     description?: string | null;
                                 }[];
                                 /** @enum {string} */
-                                gender?: "male" | "female" | "other";
+                                gender?: "male" | "female";
                                 countryCode?: string;
                                 birthDate?: string;
                                 photoUrl?: string | null;

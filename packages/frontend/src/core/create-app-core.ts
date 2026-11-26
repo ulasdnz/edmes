@@ -73,7 +73,8 @@ export function createAppCore(options: AppCoreOptions): AppCore {
       if (matches(payload)) void session.refresh()
     }
   const holdsRole = refreshIf(payload => {
-    const roles: readonly string[] = session.getState().user?.roles ?? []
+    // Ids: the session reads /users/me without populate
+    const roles = session.getState().user?.roles ?? []
     return typeof payload.roleId === 'string' && roles.includes(payload.roleId)
   })
   // The gateway sends an entity event only to its entity room.

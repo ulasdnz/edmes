@@ -168,8 +168,7 @@
                               "type": "string",
                               "enum": [
                                 "male",
-                                "female",
-                                "other"
+                                "female"
                               ]
                             },
                             "countryCode": {
@@ -347,9 +346,21 @@
           }
         ],
         "summary": "Get current authenticated user profile",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "populate",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "roles"
+              ]
+            }
+          }
+        ],
         "responses": {
           "200": {
-            "description": "User profile data with runtime plant context metadata and permissions",
+            "description": "User profile data with runtime plant context metadata and permissions; roles hold ids, or { _id, name, description } with ?populate=roles (no readRoles needed)",
             "content": {
               "application/json": {
                 "schema": {
@@ -376,15 +387,40 @@
                         "roles": {
                           "type": "array",
                           "items": {
-                            "type": "string"
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "_id": {
+                                    "type": "string"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "description": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "_id",
+                                  "name"
+                                ],
+                                "additionalProperties": false
+                              }
+                            ]
                           }
                         },
                         "gender": {
                           "type": "string",
                           "enum": [
                             "male",
-                            "female",
-                            "other"
+                            "female"
                           ]
                         },
                         "countryCode": {
@@ -530,7 +566,7 @@
             "BearerAuth": []
           }
         ],
-        "summary": "Update current user profile",
+        "summary": "Update current user profile (the username is changed by an administrator only)",
         "requestBody": {
           "content": {
             "application/json": {
@@ -557,20 +593,11 @@
                     "example": "john.doe@example.com",
                     "description": "User email address"
                   },
-                  "username": {
-                    "type": "string",
-                    "minLength": 3,
-                    "maxLength": 30,
-                    "pattern": "^[a-z0-9._-]+$",
-                    "example": "johndoe",
-                    "description": "Unique username"
-                  },
                   "gender": {
                     "type": "string",
                     "enum": [
                       "male",
-                      "female",
-                      "other"
+                      "female"
                     ]
                   },
                   "countryCode": {
@@ -603,10 +630,157 @@
         },
         "responses": {
           "200": {
-            "description": "User updated successfully"
+            "description": "User updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "_id": {
+                          "type": "string"
+                        },
+                        "username": {
+                          "type": "string"
+                        },
+                        "email": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "surname": {
+                          "type": "string"
+                        },
+                        "roles": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "gender": {
+                          "type": "string",
+                          "enum": [
+                            "male",
+                            "female"
+                          ]
+                        },
+                        "countryCode": {
+                          "type": "string"
+                        },
+                        "birthDate": {
+                          "type": "string"
+                        },
+                        "photoUrl": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "language": {
+                          "type": "string",
+                          "enum": [
+                            "en",
+                            "tr"
+                          ]
+                        },
+                        "personalNumber": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "departmentId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "workCenterIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "specialities": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "defaultDashboardId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "props": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {
+                            "type": "string"
+                          }
+                        },
+                        "isActivated": {
+                          "type": "boolean"
+                        },
+                        "isActiveDirectoryUser": {
+                          "type": "boolean"
+                        },
+                        "passwordChangedAt": {
+                          "type": "string"
+                        },
+                        "mustChangePassword": {
+                          "type": "boolean"
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "_id",
+                        "username",
+                        "email",
+                        "name",
+                        "surname",
+                        "roles",
+                        "language",
+                        "workCenterIds",
+                        "specialities",
+                        "props",
+                        "isActivated",
+                        "isActiveDirectoryUser",
+                        "mustChangePassword",
+                        "createdAt",
+                        "updatedAt"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
           },
           "400": {
-            "description": "Validation error"
+            "description": "Validation error, also for a username or any other unknown field"
+          },
+          "409": {
+            "description": "Email already in use"
           }
         }
       },
@@ -785,8 +959,7 @@
                             "type": "string",
                             "enum": [
                               "male",
-                              "female",
-                              "other"
+                              "female"
                             ]
                           },
                           "countryCode": {
@@ -991,8 +1164,7 @@
                     "type": "string",
                     "enum": [
                       "male",
-                      "female",
-                      "other"
+                      "female"
                     ]
                   },
                   "countryCode": {
@@ -1146,8 +1318,7 @@
                           "type": "string",
                           "enum": [
                             "male",
-                            "female",
-                            "other"
+                            "female"
                           ]
                         },
                         "countryCode": {
@@ -1309,20 +1480,11 @@
                     "example": "john.doe@example.com",
                     "description": "User email address"
                   },
-                  "username": {
-                    "type": "string",
-                    "minLength": 3,
-                    "maxLength": 30,
-                    "pattern": "^[a-z0-9._-]+$",
-                    "example": "johndoe",
-                    "description": "Unique username"
-                  },
                   "gender": {
                     "type": "string",
                     "enum": [
                       "male",
-                      "female",
-                      "other"
+                      "female"
                     ]
                   },
                   "countryCode": {
@@ -1346,6 +1508,14 @@
                       "string",
                       "null"
                     ]
+                  },
+                  "username": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 30,
+                    "pattern": "^[a-z0-9._-]+$",
+                    "example": "johndoe",
+                    "description": "Unique username"
                   },
                   "personalNumber": {
                     "type": [
@@ -1535,10 +1705,317 @@
         },
         "responses": {
           "200": {
-            "description": "Avatar updated"
+            "description": "Avatar updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "_id": {
+                          "type": "string"
+                        },
+                        "username": {
+                          "type": "string"
+                        },
+                        "email": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "surname": {
+                          "type": "string"
+                        },
+                        "roles": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "gender": {
+                          "type": "string",
+                          "enum": [
+                            "male",
+                            "female"
+                          ]
+                        },
+                        "countryCode": {
+                          "type": "string"
+                        },
+                        "birthDate": {
+                          "type": "string"
+                        },
+                        "photoUrl": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "language": {
+                          "type": "string",
+                          "enum": [
+                            "en",
+                            "tr"
+                          ]
+                        },
+                        "personalNumber": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "departmentId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "workCenterIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "specialities": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "defaultDashboardId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "props": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {
+                            "type": "string"
+                          }
+                        },
+                        "isActivated": {
+                          "type": "boolean"
+                        },
+                        "isActiveDirectoryUser": {
+                          "type": "boolean"
+                        },
+                        "passwordChangedAt": {
+                          "type": "string"
+                        },
+                        "mustChangePassword": {
+                          "type": "boolean"
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "_id",
+                        "username",
+                        "email",
+                        "name",
+                        "surname",
+                        "roles",
+                        "language",
+                        "workCenterIds",
+                        "specialities",
+                        "props",
+                        "isActivated",
+                        "isActiveDirectoryUser",
+                        "mustChangePassword",
+                        "createdAt",
+                        "updatedAt"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
           },
           "400": {
             "description": "No file, not a JPEG, PNG or WebP image, or over 5 MB"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Users"
+        ],
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Remove the current user avatar; with none, nothing changes",
+        "responses": {
+          "200": {
+            "description": "Avatar removed: photoUrl is null and the file is gone",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "_id": {
+                          "type": "string"
+                        },
+                        "username": {
+                          "type": "string"
+                        },
+                        "email": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "surname": {
+                          "type": "string"
+                        },
+                        "roles": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "gender": {
+                          "type": "string",
+                          "enum": [
+                            "male",
+                            "female"
+                          ]
+                        },
+                        "countryCode": {
+                          "type": "string"
+                        },
+                        "birthDate": {
+                          "type": "string"
+                        },
+                        "photoUrl": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "language": {
+                          "type": "string",
+                          "enum": [
+                            "en",
+                            "tr"
+                          ]
+                        },
+                        "personalNumber": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "departmentId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "workCenterIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "specialities": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "defaultDashboardId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "props": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {
+                            "type": "string"
+                          }
+                        },
+                        "isActivated": {
+                          "type": "boolean"
+                        },
+                        "isActiveDirectoryUser": {
+                          "type": "boolean"
+                        },
+                        "passwordChangedAt": {
+                          "type": "string"
+                        },
+                        "mustChangePassword": {
+                          "type": "boolean"
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "_id",
+                        "username",
+                        "email",
+                        "name",
+                        "surname",
+                        "roles",
+                        "language",
+                        "workCenterIds",
+                        "specialities",
+                        "props",
+                        "isActivated",
+                        "isActiveDirectoryUser",
+                        "mustChangePassword",
+                        "createdAt",
+                        "updatedAt"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
           }
         }
       }
@@ -1692,8 +2169,7 @@
                           "type": "string",
                           "enum": [
                             "male",
-                            "female",
-                            "other"
+                            "female"
                           ]
                         },
                         "countryCode": {

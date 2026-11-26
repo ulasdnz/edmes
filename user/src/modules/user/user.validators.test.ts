@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { updateMeSchema } from './user.validators.js'
+import User from './user.model.js'
+import { adminUpdateUserSchema, updateMeSchema } from './user.validators.js'
 
 describe('updateMeSchema - birthDate (date-only)', () => {
   it('accepts valid YYYY-MM-DD and keeps it as a string', () => {
@@ -49,5 +50,34 @@ describe('updateMeSchema - birthDate (date-only)', () => {
   it('rejects month overflow ("1990-13-01")', () => {
     const r = updateMeSchema.safeParse({ birthDate: '1990-13-01' })
     expect(r.success).toBe(false)
+  })
+})
+
+describe('gender has two values', () => {
+  // scenario: UserGender.twoValues / constraints / [HIGH] both schemas accept female and male, reject other
+  it.each([
+    ['updateMeSchema', updateMeSchema],
+    ['adminUpdateUserSchema', adminUpdateUserSchema],
+  ] as const)('%s accepts female and male and rejects other', (_name, schema) => {
+    expect(schema.safeParse({ gender: 'female' }).success).toBe(true)
+    expect(schema.safeParse({ gender: 'male' }).success).toBe(true)
+    expect(schema.safeParse({ gender: 'other' }).success).toBe(false)
+  })
+
+  // scenario: UserGender.twoValues / constraints / the model enum is exactly male, female
+  it('the user model allows exactly male and female, and refuses to save other', async () => {
+    const path = User.schema.path('gender') as unknown as { enumValues: string[] }
+    expect(path.enumValues).toEqual(['male', 'female'])
+
+    const user = new User({
+      username: 'gender.other',
+      email: 'gender.other@example.com',
+      password: 'not-a-real-hash',
+      name: 'Gender',
+      surname: 'Other',
+      gender: 'other',
+    })
+    await expect(user.save()).rejects.toMatchObject({ name: 'ValidationError' })
+    expect(await User.countDocuments({ username: 'gender.other' })).toBe(0)
   })
 })

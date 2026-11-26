@@ -63,7 +63,7 @@
 | `name` | String | yes | — | trim |
 | `surname` | String | yes | — | trim |
 | `roles` | ObjectId[] | no | `[]` | indexed, references Role (via virtual) |
-| `gender` | String | no | — | enum: `male`, `female`, `other` |
+| `gender` | String | no | — | enum: `male`, `female` |
 | `countryCode` | String | no | — | free-form |
 | `birthDate` | Date | no | — | — |
 | `photoUrl` | String | no | `null` | path to uploaded file |
@@ -127,12 +127,12 @@ export type IUser = InferSchemaType<typeof userSchema> & {
 
 | Field | Rule | Schema |
 |-------|------|--------|
-| username | 3-30 chars, `/^[a-z0-9._-]+$/`, trim, lowercase | register, updateMe |
+| username | 3-30 chars, `/^[a-z0-9._-]+$/`, trim, lowercase | register, adminCreate, adminUpdate (not updateMe) |
 | name | 2-24 chars, trim | register, updateMe |
 | surname | min 1, trim | register, updateMe |
 | email | `z.email()` | register, updateMe |
 | password | 8-20 chars | register, adminCreate, adminReset |
-| gender | `enum ['male', 'female', 'other']` | updateMe, adminUpdate |
+| gender | `enum ['male', 'female']` | updateMe, adminUpdate |
 | language | `enum ['en', 'tr']` | updateMe, adminUpdate |
 | birthDate | `z.coerce.date()` | updateMe, adminUpdate |
 | personalNumber | `string \| null` | adminUpdate only |

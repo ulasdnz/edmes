@@ -83,4 +83,38 @@ describe('user service openapi document', () => {
       expect.arrayContaining([expect.objectContaining({ name: 'withoutWorkCenter', in: 'query' })]),
     )
   })
+
+  // scenario: OpenApiDocument.profile / constraints / avatar delete, populate, gender, no username
+  it('documents the profile endpoints: avatar delete, populate, two genders, no username', () => {
+    type Prop = { enum?: string[]; properties?: Record<string, Prop> }
+    type Op = {
+      parameters?: { name: string; in: string; schema?: Prop }[]
+      requestBody?: { content: Record<string, { schema: Prop }> }
+      responses: Record<string, { content?: Record<string, { schema: Prop }> }>
+    }
+    const doc = openApiDocument as unknown as { paths: Record<string, Record<string, Op>> }
+
+    expect(doc.paths['/users/me/avatar'].delete).toBeDefined()
+
+    const populate = (doc.paths['/users/me'].get.parameters ?? []).find(
+      param => param.name === 'populate' && param.in === 'query',
+    )
+    expect(populate?.schema?.enum).toEqual(['roles'])
+
+    const patchBody =
+      doc.paths['/users/me'].patch.requestBody?.content['application/json'].schema.properties
+    expect(patchBody).toBeDefined()
+    expect(patchBody).not.toHaveProperty('username')
+    expect(patchBody?.gender.enum).toEqual(['male', 'female'])
+
+    const adminBody =
+      doc.paths['/users/{id}'].patch.requestBody?.content['application/json'].schema.properties
+    expect(adminBody).toHaveProperty('username')
+    expect(adminBody?.gender.enum).toEqual(['male', 'female'])
+
+    const user =
+      doc.paths['/users/me'].get.responses['200'].content?.['application/json'].schema.properties
+        ?.data
+    expect(user?.properties?.gender.enum).toEqual(['male', 'female'])
+  })
 })

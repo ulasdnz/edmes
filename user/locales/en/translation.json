@@ -73,6 +73,7 @@
     "update": "User updated successfully",
     "create": "User created successfully",
     "avatar_update": "Avatar updated successfully",
+    "avatar_remove": "Avatar removed",
     "password_reset": "Password reset successfully",
     "verify": "Verification successful",
     "get": "User profile retrieved successfully",
