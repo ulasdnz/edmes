@@ -58,7 +58,10 @@ const dropped: Reply = res => res.destroy()
 
 // One node:http server answers the REST calls by "METHOD path" from a script per route, and
 // carries a socket.io server on /socket.io the way the gateway sits behind the same origin.
-async function startBackend(routes: Record<string, Reply[]>) {
+async function startBackend(
+  routes: Record<string, Reply[]>,
+  gateway: { reject?: () => string | undefined; deny?: readonly string[] } = {},
+) {
   const requests: string[] = []
   const counts = new Map<string, number>()
   const concurrency = { inFlight: 0, max: 0 }
@@ -81,6 +84,10 @@ async function startBackend(routes: Record<string, Reply[]>) {
   const io = new Server(http, { transports: ['websocket'] })
   // the token of every socket connection, in order
   const socketTokens: unknown[] = []
+  io.use((_socket, next) => {
+    const message = gateway.reject?.()
+    next(message ? new Error(message) : undefined)
+  })
   io.on('connection', socket => {
     socketTokens.push(socket.handshake.auth.token)
     socket.on('join', (data: { rooms?: unknown[] }, ack?: (res: { rooms: string[] }) => void) => {
@@ -89,7 +96,9 @@ async function startBackend(routes: Record<string, Reply[]>) {
       for (const room of socket.rooms) {
         if (room !== socket.id) socket.leave(room)
       }
-      const allowed = rooms.filter((room): room is string => typeof room === 'string')
+      const allowed = rooms.filter(
+        (room): room is string => typeof room === 'string' && !gateway.deny?.includes(room),
+      )
       for (const room of allowed) socket.join(room)
       if (typeof ack === 'function') ack({ rooms: allowed })
     })
@@ -122,7 +131,9 @@ function memoryStorage(token?: string) {
 
 function build(
   url: string,
-  options: Partial<Pick<AppCoreOptions, 'heartbeatMs' | 'storage' | 'storageEvents'>> = {},
+  options: Partial<
+    Pick<AppCoreOptions, 'app' | 'heartbeatMs' | 'storage' | 'storageEvents' | 'onRoomsDenied'>
+  > = {},
 ): AppCore {
   const core = createAppCore({
     app: 'web',
@@ -365,5 +376,264 @@ describe('app core', () => {
       await sleep(150)
       expect(backend.count('GET /users/me')).toBe(asked)
     })
+
+    // scenario: AppCore.sessionAndRealtime / authorization / another tab removes edmes.web.token
+    it('signs this tab out, clears the cache and stops realtime without asking the server', async () => {
+      for (const change of ['key removed', 'storage cleared'] as const) {
+        const { backend, storage, storageEvents, core } = await signedIn()
+        if (change === 'key removed') {
+          storage.removeItem('edmes.web.token')
+          storageEvents.dispatchEvent(storageEvent(storage, 'edmes.web.token', null))
+        } else {
+          storage.clear()
+          storageEvents.dispatchEvent(storageEvent(storage, null, null))
+        }
+        await vi.waitFor(() => expect(core.session.getState().status).toBe('anonymous'))
+        expect(core.session.getState()).toMatchObject({ user: null, permissions: [] })
+        expect(core.queryClient.getQueryCache().getAll()).toEqual([])
+        expect(core.realtime.getStatus()).toBe('idle')
+        expect(backend.count('GET /users/me')).toBe(1)
+      }
+    })
+  })
+})
+
+describe('app core scenarios', () => {
+  const ownId = '0123456789abcdef01234567'
+
+  async function signedIn(roles: string[] = ['r1']) {
+    const backend = await startBackend({ 'GET /users/me': [ok(roles)] })
+    const core = build(backend.url)
+    await core.session.bootstrap()
+    await vi.waitFor(() => {
+      expect(core.realtime.getStatus()).toBe('live')
+      expect(backend.members('role')).toBe(1)
+      expect(backend.members('user')).toBe(1)
+    })
+    expect(backend.count('GET /users/me')).toBe(1)
+    return { backend, core }
+  }
+
+  // scenario: AppCore.sessionAndRealtime / happy path / the session becomes authenticated
+  it('starts the realtime client when the session becomes authenticated', async () => {
+    const backend = await startBackend({ 'GET /users/me': [ok()] })
+    const core = build(backend.url)
+    expect(core.realtime.getStatus()).toBe('idle')
+    await core.session.bootstrap()
+    expect(core.session.getState().status).toBe('authenticated')
+    expect(core.realtime.getStatus()).not.toBe('idle')
+    await vi.waitFor(() => expect(core.realtime.getStatus()).toBe('live'))
+    expect(backend.socketTokens).toEqual(['tkn'])
+  })
+
+  // scenario: AppCore.sessionAndRealtime / happy path / any other role.* event about one of the user's roles
+  it("refreshes the session on role.created and role.deleted for one of the user's roles", async () => {
+    const { backend } = await signedIn(['r1'])
+    backend.emit('role.created', { roleId: 'r1' })
+    await vi.waitFor(() => expect(backend.count('GET /users/me')).toBe(2))
+    backend.emit('role.deleted', { roleId: 'r1' })
+    await vi.waitFor(() => expect(backend.count('GET /users/me')).toBe(3))
+  })
+
+  // scenario: AppCore.sessionAndRealtime / happy path / user.updated for the signed-in user
+  it('refreshes the session when the signed-in user is updated', async () => {
+    const { backend } = await signedIn()
+    backend.emit('user.updated', { userId: ownId })
+    await vi.waitFor(() => expect(backend.count('GET /users/me')).toBe(2))
+  })
+
+  // scenario: AppCore.sessionAndRealtime / happy path / query defaults
+  it('keeps query data fresh for 30 seconds by default', () => {
+    const core = build('http://127.0.0.1:9')
+    expect(core.queryClient.getDefaultOptions().queries?.staleTime).toBe(30000)
+  })
+
+  // scenario: AppCore.sessionAndRealtime / constraints / role.updated for a role the user does not hold
+  it('does not refresh the session when a role the user does not hold changes', async () => {
+    const { backend, core } = await signedIn(['r1'])
+    const delivered: Array<Record<string, unknown>> = []
+    core.realtime.on('role.updated', payload => delivered.push(payload))
+    backend.emit('role.updated', { roleId: 'r2' })
+    await vi.waitFor(() => expect(delivered).toHaveLength(1))
+    await sleep(100)
+    expect(backend.count('GET /users/me')).toBe(1)
+  })
+
+  // scenario: AppCore.sessionAndRealtime / constraints / user.updated for another user
+  it('does not refresh the session when another user is updated', async () => {
+    const { backend, core } = await signedIn()
+    const delivered: Array<Record<string, unknown>> = []
+    core.realtime.on('user.updated', payload => delivered.push(payload))
+    backend.emit('user.updated', { userId: 'fedcba9876543210fedcba98' })
+    await vi.waitFor(() => expect(delivered).toHaveLength(1))
+    await sleep(100)
+    expect(backend.count('GET /users/me')).toBe(1)
+  })
+
+  // scenario: AppCore.sessionAndRealtime / constraints / status anonymous
+  it('sends no heartbeat while the session is anonymous', async () => {
+    const backend = await startBackend({ 'GET /users/me': [ok()] })
+    const neverSignedIn = build(backend.url, { heartbeatMs: 50, storage: memoryStorage() })
+    await neverSignedIn.session.bootstrap()
+    expect(neverSignedIn.session.getState().status).toBe('anonymous')
+    await sleep(200)
+    expect(backend.count('GET /users/me')).toBe(0)
+
+    const signedOut = build(backend.url, { heartbeatMs: 50 })
+    await signedOut.session.bootstrap()
+    expect(backend.count('GET /users/me')).toBe(1)
+    signedOut.session.logout()
+    expect(signedOut.session.getState().status).toBe('anonymous')
+    await sleep(200)
+    expect(backend.count('GET /users/me')).toBe(1)
+  })
+
+  // scenario: AppCore.sessionAndRealtime / constraints / a query fails with kind 'http'
+  it('does not retry a query that fails with an http error', async () => {
+    const backend = await startBackend({ 'GET /roles': [errorReply(500, 'error.internal')] })
+    const core = build(backend.url)
+    await expect(
+      core.queryClient.fetchQuery({
+        ...core.api.$api.queryOptions('get', '/roles'),
+        retryDelay: 0,
+      }),
+    ).rejects.toMatchObject({ kind: 'http', status: 500 })
+    await sleep(50)
+    expect(backend.count('GET /roles')).toBe(1)
+  })
+
+  // A /users answer that comes only after a second; a client that gives up closes the request.
+  const late: Reply = res => {
+    const timer = setTimeout(() => json(res, 200, { data: [] }), 1000)
+    res.on('close', () => clearTimeout(timer))
+  }
+
+  // scenario: AppCore.sessionAndRealtime / constraints / a query fails with kind 'network' or 'timeout'
+  it('retries a query twice when it fails with a network error or a timeout', async () => {
+    const backend = await startBackend({ 'GET /roles': [dropped], 'GET /users': [late] })
+    const core = build(backend.url)
+    await expect(
+      core.queryClient.fetchQuery({
+        ...core.api.$api.queryOptions('get', '/roles'),
+        retryDelay: 0,
+      }),
+    ).rejects.toMatchObject({ kind: 'network' })
+    expect(backend.count('GET /roles')).toBe(3)
+
+    let calls = 0
+    await expect(
+      core.queryClient.fetchQuery({
+        queryKey: ['get', '/users', { timeout: true }],
+        queryFn: async () => {
+          calls++
+          const { data } = await core.api.fetchClient.GET('/users', {
+            signal: AbortSignal.timeout(50),
+          })
+          return data
+        },
+        retryDelay: 0,
+      }),
+    ).rejects.toMatchObject({ kind: 'timeout' })
+    expect(calls).toBe(3)
+  })
+
+  // scenario: AppCore.sessionAndRealtime / constraints / a query fails with kind 'aborted'
+  it('does not retry a query whose request was aborted', async () => {
+    const backend = await startBackend({ 'GET /users': [late] })
+    const core = build(backend.url)
+    let calls = 0
+    await expect(
+      core.queryClient.fetchQuery({
+        queryKey: ['get', '/users', { aborted: true }],
+        queryFn: async () => {
+          calls++
+          const controller = new AbortController()
+          setTimeout(() => controller.abort(), 20)
+          const { data } = await core.api.fetchClient.GET('/users', { signal: controller.signal })
+          return data
+        },
+        retryDelay: 0,
+      }),
+    ).rejects.toMatchObject({ name: 'AbortError' })
+    await sleep(50)
+    expect(calls).toBe(1)
+  })
+
+  // scenario: AppCore.sessionAndRealtime / constraints / createAppCore({ onRoomsDenied })
+  it('reports the rooms the gateway refused through onRoomsDenied', async () => {
+    const backend = await startBackend({ 'GET /users/me': [ok()] }, { deny: ['wc:x'] })
+    const onRoomsDenied = vi.fn()
+    const core = build(backend.url, { onRoomsDenied })
+    await core.session.bootstrap()
+    await vi.waitFor(() => expect(core.realtime.getStatus()).toBe('live'))
+    core.realtime.subscribe(['job_order', 'wc:x'])
+    await vi.waitFor(() => expect(onRoomsDenied).toHaveBeenCalledWith(['wc:x']))
+    expect(onRoomsDenied).toHaveBeenCalledTimes(1)
+  })
+
+  // scenario: AppCore.sessionAndRealtime / authorization / app 'web' and app 'operator' token keys
+  it('keeps the web token under edmes.web.token and the operator token under edmes.operator.token', async () => {
+    const loginOk: Reply = res =>
+      json(res, 200, { data: { token: 'tkn', user: user(['r1']) }, message: 'Signed in' })
+    const backend = await startBackend({ 'POST /auth/login': [loginOk], 'GET /users/me': [ok()] })
+    const credentials = { email: 'ada@example.com', password: 'pw' }
+
+    const webStorage = memoryStorage()
+    const web = build(backend.url, { app: 'web', storage: webStorage })
+    await web.session.login(credentials)
+    expect(webStorage.getItem('edmes.web.token')).toBe('tkn')
+    expect(webStorage.getItem('edmes.operator.token')).toBeNull()
+
+    const operatorStorage = memoryStorage()
+    const operator = build(backend.url, { app: 'operator', storage: operatorStorage })
+    await operator.session.login(credentials)
+    expect(operatorStorage.getItem('edmes.operator.token')).toBe('tkn')
+    expect(operatorStorage.getItem('edmes.web.token')).toBeNull()
+  })
+
+  // scenario: AppCore.sessionAndRealtime / authorization / the session ends (logout() or a 401)
+  it('clears every cached query and stops realtime when the session ends by logout or by a 401', async () => {
+    const backend = await startBackend({
+      'GET /users/me': [ok()],
+      'GET /users': [unauthenticated],
+    })
+    const withData = (core: AppCore) =>
+      core.queryClient
+        .getQueryCache()
+        .getAll()
+        .filter(query => query.state.data !== undefined)
+
+    const loggedOut = build(backend.url)
+    await loggedOut.session.bootstrap()
+    await vi.waitFor(() => expect(loggedOut.realtime.getStatus()).toBe('live'))
+    loggedOut.queryClient.setQueryData(['get', '/roles', {}], { data: ['previous user data'] })
+    loggedOut.session.logout()
+    expect(withData(loggedOut)).toEqual([])
+    expect(loggedOut.realtime.getStatus()).toBe('idle')
+
+    const expired = build(backend.url)
+    await expired.session.bootstrap()
+    await vi.waitFor(() => expect(expired.realtime.getStatus()).toBe('live'))
+    expired.queryClient.setQueryData(['get', '/roles', {}], { data: ['previous user data'] })
+    await expired.queryClient
+      .fetchQuery(expired.api.$api.queryOptions('get', '/users'))
+      .catch(() => undefined)
+    expect(expired.session.getState().status).toBe('anonymous')
+    expect(withData(expired)).toEqual([])
+    expect(expired.realtime.getStatus()).toBe('idle')
+  })
+
+  // scenario: AppCore.sessionAndRealtime / authorization / the realtime client reports auth.unauthenticated
+  it('signs out when the realtime gateway answers auth.unauthenticated', async () => {
+    const backend = await startBackend(
+      { 'GET /users/me': [ok()] },
+      { reject: () => 'auth.unauthenticated' },
+    )
+    const storage = memoryStorage('tkn')
+    const core = build(backend.url, { storage })
+    await core.session.bootstrap()
+    await vi.waitFor(() => expect(core.session.getState().status).toBe('anonymous'))
+    expect(storage.getItem('edmes.web.token')).toBeNull()
+    expect(core.realtime.getStatus()).toBe('idle')
   })
 })
