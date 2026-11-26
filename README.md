@@ -217,7 +217,7 @@ runs behind it are in [MQTT broker capacity](docs/operations/mqtt-broker-capacit
   no package manager.
 - Dependabot moves the pinned base and infrastructure images and the action SHAs monthly, after a
   7-day cooldown.
-- A `vX.Y.Z` tag runs the [release workflow](.github/workflows/release.yml): it publishes the six
+- A `vX.Y.Z` tag runs the [release workflow](.github/workflows/release.yml): it publishes the seven
   images to GHCR, refuses a version that already exists, and attaches the install package.
 - [`install.sh`](install.sh) installs and upgrades a server: it fills every empty secret with a
   random value, never changing one already set, loads or pulls the version's images and waits until
