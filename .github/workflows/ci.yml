@@ -70,7 +70,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       # The frontend browser tests run in Chromium
-      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm --filter ui-e2e exec playwright install --with-deps chromium
       - run: pnpm test
 
   contract:
@@ -140,7 +140,7 @@ jobs:
           done
           # Within the password policy's 20 characters
           sed -i "s/^SYSTEM_ADMIN_PASSWORD=.*/SYSTEM_ADMIN_PASSWORD=Ci-$(openssl rand -hex 8)/" .env
-      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm --filter ui-e2e exec playwright install --with-deps chromium
       # Builds the images, starts the stack and runs the specs in Chromium. Under the job's limit:
       # a hung run fails this step instead of cancelling the job, which would skip the uploads
       - run: pnpm test:ui-e2e
