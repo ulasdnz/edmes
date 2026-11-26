@@ -1,4 +1,4 @@
-import type { APIRequestContext } from '@playwright/test'
+import type { APIRequestContext, Page, Request } from '@playwright/test'
 import { compose } from './compose'
 import { expect, signInToPanel, signInToWeb, test } from './fixtures'
 
@@ -14,6 +14,22 @@ async function whileUserServiceIsDown(request: APIRequestContext, body: () => Pr
   await expect
     .poll(async () => (await request.get('/api/v1/users/me')).status(), { timeout: 90_000 })
     .toBe(401)
+}
+
+// Watches /users/me for a while: the session asks it again every 5 s while the page waits.
+async function expectBootstrapEvery5s(page: Page) {
+  const askedAt: number[] = []
+  const onRequest = (request: Request) => {
+    if (new URL(request.url()).pathname === '/api/v1/users/me') askedAt.push(Date.now())
+  }
+  page.on('request', onRequest)
+  await page.waitForTimeout(17_000)
+  page.off('request', onRequest)
+  expect(askedAt.length).toBeGreaterThanOrEqual(3)
+  const gaps = askedAt.slice(1).map((at, index) => at - (askedAt[index] ?? at))
+  for (const gap of gaps) expect(gap).toBeLessThanOrEqual(6500)
+  // A 30 s heartbeat may add one request in the window, never more
+  expect(askedAt.length).toBeLessThanOrEqual(5)
 }
 
 function hhmm(at: number, timeZone: string): string {
@@ -83,6 +99,33 @@ test.describe('an outage of user-service in the web app', () => {
     await expect(page.getByRole('table', { name: 'Users' })).toBeVisible({ timeout: 60_000 })
     await expect(page).toHaveURL(/\/users/)
   })
+
+  // scenario: Web.shellOutage / edge cases / status unreachable without a user (the page was loaded
+  // during an outage) → the same message full-screen, session.bootstrap() every 5 s, and the app
+  // opens when it answers 200
+  test('a page loaded during the outage shows the message full-screen and asks every 5 s', async ({
+    page,
+    request,
+    seed,
+  }) => {
+    await signInToWeb(page, seed.admin, '/users')
+    await expect(page.getByRole('table', { name: 'Users' })).toBeVisible()
+
+    await whileUserServiceIsDown(request, async () => {
+      await page.reload()
+      const message = page.getByRole('status').filter({ hasText: 'Server unreachable, retrying' })
+      await expect(message).toBeVisible({ timeout: 30_000 })
+      // Full-screen: nothing of the layout is drawn around it
+      await expect(page.getByRole('navigation', { name: 'Main navigation' })).toHaveCount(0)
+      await expect(page.getByRole('banner')).toHaveCount(0)
+      await expect(page.getByRole('main')).toHaveCount(0)
+      await expectBootstrapEvery5s(page)
+      await expect(page).not.toHaveURL(/\/login/)
+    })
+
+    await expect(page.getByRole('table', { name: 'Users' })).toBeVisible({ timeout: 60_000 })
+    await expect(page).toHaveURL(/\/users/)
+  })
 })
 
 test.describe('an outage of user-service in the operator panel', () => {
@@ -138,5 +181,33 @@ test.describe('an outage of user-service in the operator panel', () => {
       timeout: 60_000,
     })
     expect(await page.evaluate(() => sessionStorage.getItem('e2e.sawNoAccess'))).toBeNull()
+  })
+
+  // scenario: Operator.shellOutage / edge cases / status unreachable without a user (the tablet
+  // started during an outage) → the same message full-screen, session.bootstrap() every 5 s, and
+  // the station opens when it answers 200
+  test('a tablet started during the outage shows the message full-screen and asks every 5 s', async ({
+    page,
+    request,
+    seed,
+  }) => {
+    await signInToPanel(page, seed.operator)
+    await expect(page.getByRole('heading', { name: seed.workCenter.name })).toBeVisible()
+
+    await whileUserServiceIsDown(request, async () => {
+      await page.reload()
+      const message = page.getByRole('status').filter({ hasText: 'Server unreachable, retrying' })
+      await expect(message).toBeVisible({ timeout: 30_000 })
+      // Full-screen: the station is not drawn under it
+      await expect(page.getByRole('heading', { name: seed.workCenter.name })).toHaveCount(0)
+      await expect(page.getByText('No running job order')).toHaveCount(0)
+      await expectBootstrapEvery5s(page)
+      await expect(page).not.toHaveURL(/\/operator\/login/)
+    })
+
+    await expect(page.getByRole('heading', { name: seed.workCenter.name })).toBeVisible({
+      timeout: 60_000,
+    })
+    await expect(page).not.toHaveURL(/\/operator\/login/)
   })
 })
