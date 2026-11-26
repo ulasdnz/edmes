@@ -18,7 +18,7 @@ x-logging: &logging
 
 services:
   traefik:
-    image: traefik:v3.7.16@sha256:1336e85aaed293bd63d005086e0dd013b04078b26aaeb1c18b26a2f928af7e65
+    image: traefik:v3.7.19@sha256:a6c0194dda77bcb804824580f36fa7edc56e315b1acfe933366c8b52844a78a4
     container_name: api_gateway
     restart: unless-stopped
     logging: *logging
@@ -63,7 +63,7 @@ services:
       - "traefik.http.middlewares.body-limit.buffering.maxRequestBodyBytes=26214400"
 
   mongodb:
-    image: mongo:9.0.4@sha256:452bdaf2127b8ff851e31410a267809b9829eded219979f2210e7c7efb85a058
+    image: mongo:9.0.8@sha256:b0c835c26e5997413e985000f1013c275377cd9607761c1784d486f6dd620b7f
     container_name: mongodb_dev
     restart: unless-stopped
     logging: *logging
@@ -87,7 +87,7 @@ services:
       start_period: 15s
 
   redis:
-    image: redis:7.4.12-alpine@sha256:8da19c7399dca900c6822a1cf30f9d2285585e2c4b457ff4095b0f4500054d3f
+    image: redis:7.4.12-alpine@sha256:7f7d30b7fdd09467bac58198a1f166dd69789d348d4fe859cccb20e0cf287fbe
     container_name: redis_dev
     restart: unless-stopped
     logging: *logging
@@ -105,7 +105,7 @@ services:
       retries: 5
 
   mosquitto:
-    image: eclipse-mosquitto:2.1.2-alpine@sha256:860aeb5d63ce509508f6dcfb2bc8a1c1dd2bc60555b562b45ce90e52d8dabb0f
+    image: eclipse-mosquitto:2.1.4-alpine@sha256:fa12172a051310efe5bcb7a6a11b77bd5faacb82cbacd7742aa758bf024fd8e4
     container_name: mosquitto_dev
     restart: unless-stopped
     logging: *logging
@@ -425,7 +425,7 @@ services:
           memory: 64M
 
   loki:
-    image: grafana/loki:3.7.9@sha256:0db216b630ae1f348a1584c67f3cead8b4c1fc839169a39501db664744158e28
+    image: grafana/loki:3.7.10@sha256:b43c257ccfc925d4a50b8717cac61a3b51df8c48d01847936057e5c4075a24a7
     container_name: loki
     restart: unless-stopped
     logging: *logging
@@ -445,7 +445,7 @@ services:
           memory: 300M
 
   alloy:
-    image: grafana/alloy:v1.21.3@sha256:8ab871206bd2d8f89277f53abffee5f452a293980788d52f85fa183a87a505a4
+    image: grafana/alloy:v1.22.0@sha256:9acc2529bc1edb7f5b2bd801dd8334ebc80c158e3a9e5526ecd7c9a273d43189
     container_name: alloy
     restart: unless-stopped
     logging: *logging
