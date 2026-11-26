@@ -125,11 +125,12 @@ describe('page states', () => {
         .toBeVisible()
     })
 
-    // scenario: Web.copyErrorDetails / edge cases / clipboard refused → selectable, Copy failed
-    it('keeps the details selectable on screen and says Copy failed when the clipboard refuses', async () => {
+    // scenario: Web.copyErrorDetails / edge cases / clipboard and fallback refuse → Copy failed
+    it('keeps the details selectable on screen and says Copy failed when nothing can copy', async () => {
       vi.spyOn(navigator.clipboard, 'writeText').mockRejectedValue(
         new DOMException('Write permission denied.', 'NotAllowedError'),
       )
+      vi.spyOn(document, 'execCommand').mockReturnValue(false)
       const screen = await renderError('abc-123')
 
       await screen.getByRole('button', { name: 'Copy error details' }).click()
@@ -145,9 +146,34 @@ describe('page states', () => {
       expect(selection?.toString()).toContain('code: client.timeout')
     })
 
-    // scenario: Web.copyErrorDetails / edge cases / no secure context: no clipboard at all
-    it('says Copy failed and shows the details where the browser has no clipboard', async () => {
+    // scenario: Web.copyErrorDetails / edge cases / no secure context (plain HTTP) → copied anyway
+    it('copies through a hidden text area where the browser has no clipboard, as on plain HTTP', async () => {
       vi.spyOn(navigator, 'clipboard', 'get').mockReturnValue(undefined as unknown as Clipboard)
+      const copied: string[] = []
+      vi.spyOn(document, 'execCommand').mockImplementation(command => {
+        const field = document.activeElement
+        if (command === 'copy' && field instanceof HTMLTextAreaElement) {
+          copied.push(field.value.slice(field.selectionStart, field.selectionEnd))
+          return true
+        }
+        return false
+      })
+      const screen = await renderError('abc-123')
+
+      await screen.getByRole('button', { name: 'Copy error details' }).click()
+
+      await expect.element(screen.getByRole('button', { name: 'Copied' })).toBeVisible()
+      expect(copied).toHaveLength(1)
+      expect(copied[0]).toContain('code: client.timeout')
+      expect(copied[0]).toContain('trace id: abc-123')
+      // the text area is gone again
+      expect(document.querySelectorAll('textarea')).toHaveLength(0)
+    })
+
+    // scenario: Web.copyErrorDetails / edge cases / clipboard missing and fallback refuses
+    it('says Copy failed and shows the details where neither the clipboard nor the fallback copies', async () => {
+      vi.spyOn(navigator, 'clipboard', 'get').mockReturnValue(undefined as unknown as Clipboard)
+      vi.spyOn(document, 'execCommand').mockReturnValue(false)
       const screen = await renderError('abc-123')
 
       await screen.getByRole('button', { name: 'Copy error details' }).click()
@@ -172,6 +198,7 @@ describe('page states', () => {
 
     it('says the buttons in Turkish', async () => {
       vi.spyOn(navigator.clipboard, 'writeText').mockRejectedValue(new Error('denied'))
+      vi.spyOn(document, 'execCommand').mockReturnValue(false)
       const screen = await renderWithI18n(
         <PageError title='t' message='m' details={details} onRetry={() => {}} />,
         'tr',

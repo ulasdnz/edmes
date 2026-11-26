@@ -132,7 +132,8 @@ Scope: the web app's shell brought in line with the canvas: the logo, the sign-i
 - the page error shows "Copy error details" next to "Try again"; pressing it copies a text with the error code, the HTTP status, the trace id and the time in plant time, and the button says "Copied" for a moment
 
 ### edge cases
-- the clipboard is refused (no permission or no secure context) → the details stay selectable on screen and the button says "Copy failed"
+- [HIGH] no secure context, as on the plant's plain-HTTP address (`navigator.clipboard` is missing or refuses) → the text is copied through a selected, hidden text area and the button says "Copied"
+- both the clipboard and that fallback refuse → the details stay selectable on screen and the button says "Copy failed"
 - an error without a trace id → the copied text says "trace id: none"
 
 ---

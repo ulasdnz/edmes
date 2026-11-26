@@ -100,12 +100,33 @@ function errorDetailsText(
 
 async function writeToClipboard(text: string): Promise<boolean> {
   try {
-    // undefined outside a secure context
-    if (!navigator.clipboard) return false
-    await navigator.clipboard.writeText(text)
-    return true
+    // undefined outside a secure context, which a plant reached over plain HTTP is
+    if (navigator.clipboard) {
+      await navigator.clipboard.writeText(text)
+      return true
+    }
+  } catch {
+    // refused: the fallback below may still copy
+  }
+  return copyThroughSelection(text)
+}
+
+// The pre-Clipboard-API way, which works on plain HTTP inside a click
+function copyThroughSelection(text: string): boolean {
+  const field = document.createElement('textarea')
+  field.value = text
+  field.setAttribute('readonly', '')
+  field.style.position = 'fixed'
+  field.style.opacity = '0'
+  document.body.append(field)
+  try {
+    field.focus()
+    field.select()
+    return document.execCommand('copy')
   } catch {
     return false
+  } finally {
+    field.remove()
   }
 }
 
