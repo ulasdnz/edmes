@@ -76,7 +76,8 @@ function UsersCounts(): ReactNode {
   const withoutWorkCenter = useQuery(options.withoutWorkCenter)
   const counts = [all, active, withoutWorkCenter]
 
-  if (counts.some(count => count.isError)) return null
+  // A failed background refetch keeps the counts it had; only counts never loaded are left out
+  if (counts.some(count => count.isError && count.data === undefined)) return null
   if (all.data === undefined || active.data === undefined || withoutWorkCenter.data === undefined) {
     return (
       <Skeleton role='status' aria-label={t('users.countsLoading')} className='my-1 h-3 w-56' />

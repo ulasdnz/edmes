@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { userEvent } from 'vitest/browser'
 import { type ApiAnswer, type ApiRequest, serveApi, unavailable } from '../../test/fake-api'
-import { renderInApp, renderWithI18n } from '../../test/render'
+import { createTestCore, renderInApp, renderWithI18n } from '../../test/render'
 import { SearchBox, UsersPage, useLastPageCorrection } from './users-page'
 
 function Correction(props: Parameters<typeof useLastPageCorrection>[0]) {
@@ -169,6 +169,39 @@ describe('users page subtitle', () => {
     )
     expect(subtitleOf(screen).textContent).toBe('Users')
     await expect.element(screen.getByText('ada@example.com')).toBeVisible()
+  })
+
+  // A refetch after a realtime event that fails (a service restarting) keeps the counts shown
+  it('keeps the counts it has when a later refetch fails', async () => {
+    let failing = false
+    const counts = { all: 23, active: 21, withoutWorkCenter: 1 }
+    const asked = serveUsers(counts, request => {
+      if (failing) return unavailable
+      if (request.query.get('withoutWorkCenter') === 'true')
+        return page(counts.withoutWorkCenter, 1)
+      if (request.query.get('isActivated') === 'true') return page(counts.active, 1)
+      return page(counts.all, 1)
+    })
+    const core = createTestCore()
+    const screen = await renderInApp(<UsersPage search={firstPage} onSearchChange={() => {}} />, {
+      core,
+    })
+    const expected = '23 users · 21 active · 1 without any work center'
+    await expect.element(screen.getByText(expected, { exact: true })).toBeVisible()
+
+    failing = true
+    await core.queryClient.invalidateQueries({ queryKey: ['get', '/users'] })
+    await vi.waitFor(() => expect(asked.filter(isCount)).toHaveLength(6))
+    const failed = () =>
+      core.queryClient
+        .getQueryCache()
+        .findAll({ queryKey: ['get', '/users'] })
+        .filter(query => query.state.status === 'error')
+    await vi.waitFor(() => expect(failed()).toHaveLength(3))
+    // Let React render the error state before looking, once
+    await new Promise(resolve => setTimeout(resolve, 300))
+
+    expect(screen.getByText(expected, { exact: true }).query()).not.toBeNull()
   })
 
   // scenario: Web.usersSubtitle / edge cases / the counts ignore the search box and the page
