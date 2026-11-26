@@ -33,6 +33,24 @@ export function toUsersQuery(search: UsersListSearch): {
   }
 }
 
+const total = (response: UsersListResponse) => response.pagination.total
+
+// Each count is a list request with room for one row: its pagination.total is the count
+export function usersCountsOptions(api: ApiClient) {
+  const count = (filter: { isActivated?: 'true'; withoutWorkCenter?: 'true' }) =>
+    api.$api.queryOptions(
+      'get',
+      '/users',
+      { params: { query: { limit: 1, ...filter } } },
+      { select: total },
+    )
+  return {
+    all: count({}),
+    active: count({ isActivated: 'true' }),
+    withoutWorkCenter: count({ withoutWorkCenter: 'true' }),
+  }
+}
+
 export function usersListOptions(api: ApiClient, search: UsersListSearch) {
   return api.$api.queryOptions(
     'get',

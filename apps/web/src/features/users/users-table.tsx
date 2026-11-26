@@ -1,4 +1,5 @@
 import type { User } from '@mes/frontend/data/user/users'
+import { cn } from '@mes/ui/lib/utils'
 import { createColumnHelper } from '@tanstack/react-table'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -11,6 +12,33 @@ import {
 import { EmptyState } from '../../components/page-state'
 
 const column = createColumnHelper<DataTableFeatures, User>()
+
+// The canvas's status pill: a mark and a tone, never colour alone
+function ActivePill(props: { active: boolean; children: ReactNode }): ReactNode {
+  return (
+    <span
+      data-slot='status-pill'
+      className={cn(
+        'inline-flex h-6 items-center gap-1.5 rounded-xl pr-[9px] pl-2 text-[12.5px] font-semibold whitespace-nowrap',
+        props.active
+          ? 'bg-state-running-bg text-state-running-fg'
+          : 'bg-surface text-state-idle-fg shadow-[inset_0_0_0_1px_var(--color-border)]',
+      )}
+    >
+      <span
+        aria-hidden='true'
+        data-mark={props.active ? 'check' : 'cross'}
+        className={cn(
+          'size-2.5 flex-none',
+          props.active
+            ? 'bg-current [clip-path:polygon(6%_52%,20%_38%,40%_58%,80%_14%,94%_28%,40%_86%)]'
+            : 'bg-[linear-gradient(45deg,transparent_41%,currentColor_41%_59%,transparent_59%),linear-gradient(-45deg,transparent_41%,currentColor_41%_59%,transparent_59%)]',
+        )}
+      />
+      {props.children}
+    </span>
+  )
+}
 
 function initials(user: User): string {
   return `${user.name.charAt(0)}${user.surname.charAt(0)}`.toLocaleUpperCase()
@@ -52,7 +80,11 @@ export function UsersTable(props: {
     }),
     column.accessor('isActivated', {
       header: () => t('users.active'),
-      cell: info => (info.getValue() ? t('users.isActive') : t('users.isInactive')),
+      cell: info => (
+        <ActivePill active={info.getValue()}>
+          {info.getValue() ? t('users.isActive') : t('users.isInactive')}
+        </ActivePill>
+      ),
     }),
   ])
 

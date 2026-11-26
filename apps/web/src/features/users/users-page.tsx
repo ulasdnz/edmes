@@ -1,7 +1,12 @@
 import { toApiError } from '@mes/api-client'
-import { useAppCore, useRealtimeRooms } from '@mes/frontend/core'
-import { type UsersListSearch, usersListOptions } from '@mes/frontend/data/user/users'
+import { useAppCore, useRealtimeRooms, useSession } from '@mes/frontend/core'
+import {
+  type UsersListSearch,
+  usersCountsOptions,
+  usersListOptions,
+} from '@mes/frontend/data/user/users'
 import { Input } from '@mes/ui/components/input'
+import { Skeleton } from '@mes/ui/components/skeleton'
 import { useQuery } from '@tanstack/react-query'
 import { SearchIcon } from 'lucide-react'
 import { type ReactNode, useEffect, useEffectEvent, useState } from 'react'
@@ -60,6 +65,33 @@ export function SearchBox(props: {
   )
 }
 
+// Every user, whatever the search and the page. A skeleton while any count loads, never a 0;
+// left out when one fails.
+function UsersCounts(): ReactNode {
+  const { t } = useTranslation()
+  const { api } = useAppCore()
+  const options = usersCountsOptions(api)
+  const all = useQuery(options.all)
+  const active = useQuery(options.active)
+  const withoutWorkCenter = useQuery(options.withoutWorkCenter)
+  const counts = [all, active, withoutWorkCenter]
+
+  if (counts.some(count => count.isError)) return null
+  if (all.data === undefined || active.data === undefined || withoutWorkCenter.data === undefined) {
+    return (
+      <Skeleton role='status' aria-label={t('users.countsLoading')} className='my-1 h-3 w-56' />
+    )
+  }
+  const parts = [
+    t('users.count', { count: all.data }),
+    t('users.activeCount', { count: active.data }),
+  ]
+  if (withoutWorkCenter.data > 0) {
+    parts.push(t('users.withoutWorkCenterCount', { count: withoutWorkCenter.data }))
+  }
+  return <p className='text-[13px] text-text-3'>{parts.join(' · ')}</p>
+}
+
 // A correction replaces the history entry: pushing one would bring Back to the out-of-range
 // address, which corrects itself forward again.
 export type SearchChange = (next: Partial<UsersListSearch>, options?: { replace?: boolean }) => void
@@ -83,6 +115,7 @@ export function UsersPage(props: {
 }): ReactNode {
   const { t } = useTranslation()
   const { api } = useAppCore()
+  const { plantTimezone, serverClock } = useSession()
   useRealtimeRooms(['user'])
   const query = useQuery(usersListOptions(api, props.search))
   const totalPages = query.data?.pagination.totalPages ?? 0
@@ -111,6 +144,15 @@ export function UsersPage(props: {
         title={t('users.loadFailed')}
         message={apiErrorMessage(error, t)}
         traceId={error.traceId}
+        details={{
+          code: error.code,
+          status: error.status || undefined,
+          occurredAt: (
+            serverClock?.fromDevice(new Date(query.errorUpdatedAt)) ??
+            new Date(query.errorUpdatedAt)
+          ).toISOString(),
+          timeZone: plantTimezone ?? 'UTC',
+        }}
         onRetry={() => void query.refetch()}
       />
     )
@@ -125,11 +167,7 @@ export function UsersPage(props: {
           <h1 className='font-display text-[28px] leading-[1.15] font-semibold'>
             {t('users.title')}
           </h1>
-          {query.data && (
-            <p className='text-[13px] text-text-3'>
-              {t('users.count', { count: query.data.pagination.total })}
-            </p>
-          )}
+          <UsersCounts />
         </div>
       </div>
       <section aria-label={t('users.table')} className='rounded-lg border border-line bg-surface'>
