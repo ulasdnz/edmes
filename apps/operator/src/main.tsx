@@ -48,7 +48,11 @@ core.session.subscribe(state => {
   if (ended || permissionsChanged) void router.invalidate()
 })
 
-installChunkReloadGuard({ storage: sessionStorage, reload: () => window.location.reload() })
+installChunkReloadGuard({
+  storage: sessionStorage,
+  reload: () => window.location.reload(),
+  version: __APP_VERSION__,
+})
 
 // Nobody may be at the tablet to press reload: a new version loads once nothing is in progress.
 startVersionCheck({

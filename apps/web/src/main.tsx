@@ -43,7 +43,11 @@ core.session.subscribe(state => {
   if (ended || permissionsChanged) void router.invalidate()
 })
 
-installChunkReloadGuard({ storage: sessionStorage, reload: () => window.location.reload() })
+installChunkReloadGuard({
+  storage: sessionStorage,
+  reload: () => window.location.reload(),
+  version: __APP_VERSION__,
+})
 
 // Rendered after the Toaster, so the Toaster is mounted before a mismatch can raise a toast.
 function VersionCheck() {
