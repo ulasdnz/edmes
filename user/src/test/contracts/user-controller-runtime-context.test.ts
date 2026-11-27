@@ -25,12 +25,13 @@ describe('user.controller.getUser runtime context', () => {
       surname: 'One',
     }
     getUserMock.mockResolvedValue(user)
-    const req = { user: { id: 'user-1', permissions: ['readUsers'] } } as Request
+    // Express always sets req.query, {} without a query string
+    const req = { user: { id: 'user-1', permissions: ['readUsers'] }, query: {} } as Request
     const res = { json: vi.fn() } as unknown as Response
 
     await getUser(req, res)
 
-    expect(getUserMock).toHaveBeenCalledWith('user-1')
+    expect(getUserMock).toHaveBeenCalledWith('user-1', { populateRoles: false })
     expect(res.json).toHaveBeenCalledWith({
       data: user,
       meta: {
