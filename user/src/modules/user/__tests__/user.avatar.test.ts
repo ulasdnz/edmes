@@ -2,11 +2,12 @@ import fs from 'node:fs/promises'
 import type { Express, NextFunction, Request, Response } from 'express'
 import jwt from 'jsonwebtoken'
 import request from 'supertest'
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
 import { config } from '../../../config/index.js'
 import { initLoaders } from '../../../core/loaders/index.js'
+import { streamClient } from '../../../lib/redis.js'
 import User from '../user.model.js'
-import { updateAvatar } from '../user.service.js'
+import { removeAvatar, updateAvatar } from '../user.service.js'
 
 vi.mock('../../../core/loaders/mongoose', () => ({
   initMongoose: vi.fn(),
@@ -63,6 +64,16 @@ const png = Buffer.from(
 )
 const html = Buffer.from('<html><body><script>alert(document.cookie)</script></body></html>')
 
+// The user.updated events published for one user: other tabs and devices refresh the session on it
+function userUpdatedEvents(userId: string): unknown[][] {
+  const calls = (streamClient.xadd as unknown as Mock).mock.calls as unknown[][]
+  return calls.filter(call => {
+    if (!call.includes('user.updated')) return false
+    const data = JSON.parse(String(call[call.indexOf('data') + 1])) as { userId?: string }
+    return data.userId === userId
+  })
+}
+
 const file = (buffer: Buffer, originalname: string, mimetype: string) =>
   ({
     fieldname: 'photo',
@@ -99,6 +110,38 @@ describe('updateAvatar', () => {
     expect(second.photoUrl).toMatch(/^\/uploads\/[0-9a-f-]{36}\.png$/)
     await expect(fs.access(`.${first.photoUrl}`)).rejects.toThrow()
     expect(await fs.readFile(`.${second.photoUrl}`)).toEqual(png)
+  })
+
+  it('announces user.updated for every new avatar', async () => {
+    await updateAvatar(userId, file(png, 'first.png', 'image/png'))
+    const second = await updateAvatar(userId, file(png, 'second.png', 'image/png'))
+    stored.push(second.photoUrl as string)
+
+    expect(userUpdatedEvents(userId)).toHaveLength(2)
+  })
+
+  it('keeps the avatar and its file when saving the removal fails', async () => {
+    const current = await updateAvatar(userId, file(png, 'current.png', 'image/png'))
+    stored.push(current.photoUrl as string)
+    vi.spyOn(User.prototype, 'save').mockRejectedValueOnce(new Error('write failed'))
+
+    await expect(removeAvatar(userId)).rejects.toThrow('write failed')
+
+    expect((await User.findById(userId))?.photoUrl).toBe(current.photoUrl)
+    expect(await fs.readFile(`.${current.photoUrl}`)).toEqual(png)
+    vi.restoreAllMocks()
+  })
+
+  it('announces user.updated when an avatar is removed, and nothing when there was none', async () => {
+    const current = await updateAvatar(userId, file(png, 'current.png', 'image/png'))
+    stored.push(current.photoUrl as string)
+    const before = userUpdatedEvents(userId).length
+
+    await removeAvatar(userId)
+    expect(userUpdatedEvents(userId)).toHaveLength(before + 1)
+
+    await removeAvatar(userId)
+    expect(userUpdatedEvents(userId)).toHaveLength(before + 1)
   })
 
   it('keeps the current avatar when the new upload is not an image', async () => {

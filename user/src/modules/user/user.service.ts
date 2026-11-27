@@ -213,10 +213,14 @@ export const updateAvatar = async (
   // Before the old avatar goes: an upload that is not an image must leave the current one in place
   const photoUrl = await saveImage(file)
 
-  await deleteAvatarFile(user.photoUrl)
-
+  const previous = user.photoUrl
   user.photoUrl = photoUrl
   await user.save()
+  // Only once the user points at the new file: a failed save must not leave a missing one behind
+  await deleteAvatarFile(previous)
+
+  // Other tabs and devices refresh the session on it and stop showing the old file
+  await emitUserUpdated(userId)
 
   return user
 }
@@ -229,9 +233,11 @@ export const removeAvatar = async (userId: string): Promise<UserResponse> => {
   }
 
   if (user.photoUrl) {
-    await deleteAvatarFile(user.photoUrl)
+    const previous = user.photoUrl
     user.photoUrl = null
     await user.save()
+    await deleteAvatarFile(previous)
+    await emitUserUpdated(userId)
   }
 
   return user
