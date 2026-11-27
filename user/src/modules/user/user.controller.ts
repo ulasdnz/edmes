@@ -4,7 +4,12 @@ import { config } from '../../config/index.js'
 import CustomError from '../../core/errors/index.js'
 import type { SuccessResponse } from '../../core/types/api.types.js'
 import * as userService from './user.service.js'
-import type { AuthResponse, RuntimeContextResponse, UserResponse } from './user.types.js'
+import type {
+  AuthResponse,
+  PlantTimeResponse,
+  RuntimeContextResponse,
+  UserResponse,
+} from './user.types.js'
 import type {
   AdminCreateUserInput,
   AdminResetPasswordInput,
@@ -26,6 +31,15 @@ export async function login(req: Request, res: Response<SuccessResponse<AuthResp
 
   res.json({
     data: result,
+  })
+}
+
+export function getPlantTime(_req: Request, res: Response<SuccessResponse<PlantTimeResponse>>) {
+  res.json({
+    data: {
+      plantTimezone: config.PLANT_TIMEZONE,
+      serverTime: new Date().toISOString(),
+    },
   })
 }
 

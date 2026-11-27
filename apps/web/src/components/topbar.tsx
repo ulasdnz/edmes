@@ -1,5 +1,5 @@
 import { useAppCore, useConnection, useSession } from '@mes/frontend/core'
-import { formatInstant, type ServerClock } from '@mes/frontend/time'
+import { formatInstant } from '@mes/frontend/time'
 import { ConnectionIndicator } from '@mes/ui/components/connection-indicator'
 import {
   DropdownMenu,
@@ -9,28 +9,9 @@ import {
   DropdownMenuTrigger,
 } from '@mes/ui/components/dropdown-menu'
 import { ChevronDownIcon, LogOutIcon } from 'lucide-react'
-import { type ReactNode, useEffect, useState } from 'react'
+import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-
-function PlantClock(props: { clock: ServerClock; timeZone: string }): ReactNode {
-  const { t, i18n } = useTranslation()
-  const [now, setNow] = useState(() => props.clock.toIso())
-  useEffect(() => {
-    const timer = setInterval(() => setNow(props.clock.toIso()), 1000)
-    return () => clearInterval(timer)
-  }, [props.clock])
-  const time = formatInstant(now, {
-    timeZone: props.timeZone,
-    locale: i18n.language,
-    style: 'time',
-  })
-  return (
-    <span className='text-[13px] whitespace-nowrap text-text-3'>
-      {t('topbar.plantTime')} <span className='font-semibold text-text-2'>{time}</span> ·{' '}
-      {props.timeZone}
-    </span>
-  )
-}
+import { PlantClock } from './plant-clock'
 
 function initials(name: string, surname: string): string {
   return `${name.charAt(0)}${surname.charAt(0)}`.toLocaleUpperCase()
@@ -56,7 +37,14 @@ export function Topbar(): ReactNode {
   return (
     <header className='flex min-h-14 flex-wrap items-center gap-x-3.5 gap-y-2 border-b border-line bg-surface px-6 py-2'>
       <ConnectionIndicator status={connection.status} label={label} />
-      {serverClock && plantTimezone && <PlantClock clock={serverClock} timeZone={plantTimezone} />}
+      {serverClock && plantTimezone && (
+        <PlantClock
+          clock={serverClock}
+          timeZone={plantTimezone}
+          className='text-[13px] text-text-3'
+          timeClassName='font-semibold text-text-2'
+        />
+      )}
       <span className='flex-1' />
       {user && (
         <DropdownMenu>

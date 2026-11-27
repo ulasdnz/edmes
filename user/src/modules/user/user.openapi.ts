@@ -93,6 +93,29 @@ export const userPaths: ZodOpenApiPathsObject = {
     },
   },
 
+  '/auth/plant-time': {
+    get: {
+      tags: ['Auth'],
+      security: [],
+      summary: 'Plant timezone and server time, for the sign-in page',
+      responses: {
+        '200': {
+          description: 'The plant timezone (IANA) and the server time as an ISO 8601 UTC instant',
+          content: {
+            'application/json': {
+              schema: z.object({
+                data: z.object({
+                  plantTimezone: z.string(),
+                  serverTime: z.string(),
+                }),
+              }),
+            },
+          },
+        },
+      },
+    },
+  },
+
   // ── Users (protected) ───────────────────────────────────────────────────────
   '/users/me': {
     get: {

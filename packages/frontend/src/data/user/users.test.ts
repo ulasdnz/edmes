@@ -1,6 +1,9 @@
+import { createServer, type Server } from 'node:http'
+import type { AddressInfo } from 'node:net'
 import { createApiClient } from '@mes/api-client'
-import { describe, expect, it } from 'vitest'
-import { toUsersQuery, usersListOptions, usersListSearchSchema } from './users'
+import { QueryClient } from '@tanstack/react-query'
+import { afterEach, describe, expect, it } from 'vitest'
+import { toUsersQuery, usersCountsOptions, usersListOptions, usersListSearchSchema } from './users'
 
 describe('users list', () => {
   it('maps the URL search to the list request', () => {
@@ -75,5 +78,86 @@ describe('users list', () => {
     const previous = { data: [], pagination: { page: 1, limit: 50, total: 0, totalPages: 0 } }
     expect(typeof options.placeholderData).toBe('function')
     expect((options.placeholderData as (previous: unknown) => unknown)(previous)).toBe(previous)
+  })
+})
+
+describe('users counts', () => {
+  let server: Server | undefined
+  const asked: string[] = []
+
+  afterEach(async () => {
+    asked.length = 0
+    await new Promise(resolve => server?.close(resolve))
+  })
+
+  // Answers a total per filter, the way user-service counts: limit=1 holds one row at most
+  async function serve(totals: { all: number; active: number; withoutWorkCenter: number }) {
+    server = createServer((req, res) => {
+      const url = new URL(req.url ?? '/', 'http://localhost')
+      asked.push(`${url.pathname}${url.search}`)
+      const query = url.searchParams
+      const total =
+        query.get('withoutWorkCenter') === 'true'
+          ? totals.withoutWorkCenter
+          : query.get('isActivated') === 'true'
+            ? totals.active
+            : totals.all
+      const limit = Number(query.get('limit') ?? 20)
+      res.setHeader('content-type', 'application/json')
+      res.end(
+        JSON.stringify({
+          data: [],
+          pagination: { page: 1, limit, total, totalPages: Math.ceil(total / limit) },
+        }),
+      )
+    })
+    await new Promise<void>(resolve => server?.listen(0, '127.0.0.1', resolve))
+    const { port } = server.address() as AddressInfo
+    return createApiClient({
+      baseUrl: `http://127.0.0.1:${port}`,
+      getToken: () => null,
+      getLocale: () => 'en',
+      onUnauthorized: () => {},
+    })
+  }
+
+  // scenario: Web.usersCountsQuery / happy path / three limit=1 requests, each pagination.total
+  it('reads the three counts with limit=1 and takes each pagination.total', async () => {
+    const client = await serve({ all: 23, active: 21, withoutWorkCenter: 1 })
+    const queryClient = new QueryClient()
+    const options = usersCountsOptions(client)
+
+    const all = await queryClient.fetchQuery(options.all)
+    const active = await queryClient.fetchQuery(options.active)
+    const withoutWorkCenter = await queryClient.fetchQuery(options.withoutWorkCenter)
+
+    expect(options.all.select?.(all)).toBe(23)
+    expect(options.active.select?.(active)).toBe(21)
+    expect(options.withoutWorkCenter.select?.(withoutWorkCenter)).toBe(1)
+    expect([...asked].sort()).toEqual([
+      '/users?limit=1',
+      '/users?limit=1&isActivated=true',
+      '/users?limit=1&withoutWorkCenter=true',
+    ])
+  })
+
+  // scenario: Web.usersCountsQuery / constraints / keys start with ['get', '/users', …]
+  it('keys every count under get /users, so a user event refetches it like the list', () => {
+    const api = createApiClient({
+      getToken: () => null,
+      getLocale: () => 'en',
+      onUnauthorized: () => {},
+    })
+    const options = usersCountsOptions(api)
+    for (const count of [options.all, options.active, options.withoutWorkCenter]) {
+      expect(count.queryKey.slice(0, 2)).toEqual(['get', '/users'])
+    }
+    expect(options.all.queryKey[2]).toEqual({ params: { query: { limit: 1 } } })
+    expect(options.active.queryKey[2]).toEqual({
+      params: { query: { limit: 1, isActivated: 'true' } },
+    })
+    expect(options.withoutWorkCenter.queryKey[2]).toEqual({
+      params: { query: { limit: 1, withoutWorkCenter: 'true' } },
+    })
   })
 })

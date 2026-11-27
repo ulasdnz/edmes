@@ -1,4 +1,5 @@
 import type { ApiError } from '@mes/api-client'
+import { formatInstant } from '@mes/frontend/time'
 import { Button } from '@mes/ui/components/button'
 import { cn } from '@mes/ui/lib/utils'
 import type { TFunction } from 'i18next'
@@ -10,7 +11,7 @@ import {
   SearchIcon,
   TriangleAlertIcon,
 } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { type ReactNode, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 export function PageLoading(): ReactNode {
@@ -66,13 +67,108 @@ function StateLayout(props: {
   )
 }
 
+export interface ErrorDetails {
+  code: string
+  status?: number
+  // When the error happened, as a UTC instant in server time, shown in the plant's zone
+  occurredAt: string
+  timeZone: string
+}
+
+const COPIED_MS = 2000
+
+// For support, so the labels stay English whatever the language of the page
+function errorDetailsText(
+  props: { title: string; message: string; traceId?: string; details: ErrorDetails },
+  locale: string,
+): string {
+  const { details } = props
+  const time = formatInstant(details.occurredAt, {
+    timeZone: details.timeZone,
+    locale,
+    style: 'dateTime',
+  })
+  return [
+    props.title,
+    props.message,
+    `code: ${details.code}`,
+    `HTTP status: ${details.status ?? 'none'}`,
+    `trace id: ${props.traceId || 'none'}`,
+    `time: ${time} ${details.timeZone}`,
+  ].join('\n')
+}
+
+async function writeToClipboard(text: string): Promise<boolean> {
+  try {
+    // undefined outside a secure context, which a plant reached over plain HTTP is
+    if (navigator.clipboard) {
+      await navigator.clipboard.writeText(text)
+      return true
+    }
+  } catch {
+    // refused: the fallback below may still copy
+  }
+  return copyThroughSelection(text)
+}
+
+// The pre-Clipboard-API way, which works on plain HTTP inside a click
+function copyThroughSelection(text: string): boolean {
+  const field = document.createElement('textarea')
+  field.value = text
+  field.setAttribute('readonly', '')
+  field.style.position = 'fixed'
+  field.style.opacity = '0'
+  document.body.append(field)
+  try {
+    field.focus()
+    field.select()
+    return document.execCommand('copy')
+  } catch {
+    return false
+  } finally {
+    field.remove()
+  }
+}
+
+function CopyErrorDetails(props: { text: string }): ReactNode {
+  const { t } = useTranslation()
+  const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle')
+  useEffect(() => {
+    if (state !== 'copied') return
+    const timer = setTimeout(() => setState('idle'), COPIED_MS)
+    return () => clearTimeout(timer)
+  }, [state])
+  const label = {
+    idle: t('errors.copyDetails'),
+    copied: t('errors.copied'),
+    failed: t('errors.copyFailed'),
+  }[state]
+  return (
+    <>
+      <Button
+        className='mt-1.5'
+        onClick={async () => setState((await writeToClipboard(props.text)) ? 'copied' : 'failed')}
+      >
+        {label}
+      </Button>
+      {state === 'failed' && (
+        <pre className='mt-1 max-w-full basis-full overflow-x-auto rounded-control border border-line bg-surface-2 px-3 py-2 text-left font-mono text-xs whitespace-pre-wrap text-text-2 select-all'>
+          {props.text}
+        </pre>
+      )}
+    </>
+  )
+}
+
 export function PageError(props: {
   title: string
   message: string
   traceId?: string
+  details?: ErrorDetails
   onRetry: () => void
 }): ReactNode {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const { details } = props
   return (
     <StateLayout
       icon={TriangleAlertIcon}
@@ -81,10 +177,15 @@ export function PageError(props: {
       title={props.title}
       message={props.message}
     >
-      <Button variant='primary' className='mt-1.5' onClick={props.onRetry}>
-        <RefreshCwIcon aria-hidden='true' />
-        {t('common.tryAgain')}
-      </Button>
+      <div className='flex flex-wrap justify-center gap-2'>
+        <Button variant='primary' className='mt-1.5' onClick={props.onRetry}>
+          <RefreshCwIcon aria-hidden='true' />
+          {t('common.tryAgain')}
+        </Button>
+        {details && (
+          <CopyErrorDetails text={errorDetailsText({ ...props, details }, i18n.language)} />
+        )}
+      </div>
       {props.traceId && (
         <p className='text-xs text-text-3'>
           {t('common.reference')} <span className='font-mono'>{props.traceId}</span>

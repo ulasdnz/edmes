@@ -277,6 +277,195 @@ describe('User Routes Integration', () => {
     })
   })
 
+  describe('GET /api/v1/auth/plant-time', () => {
+    // scenario: AuthPlantTime.public / happy path / no Authorization header
+    it('answers the plant timezone and the server time without a token', async () => {
+      const res = await request(app).get('/api/v1/auth/plant-time')
+
+      expect(res.status).toBe(200)
+      expect(res.body.data.plantTimezone).toBe(config.PLANT_TIMEZONE)
+      expect(res.body.data.serverTime).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/)
+      expect(Math.abs(Date.parse(res.body.data.serverTime) - Date.now())).toBeLessThan(5000)
+    })
+
+    // scenario: AuthPlantTime.public / constraints / [CRITICAL] exactly plantTimezone and serverTime
+    it('answers exactly plantTimezone and serverTime under data and nothing else', async () => {
+      const res = await request(app).get('/api/v1/auth/plant-time')
+
+      expect(res.status).toBe(200)
+      expect(Object.keys(res.body)).toEqual(['data'])
+      expect(Object.keys(res.body.data).sort()).toEqual(['plantTimezone', 'serverTime'])
+    })
+
+    // scenario: AuthPlantTime.public / constraints / invalid or expired Bearer token still 200
+    it('ignores an invalid or expired Bearer token', async () => {
+      const expired = jwt.sign(
+        { id: '507f1f77bcf86cd799439011', exp: Math.floor(Date.now() / 1000) - 60 },
+        config.JWT_SECRET,
+      )
+
+      const invalid = await request(app)
+        .get('/api/v1/auth/plant-time')
+        .set('Authorization', 'Bearer not-a-token')
+      const old = await request(app)
+        .get('/api/v1/auth/plant-time')
+        .set('Authorization', `Bearer ${expired}`)
+
+      expect(invalid.status).toBe(200)
+      expect(invalid.body.data.plantTimezone).toBe(config.PLANT_TIMEZONE)
+      expect(old.status).toBe(200)
+      expect(old.body.data.plantTimezone).toBe(config.PLANT_TIMEZONE)
+    })
+  })
+
+  describe('GET /api/v1/users?withoutWorkCenter', () => {
+    afterEach(() => {
+      vi.restoreAllMocks()
+    })
+
+    function routeAuthContextToApp() {
+      const realFetch = globalThis.fetch
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+        const url = String(input)
+        if (!url.startsWith(config.INTERNAL_API_USER)) return realFetch(input, init)
+        const res = await request(app)
+          .get(url.slice(config.INTERNAL_API_USER.length))
+          .set(init?.headers as Record<string, string>)
+        return new Response(JSON.stringify(res.body), { status: res.status })
+      })
+    }
+
+    const workCenterId = '64b000000000000000000001'
+
+    // The caller has a work center, so it never counts among the users without one
+    async function createCaller(permissions: string[]) {
+      const role = await Role.create({ name: `wc-filter-${permissions.length}`, permissions })
+      const caller = await User.create({
+        username: 'wcfiltercaller',
+        email: 'wcfiltercaller@example.com',
+        password: 'Password123!',
+        name: 'Caller',
+        surname: 'User',
+        roles: [role._id],
+        workCenterIds: [workCenterId],
+      })
+      return jwt.sign({ id: caller._id.toString() }, config.JWT_SECRET)
+    }
+
+    async function createUser(suffix: string, fields: Record<string, unknown>) {
+      return User.create({
+        username: `wcfilter${suffix}`,
+        email: `wcfilter${suffix}@example.com`,
+        password: 'Password123!',
+        name: 'Filter',
+        surname: suffix,
+        ...fields,
+      })
+    }
+
+    async function seedThree() {
+      await createUser('none1', { workCenterIds: [] })
+      await createUser('none2', { workCenterIds: [] })
+      await createUser('one', { workCenterIds: [workCenterId] })
+    }
+
+    const list = (token: string, query: string) =>
+      request(app).get(`/api/v1/users?${query}`).set('Authorization', `Bearer ${token}`)
+
+    // scenario: UsersList.withoutWorkCenter / happy path / only the two without a work center
+    it('withoutWorkCenter=true answers only the users with no work center', async () => {
+      routeAuthContextToApp()
+      const token = await createCaller(['readUsers'])
+      await seedThree()
+
+      const res = await list(token, 'withoutWorkCenter=true')
+
+      expect(res.status).toBe(200)
+      expect(res.body.data.map((u: { username: string }) => u.username).sort()).toEqual([
+        'wcfilternone1',
+        'wcfilternone2',
+      ])
+      expect(res.body.pagination.total).toBe(2)
+    })
+
+    // scenario: UsersList.withoutWorkCenter / happy path / empty (or missing) workCenterIds
+    it('withoutWorkCenter=true also counts a user whose workCenterIds field is missing', async () => {
+      routeAuthContextToApp()
+      const token = await createCaller(['readUsers'])
+      const user = await createUser('missing', {})
+      await User.collection.updateOne({ _id: user._id }, { $unset: { workCenterIds: '' } })
+
+      const res = await list(token, 'withoutWorkCenter=true')
+
+      expect(res.status).toBe(200)
+      expect(res.body.data.map((u: { username: string }) => u.username)).toEqual([
+        'wcfiltermissing',
+      ])
+      expect(res.body.pagination.total).toBe(1)
+    })
+
+    // scenario: UsersList.withoutWorkCenter / boundaries / false or absent → no filter
+    it('withoutWorkCenter=false or absent applies no filter', async () => {
+      routeAuthContextToApp()
+      const token = await createCaller(['readUsers'])
+      await seedThree()
+
+      const off = await list(token, 'withoutWorkCenter=false')
+      const absent = await list(token, '')
+
+      // The three seeded users and the caller
+      expect(off.status).toBe(200)
+      expect(off.body.pagination.total).toBe(4)
+      expect(absent.status).toBe(200)
+      expect(absent.body.pagination.total).toBe(4)
+    })
+
+    // scenario: UsersList.withoutWorkCenter / boundaries / combines with isActivated
+    it('withoutWorkCenter=true&isActivated=true answers only the active user without one', async () => {
+      routeAuthContextToApp()
+      const token = await createCaller(['readUsers'])
+      await createUser('none1', { workCenterIds: [] })
+      await createUser('none2', { workCenterIds: [], isActivated: false })
+      await createUser('one', { workCenterIds: [workCenterId] })
+
+      const res = await list(token, 'withoutWorkCenter=true&isActivated=true')
+
+      expect(res.status).toBe(200)
+      expect(res.body.data.map((u: { username: string }) => u.username)).toEqual(['wcfilternone1'])
+      expect(res.body.pagination.total).toBe(1)
+    })
+
+    // scenario: UsersList.withoutWorkCenter / edge cases / withoutWorkCenter=yes → 400
+    it('withoutWorkCenter=yes answers 400 with the validation envelope', async () => {
+      routeAuthContextToApp()
+      const token = await createCaller(['readUsers'])
+
+      const res = await list(token, 'withoutWorkCenter=yes')
+
+      expect(res.status).toBe(400)
+      expect(res.body.error.code).toBe('error.validation_failed')
+      expect(res.body.error.message).toEqual(expect.any(String))
+      expect(res.body.error.details).toEqual(
+        expect.arrayContaining([expect.objectContaining({ field: 'withoutWorkCenter' })]),
+      )
+    })
+
+    // scenario: UsersList.withoutWorkCenter / authorization / [CRITICAL] no readUsers → 403
+    it('answers 403 to a caller without readUsers, with or without the filter', async () => {
+      routeAuthContextToApp()
+      const token = await createCaller(['accessWebApp'])
+      await seedThree()
+
+      const filtered = await list(token, 'withoutWorkCenter=true')
+      const plain = await list(token, '')
+
+      expect(filtered.status).toBe(403)
+      expect(filtered.body.error.code).toBe('auth.insufficient_permissions')
+      expect(plain.status).toBe(403)
+      expect(plain.body.error.code).toBe('auth.insufficient_permissions')
+    })
+  })
+
   it('has the two application privileges and no screen privileges', () => {
     expect(VALID_PRIVILEGE_CODES.has('accessWebApp')).toBe(true)
     expect(VALID_PRIVILEGE_CODES.has('accessOperatorPanel')).toBe(true)

@@ -10,6 +10,11 @@ export interface AuthResponse {
   token: string
 }
 
+export interface PlantTimeResponse {
+  plantTimezone: string
+  serverTime: string
+}
+
 export interface RuntimeContextResponse {
   plantTimezone: string
   serverTime: string

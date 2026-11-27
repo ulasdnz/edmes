@@ -12,5 +12,6 @@ const router = Router()
 
 router.post('/auth/register', validateBody(registerSchema), userController.register)
 router.post('/auth/login', validateBody(loginSchema), userController.login)
+router.get('/auth/plant-time', userController.getPlantTime)
 
 export default router
