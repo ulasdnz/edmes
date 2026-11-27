@@ -26,3 +26,8 @@ describe('tokenIssuedAt', () => {
     expect(tokenIssuedAt(jwt({ iat: 'yesterday' }))).toBeNull()
   })
 })
+
+it('gives null for an issue time no date can hold, so the page does not throw', () => {
+  const payload = btoa(JSON.stringify({ iat: 1e20 }))
+  expect(tokenIssuedAt(`header.${payload}.signature`)).toBeNull()
+})
