@@ -27,7 +27,7 @@ export default defineConfig({
   projects: [
     {
       name: 'web',
-      testMatch: /(routing|web-auth|web-users-realtime|outage)\.spec\.ts/,
+      testMatch: /(routing|web-auth|web-users-realtime|web-profile|outage)\.spec\.ts/,
       use: { ...devices['Desktop Chrome'] },
     },
     {
