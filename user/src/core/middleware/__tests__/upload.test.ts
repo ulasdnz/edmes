@@ -49,17 +49,16 @@ describe('saveImage', () => {
     expect(await fs.readFile(`.${url}`)).toEqual(png)
   })
 
-  it.each([
-    ['JPEG', '.jpg', jpeg],
-    ['WebP', '.webp', webp],
-  ])('stores a %s image with the %s extension', async (_format, extension, content) => {
-    const url = await saveImage(file(content, 'photo', 'image/png'))
+  it('stores a JPEG image with the .jpg extension', async () => {
+    const url = await saveImage(file(jpeg, 'photo', 'image/png'))
     saved.push(url)
 
-    expect(path.extname(url)).toBe(extension)
+    expect(path.extname(url)).toBe('.jpg')
   })
 
+  // The Profile page offers PNG or JPG, up to 2 MB
   it.each([
+    ['a WebP image, which the Profile page does not offer', webp, 'image/webp'],
     ['an HTML page sent as a PNG', html, 'image/png'],
     ['an SVG, which can carry scripts', svg, 'image/svg+xml'],
   ])('rejects %s and writes nothing', async (_case, content, mimetype) => {
@@ -91,16 +90,25 @@ describe('uploadImage', () => {
     expect(res.body.size).toBe(png.length)
   })
 
-  it('answers a file over 5 MB with 400, not a server error', async () => {
+  it('answers a file over 2 MB with 400, not a server error', async () => {
     const res = await request(app)
       .patch('/avatar')
-      .attach('photo', Buffer.alloc(5 * 1024 * 1024 + 1), 'large.png')
+      .attach('photo', Buffer.alloc(2 * 1024 * 1024 + 1), 'large.png')
 
     expect(res.status).toBe(400)
     expect(res.body.error).toMatchObject({
       code: 'upload.file_too_large',
-      message: 'File must be 5 MB or smaller',
+      message: 'File must be 2 MB or smaller',
     })
+  })
+
+  it('takes a file of exactly 2 MB', async () => {
+    const res = await request(app)
+      .patch('/avatar')
+      .attach('photo', Buffer.alloc(2 * 1024 * 1024), 'large.png')
+
+    expect(res.status).toBe(200)
+    expect(res.body.size).toBe(2 * 1024 * 1024)
   })
 
   it('answers a file sent under another field with 400', async () => {

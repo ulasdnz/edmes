@@ -213,26 +213,54 @@ export const updateAvatar = async (
   // Before the old avatar goes: an upload that is not an image must leave the current one in place
   const photoUrl = await saveImage(file)
 
-  if (user.photoUrl && !user.photoUrl.includes('node.js_logo')) {
-    const oldFilePath = user.photoUrl.replace('/uploads/', 'uploads/')
-    try {
-      const fs = await import('fs/promises')
-      await fs.unlink(oldFilePath)
-    } catch {
-      logger.warn(`Failed to delete old avatar: ${oldFilePath}`, {
-        event: 'user.avatar.delete_failed',
-        filePath: oldFilePath,
-      })
-    }
-  }
-
+  const previous = user.photoUrl
   user.photoUrl = photoUrl
   await user.save()
+  // Only once the user points at the new file: a failed save must not leave a missing one behind
+  await deleteAvatarFile(previous)
+
+  // Other tabs and devices refresh the session on it and stop showing the old file
+  await emitUserUpdated(userId)
 
   return user
 }
 
-export const getUser = async (userId: string): Promise<UserResponse> => {
+// Removing nothing is not an error: the call is safe to repeat
+export const removeAvatar = async (userId: string): Promise<UserResponse> => {
+  const user = await User.findById(userId)
+  if (!user) {
+    throw new CustomError(404, 'user.not_found')
+  }
+
+  if (user.photoUrl) {
+    const previous = user.photoUrl
+    user.photoUrl = null
+    await user.save()
+    await deleteAvatarFile(previous)
+    await emitUserUpdated(userId)
+  }
+
+  return user
+}
+
+const deleteAvatarFile = async (photoUrl: string | null | undefined): Promise<void> => {
+  if (!photoUrl || photoUrl.includes('node.js_logo')) return
+  const filePath = photoUrl.replace('/uploads/', 'uploads/')
+  try {
+    const fs = await import('fs/promises')
+    await fs.unlink(filePath)
+  } catch {
+    logger.warn(`Failed to delete avatar file: ${filePath}`, {
+      event: 'user.avatar.delete_failed',
+      filePath,
+    })
+  }
+}
+
+export const getUser = async (
+  userId: string,
+  options: { populateRoles?: boolean } = {},
+): Promise<UserResponse> => {
   if (userId === SYSTEM_IDENTITY) {
     return {
       _id: SYSTEM_IDENTITY as any,
@@ -247,7 +275,10 @@ export const getUser = async (userId: string): Promise<UserResponse> => {
     } as any
   }
 
-  const user = await User.findById(userId)
+  const query = User.findById(userId)
+  // Name and description only: the caller needs no readRoles to know its own roles
+  if (options.populateRoles) query.populate({ path: 'roles', select: 'name description' })
+  const user = await query
   if (!user) {
     throw new CustomError(404, 'user.not_found')
   }

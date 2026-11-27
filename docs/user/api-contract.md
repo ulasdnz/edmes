@@ -206,6 +206,8 @@ Returns the authenticated user's profile, the plant timezone, the server time an
 | **Permission** | None (self) |
 | **Status** | `200 OK` |
 
+Query: `populate=roles` (optional, the only value accepted) turns `data.roles` from ids into `{ _id, name, description }` objects, without permissions and without the `readRoles` permission. Without it `data.roles` holds ids.
+
 Response: `{ data: UserResponse, meta: { plantTimezone: string, serverTime: string, permissions: string[] } }`
 
 `meta.permissions` is the deduplicated list of permission codes from all the user's roles; it is empty for a user with no roles.
@@ -226,8 +228,7 @@ Update own profile. Only user-editable fields accepted.
   name:               string   // trim, 2-24 chars
   surname:            string   // trim, min 1
   email:              string   // valid email
-  username:           string   // trim, lowercase, 3-30, /^[a-z0-9._-]+$/
-  gender:             'male' | 'female' | 'other'
+  gender:             'male' | 'female'
   countryCode:        string
   birthDate:          Date     // z.coerce.date()
   language:           'en' | 'tr'
@@ -235,7 +236,7 @@ Update own profile. Only user-editable fields accepted.
 }
 ```
 
-Schema: `updateMeSchema` — `.strict()`. Fields NOT available for self-update: `roles`, `isActivated`, `departmentId`, `workCenterIds`, `specialities`, `personalNumber`, `props`, `isActiveDirectoryUser`.
+Schema: `updateMeSchema` — `.strict()`, so an unknown field answers 400 `error.validation_failed`. Fields NOT available for self-update: `username` (only an administrator changes it, through `PATCH /users/:id`), `roles`, `isActivated`, `departmentId`, `workCenterIds`, `specialities`, `personalNumber`, `props`, `isActiveDirectoryUser`.
 
 | Status | Key | When |
 |--------|-----|------|
@@ -252,15 +253,28 @@ Upload profile photo. Multipart form data.
 | **Status** | `200 OK` |
 
 - Field name: `photo`
-- Accepts: `image/*` MIME types only
-- Max size: 5 MB
-- Storage: `uploads/` directory, UUID filename, original extension preserved
+- Accepts: PNG or JPG, known by the file's first bytes (not the name or MIME type the client sends)
+- Max size: 2 MB
+- Storage: `uploads/` directory, UUID filename, extension of the detected format
 - Previous avatar file deleted from disk on update (best-effort)
 
 | Status | Key | When |
 |--------|-----|------|
 | 400 | `user.avatar_required` | No file in request |
-| 500 | `upload.only_images` | Non-image file type |
+| 400 | `upload.only_images` | Not a PNG or JPG image |
+| 400 | `upload.file_too_large` | Over 2 MB |
+
+### DELETE /api/v1/users/me/avatar
+
+Remove own profile photo: the file is deleted from `uploads/` (best-effort, as on update) and `photoUrl` becomes `null`. With no photo nothing changes and the answer is the same, so the call is safe to repeat.
+
+| | |
+|---|---|
+| **Auth** | Bearer token |
+| **Permission** | None (self) |
+| **Status** | `200 OK` |
+
+Response: `{ data: UserResponse, message }` (`success.avatar_remove`)
 
 ### DELETE /api/v1/users/me
 
@@ -299,7 +313,7 @@ Create a user with admin-level fields.
   password:  string   // 8-20 chars
 
   // Optional (admin-only fields)
-  gender:                'male' | 'female' | 'other'
+  gender:                'male' | 'female'
   countryCode:           string
   birthDate:             Date
   language:              'en' | 'tr'
@@ -733,7 +747,7 @@ Returned by all user endpoints. Sensitive fields are excluded.
   name:                   string
   surname:                string
   roles:                  string[]     // ObjectId[]
-  gender:                 'male' | 'female' | 'other' | undefined
+  gender:                 'male' | 'female' | undefined
   countryCode:            string | undefined
   birthDate:              string | undefined     // ISO date
   photoUrl:               string | null

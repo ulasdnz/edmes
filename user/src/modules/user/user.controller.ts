@@ -14,6 +14,7 @@ import type {
   AdminCreateUserInput,
   AdminResetPasswordInput,
   AdminUpdateUserInput,
+  MeQueryInput,
   UserListInput,
 } from './user.validators.js'
 
@@ -77,12 +78,21 @@ export async function updateAvatar(req: Request, res: Response<SuccessResponse<U
   })
 }
 
+export async function removeAvatar(req: Request, res: Response<SuccessResponse<UserResponse>>) {
+  const result = await userService.removeAvatar(req.user!.id)
+  res.json({
+    data: result,
+    message: req.t('success.avatar_remove'),
+  })
+}
+
 export async function getUser(
   req: Request,
   res: Response<SuccessResponse<UserResponse, RuntimeContextResponse>>,
 ) {
   const userId = req.user!.id
-  const user = await userService.getUser(userId)
+  const { populate } = req.query as MeQueryInput
+  const user = await userService.getUser(userId, { populateRoles: populate === 'roles' })
 
   res.json({
     data: user,

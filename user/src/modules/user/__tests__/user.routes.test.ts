@@ -466,6 +466,125 @@ describe('User Routes Integration', () => {
     })
   })
 
+  describe('the profile endpoints of /users/me', () => {
+    afterEach(() => {
+      vi.restoreAllMocks()
+    })
+
+    function routeAuthContextToApp() {
+      const realFetch = globalThis.fetch
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+        const url = String(input)
+        if (!url.startsWith(config.INTERNAL_API_USER)) return realFetch(input, init)
+        const res = await request(app)
+          .get(url.slice(config.INTERNAL_API_USER.length))
+          .set(init?.headers as Record<string, string>)
+        return new Response(JSON.stringify(res.body), { status: res.status })
+      })
+    }
+
+    async function createProfileUser(suffix: string, roleIds: Types.ObjectId[]) {
+      const user = await User.create({
+        username: `profile.${suffix}`,
+        email: `profile.${suffix}@example.com`,
+        password: 'Password123!',
+        name: 'Profile',
+        surname: 'User',
+        roles: roleIds,
+      })
+      return { user, token: jwt.sign({ id: user._id.toString() }, config.JWT_SECRET) }
+    }
+
+    // scenario: UserMe.usernameAdminOnly / authorization / [CRITICAL] PATCH /users/me with username → 400
+    it('PATCH /users/me refuses a username with the validation envelope and keeps the stored one', async () => {
+      routeAuthContextToApp()
+      const role = await Role.create({ name: 'profile-self', permissions: ['accessWebApp'] })
+      const { user, token } = await createProfileUser('self', [role._id])
+
+      const res = await request(app)
+        .patch('/api/v1/users/me')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ username: 'profile.renamed' })
+
+      expect(res.status).toBe(400)
+      expect(res.body.error.code).toBe('error.validation_failed')
+      expect(res.body.error.message).toEqual(expect.any(String))
+      expect(res.body.error.details).toEqual(
+        expect.arrayContaining([expect.objectContaining({ field: 'username' })]),
+      )
+      expect((await User.findById(user._id))?.username).toBe('profile.self')
+    })
+
+    // scenario: UserMe.usernameAdminOnly / authorization / PATCH /users/:id with writeUsers still changes it
+    it('PATCH /users/:id by a caller with writeUsers changes the username', async () => {
+      routeAuthContextToApp()
+      const role = await Role.create({ name: 'profile-admin', permissions: ['writeUsers'] })
+      const { token } = await createProfileUser('admin', [role._id])
+      const { user: target } = await createProfileUser('target', [])
+
+      const res = await request(app)
+        .patch(`/api/v1/users/${target._id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ username: 'profile.target.renamed' })
+
+      expect(res.status).toBe(200)
+      expect(res.body.data.username).toBe('profile.target.renamed')
+      expect((await User.findById(target._id))?.username).toBe('profile.target.renamed')
+    })
+
+    // scenario: UserMe.roles / happy path / populate=roles gives { _id, name, description } without readRoles
+    it('GET /users/me?populate=roles lists the caller roles as _id, name and description', async () => {
+      routeAuthContextToApp()
+      const planner = await Role.create({
+        name: 'profile-planner',
+        description: 'Plans, job orders, schedules and product standards.',
+        permissions: ['accessWebApp', 'readJobOrders'],
+      })
+      const viewer = await Role.create({ name: 'profile-viewer', permissions: ['accessWebApp'] })
+      const { token } = await createProfileUser('roles', [planner._id, viewer._id])
+
+      const res = await request(app)
+        .get('/api/v1/users/me?populate=roles')
+        .set('Authorization', `Bearer ${token}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.meta.permissions).not.toContain('readRoles')
+      expect(res.body.data.roles).toEqual([
+        {
+          _id: planner._id.toString(),
+          name: 'profile-planner',
+          description: 'Plans, job orders, schedules and product standards.',
+        },
+        { _id: viewer._id.toString(), name: 'profile-viewer', description: null },
+      ])
+    })
+
+    // scenario: UserMe.roles / boundaries / without populate the roles stay ids
+    it('GET /users/me without populate keeps the roles as ids', async () => {
+      routeAuthContextToApp()
+      const role = await Role.create({ name: 'profile-ids', permissions: ['accessWebApp'] })
+      const { token } = await createProfileUser('ids', [role._id])
+
+      const res = await request(app).get('/api/v1/users/me').set('Authorization', `Bearer ${token}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data.roles).toEqual([role._id.toString()])
+    })
+
+    // scenario: UserMe.roles / boundaries / a caller with no roles gets []
+    it('GET /users/me?populate=roles answers [] for a caller with no roles', async () => {
+      routeAuthContextToApp()
+      const { token } = await createProfileUser('noroles', [])
+
+      const res = await request(app)
+        .get('/api/v1/users/me?populate=roles')
+        .set('Authorization', `Bearer ${token}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data.roles).toEqual([])
+    })
+  })
+
   it('has the two application privileges and no screen privileges', () => {
     expect(VALID_PRIVILEGE_CODES.has('accessWebApp')).toBe(true)
     expect(VALID_PRIVILEGE_CODES.has('accessOperatorPanel')).toBe(true)

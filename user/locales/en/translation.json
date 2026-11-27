@@ -61,8 +61,8 @@
     "not_found": "Speciality not found"
   },
   "upload": {
-    "only_images": "Only JPEG, PNG or WebP images are allowed",
-    "file_too_large": "File must be 5 MB or smaller",
+    "only_images": "Only PNG or JPG images are allowed",
+    "file_too_large": "File must be 2 MB or smaller",
     "invalid_file": "The file could not be read from the request"
   },
   "success": {
@@ -73,6 +73,7 @@
     "update": "User updated successfully",
     "create": "User created successfully",
     "avatar_update": "Avatar updated successfully",
+    "avatar_remove": "Avatar removed",
     "password_reset": "Password reset successfully",
     "verify": "Verification successful",
     "get": "User profile retrieved successfully",
